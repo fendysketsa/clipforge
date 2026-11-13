@@ -535,6 +535,7 @@ class ClipJobRequest(BaseModel):
     # may use it after a restart even when the parent run history is pruned.
     scheduled_public_source_credit: bool = False
     scheduled_news_hot: bool = False
+    scheduled_theme_key: str = Field(default="", max_length=64)
     # Internal scheduler-only switches. Manual/API jobs keep both disabled, so
     # cron can request a more human editorial pass and licensed contextual
     # audio without silently changing operator-led renders.
@@ -1249,6 +1250,7 @@ class YouTubeUploadJob(BaseModel):
     tags: list[str] = Field(default_factory=list)
     playlist: str = ""
     playlist_confirmed: bool = False
+    cron_create_missing_playlist: bool = False
     target_channel: str = ""
     dry_run: bool = False
     video_url: str | None = None
@@ -1612,6 +1614,8 @@ CRON_TREND_SEARCH_QUERIES = [
     "kartun animasi absurd indonesia cerita lucu",
     "animasi nyeleneh plot twist indonesia",
     "reaction clip lucu indonesia dengan cerita dan payoff",
+    "dokumenter sejarah dan geografi nusantara indonesia",
+    "sejarah kolonial jalur perdagangan dan budaya nusantara",
 ]
 
 CRON_TREND_TOPIC_SIGNALS = {
@@ -1628,6 +1632,8 @@ CRON_TREND_TOPIC_SIGNALS = {
     "ustaz", "ustadz", "tanya jawab", "reaction", "reaksi", "gta", "gta v",
     "mobile legends", "free fire", "game horror", "valorant", "pubg",
     "simulator", "absurd", "nyeleneh", "parodi", "clip lucu", "momen lucu",
+    "sejarah", "geografi", "nusantara", "dokumenter", "kolonial", "voc",
+    "belanda", "daendels", "kerajaan", "warisan budaya", "pesisir selatan",
 }
 CRON_TREND_TOPIC_SIGNALS.update(marker for signals in DRAMA_THEME_SIGNALS.values() for marker in signals)
 CRON_TREND_UNSAFE_SIGNALS = {
@@ -1837,6 +1843,20 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
             "timnas indonesia momen pertandingan penuh cerita",
         ],
     },
+    "history_geography_nusantara": {
+        "label": "Sejarah, Geografi & Budaya Nusantara",
+        "tone": "dokumenter yang menarik, jelas, dan berbasis sumber; bedakan fakta sejarah, interpretasi, serta mitos budaya dan jangan mengubah pertanyaan judul menjadi kesimpulan pasti",
+        "short_role": "angkat satu pertanyaan sejarah atau geografi, tunjukkan bukti atau penjelasan sumber, lalu tuntaskan satu jawaban utuh tanpa memotong batasan atau mencampur mitos dengan fakta",
+        "long_role": "susun latar tempat dan waktu, hubungan kondisi alam dengan keputusan manusia, bukti sumber, dampak serta kesimpulan; pertahankan atribusi dan ketidakpastian tanpa mengarang tanggal, peta, atau sebab-akibat",
+        "queries": [
+            "dokumenter sejarah geografi nusantara indonesia",
+            "sejarah pesisir selatan jawa pantura belanda voc",
+            "sejarah jalan raya pos daendels geografi jawa",
+            "sejarah kerajaan jalur perdagangan nusantara",
+            "geografi indonesia pengaruh alam terhadap sejarah dan budaya",
+            "asal usul kota dan warisan budaya nusantara dokumenter",
+        ],
+    },
     "faith_life": {
         "label": "Iman, Hijrah & Ujian Hidup",
         "tone": "tenang, beradab, kontekstual, dan tidak memakai klaim agama di luar sumber",
@@ -1917,6 +1937,11 @@ RYUUNDY_CRON_THEME_SIGNALS: dict[str, set[str]] = {
     "football_story": {
         "bola", "sepak bola", "football", "soccer", "barcelona", "real madrid",
         "timnas", "pemain", "pertandingan", "match", "gol", "liga", "champions",
+    },
+    "history_geography_nusantara": {
+        "sejarah", "geografi", "nusantara", "dokumenter sejarah", "kolonial",
+        "belanda", "voc", "daendels", "mataram", "majapahit", "kerajaan",
+        "pantura", "selatan jawa", "jalur perdagangan", "warisan budaya",
     },
     "faith_life": {
         "islam", "iman", "hijrah", "hidayah", "quran", "kajian", "dakwah",
@@ -3978,6 +4003,7 @@ def automatic_long_form_playlist(
         job.source_title or "",
         job.request.script_text[:30000],
         *sidecar_values,
+        theme_key=job.request.scheduled_theme_key,
     )
 
 
@@ -4001,6 +4027,7 @@ def automatic_youtube_playlist(
         job.source_title or "",
         job.request.script_text[:30000],
         *(str(sidecar.get(key) or "") for key in ("title", "text", "hook", "core_message")),
+        theme_key=job.request.scheduled_theme_key,
     )
 
 
@@ -4257,6 +4284,8 @@ def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
     changed = False
     for clip in enriched.clips:
         issue = preflight(enriched, clip)
+        long_hold = long_upload_review_hold(enriched, clip)
+        issue = long_hold or issue
         sidecar = clip_sidecar_payload(clip)
         render_qc = sidecar.get("render_quality_qc")
         religious_review = sidecar.get("religious_claim_review")
@@ -4265,7 +4294,7 @@ def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
         )
         tiktok_strategy = current_tiktok_strategy_for_clip(clip)
         tiktok_strategy_changed = clip.tiktok_series_id != tiktok_strategy["series_id"]
-        automatic_repair_available = clip_automatic_repair_available(
+        automatic_repair_available = not long_hold and clip_automatic_repair_available(
             enriched,
             clip,
             issue,
@@ -4274,7 +4303,7 @@ def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
             "render_qc_blocking": render_qc_blocking if isinstance(render_qc_blocking, bool) else None,
             "youtube_upload_ready": issue is None,
             "youtube_upload_issue": issue,
-            "tiktok_upload_issue": long_tiktok_review_hold(enriched, clip) or issue,
+            "tiktok_upload_issue": issue,
             "automatic_repair_available": automatic_repair_available,
             "monetization_strategy": codex_monetization_strategy(
                 enriched, clip, issue
@@ -4291,6 +4320,8 @@ def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
                 clip.tiktok_series_identity_embedded and not tiktok_strategy_changed
             ),
         }
+        if long_hold:
+            updates["production_qc_brief"] = long_hold
         if (
             isinstance(religious_review, dict)
             and religious_review.get("classification_correction")
@@ -6735,6 +6766,9 @@ def audited_score_floor_short_for_automatic_upload(
 
 def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | None:
     """Return a hard block or a review hold before the Private upload stage."""
+    long_hold = long_upload_review_hold(job, clip)
+    if long_hold:
+        return long_hold
     if job.request.scheduled_news_hot and not clip.is_correct:
         return (
             "News Hot ditahan untuk review manusia: verifikasi fakta, atribusi/opini/tuduhan, "
@@ -9318,6 +9352,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         description=description,
         thumbnail_url=safe_thumbnail_url,
         thumbnail_attached=False,
+        cron_create_missing_playlist=job.request.scheduled_public_source_credit,
         visibility=upload_visibility,
         publish_at=publish_at.isoformat() if publish_at is not None else None,
         cron_private_buffer=cron_private_buffer,
@@ -10329,6 +10364,12 @@ def build_youtube_upload_command(
         command.extend(["--tags", ",".join(upload.tags)])
     if upload.playlist:
         command.extend(["--playlist", upload.playlist])
+        with jobs_lock:
+            source_job = jobs.get(upload.source_job_id)
+        if upload.cron_create_missing_playlist or (
+            source_job is not None and source_job.request.scheduled_public_source_credit
+        ):
+            command.append("--create-missing-playlist")
         if any(line.startswith("Playlist dipilih otomatis dari isi video:") for line in upload.logs):
             command.append("--playlist-resolved")
     if upload.target_channel:
@@ -19808,6 +19849,9 @@ def source_theme_hashtags(
     """Choose truthful hashtags from source semantics instead of a fixed religion set."""
     if theme_key in DRAMA_THEME_PROFILES:
         return drama_hashtags(theme_key, long_form)
+    if theme_key == "history_geography_nusantara":
+        return ["SejarahNusantara", "GeografiIndonesia", "BudayaNusantara",
+                "VideoPanjang" if long_form else "ShortsIndonesia"]
     text = " ".join(
         [
             str(source.get("title") or ""),
@@ -19972,6 +20016,7 @@ def create_auto_viral_clip_job(
         scheduled_public_source_credit=scheduled,
         scheduled_director_effects=scheduled,
         scheduled_news_hot=news_hot,
+        scheduled_theme_key=request.cron_theme_key if scheduled else "",
         scheduled_human_editor=bool(
             scheduled
             and env_bool("AUTO_VIRAL_SCHEDULE_HUMAN_EDITOR_ENABLED", True)
@@ -20084,6 +20129,7 @@ def create_auto_viral_paired_long_job(
         require_creative_commons=request.require_creative_commons,
         auto_upload_youtube=False,
         scheduled_public_source_credit=short_job.request.scheduled_public_source_credit,
+        scheduled_theme_key=short_job.request.scheduled_theme_key,
         scheduled_director_effects=bool(short_job.request.scheduled_director_effects or short_job.request.scheduled_public_source_credit),
         scheduled_human_editor=short_job.request.scheduled_human_editor,
         scheduled_contextual_audio=short_job.request.scheduled_contextual_audio,
@@ -20138,27 +20184,32 @@ def long_qc_context(job: ClipJob, clip: ClipFile) -> dict[str, Any]:
     }
 
 
-def long_tiktok_review_hold(job: ClipJob, clip: ClipFile) -> str | None:
-    """Explain the Long review hold without treating YouTube success as QC."""
+def long_upload_review_hold(job: ClipJob, clip: ClipFile) -> str | None:
+    """Apply the same persisted Long QC decision to both upload platforms."""
     if job.request.clip_mode != "highlight_5m" or not job.request.publication_review_required:
         return None
     try:
         path = long_qc_path(job.id, clip.url)
         record = json.loads(path.read_text()) if path.exists() else {}
     except (OSError, ValueError):
-        return "Long menunggu pemeriksaan QC sebelum upload TikTok."
+        return "Long menunggu pemeriksaan QC sebelum upload."
     audit = record.get("audit") or {}
     if long_video_qc.terminal_provider_rejection(record):
-        return "Long ditahan: sumber ditolak pemeriksaan konten; tidak dikirim ulang otomatis."
+        return "Long ditahan QC (DROP_SOURCE): sumber ditolak pemeriksaan konten; tidak dikirim ulang otomatis."
     if audit.get("decision") == "DROP_SOURCE":
         if any("caption timing" in str(line).casefold() for line in audit.get("evidence", [])):
             return "Long ditahan QC: waktu subtitle tidak valid atau bertumpuk."
-        return "Long ditahan QC; periksa hasil audit sebelum upload TikTok."
+        return "Long ditahan QC (DROP_SOURCE); periksa hasil audit sebelum upload."
     if audit.get("decision") == "REPAIR_ONCE":
-        return "Long menunggu satu perbaikan sesuai audit QC sebelum upload TikTok."
+        return "Long menunggu satu perbaikan (REPAIR_ONCE) sesuai audit QC sebelum upload."
     if audit.get("decision") != "PASS_UPLOAD" or audit.get("upload_allowed") is not True:
-        return "Long menunggu pemeriksaan QC sebelum upload TikTok."
+        return "Long menunggu pemeriksaan QC sebelum upload."
     return None
+
+
+def long_tiktok_review_hold(job: ClipJob, clip: ClipFile) -> str | None:
+    """Compatibility entry point for callers displaying the TikTok hold."""
+    return long_upload_review_hold(job, clip)
 
 
 def sync_long_qc_decision(job_id: str, audit: dict[str, Any]) -> None:
@@ -20358,6 +20409,29 @@ def paired_short_snapshot(job: ClipJob) -> dict[str, Any]:
     })
 
 
+def reconcile_long_production_attempts(state: dict[str, Any], current_jobs: dict[str, ClipJob]) -> bool:
+    """Recover checkpoints when a restart lost the wrapper's finally block.
+
+    A completed QC audit also proves rendering ended after its job was cleaned
+    up. An unknown missing reservation stays reserved to prevent duplicates.
+    This reconciles render state; it never grants upload or publication QC.
+    """
+    changed = False
+    for attempt in state.get("attempts", []):
+        job = current_jobs.get(attempt.get("job_id"))
+        if job is not None:
+            status, error = job.status, job.error
+        elif (attempt.get("status") in {"queued", "running"}
+              and attempt.get("qc_decision") in {"PASS_UPLOAD", "REPAIR_ONCE", "DROP_SOURCE"}):
+            status, error = "completed", None
+        else:
+            continue
+        if attempt.get("status") != status or attempt.get("error") != error:
+            attempt.update(status=status, error=error)
+            changed = True
+    return changed
+
+
 def run_review_long_job(job_id: str, short_job: ClipJob) -> None:
     try:
         run_job(job_id)
@@ -20383,6 +20457,8 @@ def queue_review_long_once() -> dict[str, Any]:
             return {"status": "disabled"}
         with jobs_lock:
             current_jobs = dict(jobs)
+        if reconcile_long_production_attempts(state, current_jobs):
+            save_long_production_state(state)
         if any(job.status in {"queued", "running"} for job in current_jobs.values()):
             return {"status": "waiting_for_render"}
         with auto_viral_lock:
@@ -25137,6 +25213,16 @@ def set_auto_viral_schedule(
 def get_long_production() -> dict[str, Any]:
     with long_production_lock:
         state = long_production_state()
+    with jobs_lock:
+        current_jobs = dict(jobs)
+    reconcile_long_production_attempts(state, current_jobs)
+    state["active_jobs"] = [
+        {"id": job.id, "status": job.status, "source_title": job.source_title,
+         "progress_percent": job.progress_percent, "progress_stage": job.progress_stage,
+         "progress_detail": job.progress_detail, "updated_at": job.updated_at}
+        for job in current_jobs.values()
+        if job.request.clip_mode == "highlight_5m" and job.status in {"queued", "running"}
+    ]
     records = long_production_path().parent / "long_review_qc"
     state["qc_reviews"] = [json.loads(path.read_text()) for path in sorted(records.glob("*.json"))]
     provider = long_video_qc.provider_config()

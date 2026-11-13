@@ -1,0 +1,66 @@
+{
+  "source_job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+  "media": "backend/outputs/403b1cdef5dd4a669c5af49c40b207f3/menantu-super-kaya-nyamar-penjual-kaki-lima-tes-keluarga-istri-tak-duga-diremehk/clips/resume_cerita_5menit_lilang-sebaiknya-kamu-bangun-dari-mimpi-jangan-b.mp4",
+  "probe": {
+    "programs": [],
+    "streams": [
+      {
+        "codec_type": "video",
+        "width": 1920,
+        "height": 1080
+      },
+      {
+        "codec_type": "audio"
+      }
+    ],
+    "format": {
+      "duration": "293.121875",
+      "size": "252284147"
+    }
+  },
+  "persisted_qc": {
+    "status": "reviewed",
+    "audit": {
+      "schema_version": 1,
+      "source_job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+      "source_clip_url": "/outputs/403b1cdef5dd4a669c5af49c40b207f3/menantu-super-kaya-nyamar-penjual-kaki-lima-tes-keluarga-istri-tak-duga-diremehk/clips/resume_cerita_5menit_lilang-sebaiknya-kamu-bangun-dari-mimpi-jangan-b.mp4",
+      "repair_attempted": false,
+      "decision": "DROP_SOURCE",
+      "confidence": 1.0,
+      "hard_gates": {
+        "rights": true,
+        "media_integrity": true,
+        "meaning_preserved": true,
+        "context_safe": false
+      },
+      "ai_checks": {
+        "hook": null,
+        "standalone_clarity": null,
+        "payoff": null,
+        "caption": null,
+        "crop": null,
+        "visual_quality": null,
+        "audio_quality": null
+      },
+      "evidence": [
+        "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+      ],
+      "repair_instructions": [],
+      "delete_source": true,
+      "upload_allowed": false
+    },
+    "fingerprint": "04aeb6fed7c15a69c2d957e4b7bed3c9c33d056319bcdb62dd93ba9b1c08ac10",
+    "source_job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+    "source_clip_url": "/outputs/403b1cdef5dd4a669c5af49c40b207f3/menantu-super-kaya-nyamar-penjual-kaki-lima-tes-keluarga-istri-tak-duga-diremehk/clips/resume_cerita_5menit_lilang-sebaiknya-kamu-bangun-dari-mimpi-jangan-b.mp4",
+    "updated_at": "2026-11-13T00:30:18.784267+00:00"
+  },
+  "youtube_upload_found": false,
+  "tiktok_upload_confirmed": true,
+  "tiktok_profile_url": "https://www.tiktok.com/@titikbalikislami/video/7707449979572374804",
+  "frontend_proxy_http_status": 502,
+  "frontend_proxy_error": "Backend API is not reachable: All promises were rejected",
+  "source_modified": false,
+  "upload_attempted": false,
+  "qc_provider_retried": false,
+  "runtime_activation_confirmed": false
+}

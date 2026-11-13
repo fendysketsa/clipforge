@@ -101,6 +101,8 @@ def test_hypit_infographic_routes_explicit_visual_explainer_and_preserves_claims
     )
     assert manifest["schema"] == "clipforge-hypit-infographic-v1"
     assert manifest["composition"]["template"] == "infographic"
+    assert manifest["composition"]["watermarkAsset"].startswith("data:image/svg+xml;base64,")
+    assert manifest["composition"]["watermarkBranding"]["animated"] is False
     assert manifest["composition"]["beats"][1]["visual"] == "chip"
     assert manifest["composition"]["beats"][-1]["quizOptions"] == ["DATAR", "TURUN TAJAM"]
     assert manifest["composition"]["beats"][1]["visualSubject"]

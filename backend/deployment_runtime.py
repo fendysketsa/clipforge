@@ -25,6 +25,7 @@ def source_files(root: Path) -> list[Path]:
     for name in ('package.json', 'package-lock.json', 'render.mjs'):
         files.append(remotion / name)
     files.extend((remotion / 'src').rglob('*'))
+    files.extend((root / 'assets' / 'branding').rglob('*'))
     return sorted(path for path in files if path.is_file())
 
 

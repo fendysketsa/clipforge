@@ -1,0 +1,12 @@
+{
+  "checked_at": "2026-11-13T02:34:21.565450+00:00",
+  "job": {
+    "id": "85fde21850f548b4af607f99edca5db5",
+    "status": "running",
+    "progress_percent": 89,
+    "progress_stage": "render",
+    "progress_detail": "Encoding visual, motion, dan subtitle · bagian cerita 10 dari 10",
+    "updated_at": "2026-11-13T02:33:25.698006+00:00",
+    "error": null
+  }
+}

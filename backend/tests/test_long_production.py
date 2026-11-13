@@ -92,6 +92,40 @@ def test_reservation_survives_restart_without_duplicate(setup_long):
     assert api.queue_review_long_once()['status'] == 'reserved'
 
 
+def test_restart_completed_job_repairs_queued_checkpoint_before_cleanup(setup_long):
+    result = api.queue_review_long_once()
+    api.jobs[result['job_id']].status = 'completed'
+    assert api.queue_review_long_once()['status'] == 'daily_target_reached'
+    assert api.long_production_state()['attempts'][0]['status'] == 'completed'
+    api.jobs.clear()
+    assert api.queue_review_long_once()['status'] == 'daily_target_reached'
+
+
+@pytest.mark.parametrize('decision', ['DROP_SOURCE', 'REPAIR_ONCE'])
+def test_cleaned_rejected_render_does_not_leave_an_eternal_reservation(setup_long, decision):
+    day = datetime.now(api.ZoneInfo('Asia/Jakarta')).date().isoformat()
+    state = api.long_production_state()
+    state.update(auto_qc_enabled=True, attempts=[dict(day=day, job_id='old-long',
+        short_job_id='old-short', status='queued', qc_decision=decision)])
+    api.save_long_production_state(state)
+    result = api.queue_review_long_once()
+    assert result['status'] == 'queued'
+    restored = api.long_production_state()['attempts'][0]
+    assert restored['status'] == 'completed' and restored['qc_decision'] == decision
+
+
+def test_long_production_read_reports_live_render_progress_without_mutating_checkpoint(setup_long):
+    result = api.queue_review_long_once()
+    job = api.jobs[result['job_id']]
+    job.status = 'running'; job.progress_percent = 80
+    job.progress_detail = 'bagian cerita 6 dari 10'
+    view = api.get_long_production()
+    assert view['attempts'][0]['status'] == 'running'
+    assert view['active_jobs'][0]['progress_percent'] == 80
+    assert view['active_jobs'][0]['progress_detail'] == 'bagian cerita 6 dari 10'
+    assert api.long_production_state()['attempts'][0]['status'] == 'queued'
+
+
 @pytest.mark.parametrize('change', ['no_rights', 'no_evidence', 'no_candidates', 'existing_pair', 'news'])
 def test_ineligible_sources_are_never_queued(setup_long, change):
     short, run, started = setup_long

@@ -1,0 +1,78 @@
+{
+  "checked_at": "2026-11-13T02:29:55.370124+00:00",
+  "source_sha256": {
+    "backend/api.py": "157d5d5eb46635d3eebcb839cb1d8ca4785a7875963be78ec11ae2d8dda6106e",
+    "backend/clipper.py": "91d0949f539b243afb499ac17db722a86ff450ec06a2ace7b6e8466fd77b5459",
+    "backend/tests/test_long_production.py": "272f4db7618af4a8b8fb105057f878c6fe1fe04011a2c5c9dcf66403ea0cae96",
+    "backend/tests/test_caption_style.py": "d68523aaf0a54f38a2565e07bd794194321bc2c83adcf12b57f8f556cf2f3c80",
+    "frontend/lib/longAutomation.ts": "c982b007af50d38d514d7c8043cac49a401192dfb6864b88bb2d72c648e9d23b",
+    "frontend/lib/apiClient.ts": "4bf26965800553e856e26fb64c627518f2f99d90d2403479f5c99eb5158975f0",
+    "frontend/app/_components/ResultsSection.tsx": "d590c9360fa6474f2861a9a68810d01bb9f044a45e9c31f82bc6a4b695cd0f4b",
+    "frontend/app/page.tsx": "d093f093a3f401b56063fcae1b49882f0aae5a1b7ca7a843892d877057341634",
+    "frontend/tests/longAutomation.test.mjs": "7a8e7af05c32f25b32cefd365c8861a05db9f6185fa4e12fa1ab85a6b13ecb38",
+    "frontend/types/clip.type.ts": "90bc322b8fbf86a9279f58f382c9a95568bed724e5b0535af69d1b61ac715a16"
+  },
+  "backend_tests_passed": 298,
+  "frontend_test_cases_passed": 37,
+  "typescript_passed": true,
+  "production_build_passed": true,
+  "browser_ui_verified": true,
+  "probe_benchmark": {
+    "previous": {
+      "seconds": 16.091,
+      "probe": {
+        "programs": [],
+        "streams": [
+          {
+            "width": 640,
+            "height": 360,
+            "nb_frames": "3"
+          }
+        ],
+        "format": {
+          "duration": "3.000000"
+        }
+      }
+    },
+    "sample_first": {
+      "seconds": 1.33,
+      "probe": {
+        "programs": [],
+        "streams": [
+          {
+            "width": 640,
+            "height": 360,
+            "nb_frames": "3"
+          }
+        ],
+        "format": {
+          "duration": "3.000000"
+        }
+      }
+    },
+    "speedup": 12.1
+  },
+  "new_patch_runtime_activation_confirmed": false,
+  "activation_blocker": "Session cannot access Docker; sudo requires host administrator password. Existing Long render is active and was not interrupted.",
+  "previous_frontend_proxy_fix_runtime_activation_confirmed": true,
+  "runtime_evidence": "runtime.json",
+  "current_progress_evidence": "latest-runtime.json",
+  "remote_replacement_upload_confirmed": false,
+  "browser_ui_verification": "browser-ui-verification.json",
+  "browser_cleanup_note": "Preview assertions passed. One unrelated in-flight GET probe was canceled when its test browser closed.",
+  "build_manifest_verified": true,
+  "expected_frontend_release_id": "8ceea3d241be0b961169da385f400157b62003c4aaf0f064ebaa7a6b73ee8a80",
+  "local_build_id": "mBC1NrFnPxqoQeDkwH1bT",
+  "final_runtime_checked_at": "2026-11-13T02:35:46.283507+00:00",
+  "latest_replacement_status": {
+    "id": "85fde21850f548b4af607f99edca5db5",
+    "status": "running",
+    "progress_percent": 89,
+    "progress_stage": "render",
+    "progress_detail": "Encoding visual, motion, dan subtitle · bagian cerita 10 dari 10",
+    "error": null,
+    "updated_at": "2026-11-13T02:33:25.698006+00:00",
+    "clips": []
+  },
+  "normal_deployment_access_recheck": "sudo -n docker inspect returned: sudo: a password is required"
+}

@@ -284,18 +284,6 @@ const Story = ({shots = [], captionCues = [], watermark = '@ryuundy', captionsEn
         </Sequence>
       ))}
       {captionsEnabled ? <Caption cue={activeCaption}/> : null}
-      <div style={{
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: 28,
-        textAlign: 'center',
-        color: 'rgba(255,255,255,.38)',
-        fontFamily: 'Arial, sans-serif',
-        fontSize: 23,
-        fontStyle: 'italic',
-        textShadow: '0 2px 8px rgba(0,0,0,.7)',
-      }}>{watermark}</div>
     </AbsoluteFill>
   );
 };
@@ -682,7 +670,6 @@ const RankingVideo = ({
           <strong style={{display: 'block', fontSize: 28, lineHeight: 1.08, color: '#D9FFF6'}}>{footer}</strong>
           <span style={{display: 'block', marginTop: 10, fontSize: 17, color: 'rgba(255,255,255,.48)'}}>{sourceNote}</span>
         </div>
-        <span style={{fontSize: 19, color: 'rgba(255,255,255,.38)', whiteSpace: 'nowrap'}}>{watermark}</span>
       </div>
 
       <div style={{position: 'absolute', right: 24, top: 620, display: 'flex', flexDirection: 'column', gap: 12, opacity: finalActive ? 0 : .8}}>
@@ -1440,7 +1427,6 @@ const InfographicVideo = ({
   const editorialHeadlineSize = String(headlineText).length > 52 ? 59 : String(headlineText).length > 39 ? 65 : 72;
   return <AbsoluteFill style={{fontFamily: 'Arial Black, Arial, Helvetica, sans-serif', color: '#fff', overflow: 'hidden'}}>
     {editorialStyle ? <EditorialExplainerBackdrop accent={accent}/> : legacyWinningStyle ? <WinningReelBackdrop accent={accent}/> : <InfographicBackdrop accent={accent}/>} 
-    <div style={{position: 'absolute', left: 42, top: 45, zIndex: 8, fontSize: 17, fontWeight: 900, letterSpacing: '.06em', textShadow: '0 2px 8px rgba(0,0,0,.45)'}}>{watermark}</div>
     <div style={{position: 'absolute', right: 42, top: 45, zIndex: 8, fontSize: 15, fontWeight: 800, opacity: .72}}>{editorialStyle ? 'VISUAL EXPLAINER' : legacyWinningStyle ? 'PATTERN TEST · 39S' : 'INFO · 9:16'}</div>
     <div style={{position: 'absolute', left: 60, right: 60, top: editorialStyle ? 104 : legacyWinningStyle ? 92 : 108, zIndex: 5, textAlign: 'center', opacity: finalActive ? 1 - final : 1}}>
       <div style={{fontSize: 31, lineHeight: 1, fontWeight: 950, letterSpacing: '.02em', color: '#fff', textShadow: '0 4px 12px rgba(0,0,0,.4)', transform: `translateY(${(1 - (beat ? reveal : hookIn)) * -22}px)`}}>{beat?.kicker || 'WAJIB TAHU'}</div>
@@ -1463,11 +1449,25 @@ const InfographicVideo = ({
   </AbsoluteFill>;
 };
 
-const ClipForgeComposition = (props) => props.template === 'ranking'
-  ? <RankingVideo {...props}/>
-  : props.template === 'infographic'
-    ? <InfographicVideo {...props}/>
-    : <Story {...props}/>;
+const ChannelWatermark = ({asset, branding = {}}) => {
+  const {width, height} = useVideoConfig();
+  if (!asset) return null;
+  const size = (branding.size_px || (height > width ? 208 : 216)) * Math.min(width, height) / 1080;
+  return <Img src={asset} aria-label="RYUUNDY" style={{
+    position: 'absolute', width: size, height: size,
+    left: (width - size) / 2, top: (height - size) * .46,
+    pointerEvents: 'none', zIndex: 40,
+  }}/>;
+};
+
+const ClipForgeComposition = (props) => <AbsoluteFill>
+  {props.template === 'ranking'
+    ? <RankingVideo {...props}/>
+    : props.template === 'infographic'
+      ? <InfographicVideo {...props}/>
+      : <Story {...props}/>}
+  <ChannelWatermark asset={props.watermarkAsset} branding={props.watermarkBranding}/>
+</AbsoluteFill>;
 
 const defaultProps = {
   width: 1080,

@@ -1,0 +1,185 @@
+<tp-yt-paper-dialog id="dialog" restore-focus-on-close="" class="inline style-scope ytcp-dialog style-scope ytcp-dialog" aria-labelledby="playlist-creation-dialog-title" style-target="host" role="dialog" tabindex="-1" aria-modal="true" with-backdrop="" style="outline: none; min-width: 576px; max-width: 576px; position: fixed; top: 82px; left: 649px; box-sizing: border-box; max-height: 831px; z-index: 2204;"><!--css-build:shady--><!--css_build_scope:tp-yt-paper-dialog--><!--css_build_styles:video.youtube.src.web.polymer.shared.ui.styles.yt_base_styles.yt.base.styles.css.js,third_party.javascript.youtube_components.tp_yt_paper_dialog.tp.yt.paper.dialog.css.js--><div class="header style-scope ytcp-dialog"><div class="header-content style-scope ytcp-dialog"><div class="header-title style-scope ytcp-playlist-creation-dialog" slot="primary-header" id="playlist-creation-dialog-title">
+    Membuat playlist baru
+  </div><ytcp-icon-button id="close-button" slot="secondary-header" icon="yt-sys-icons:close" track-click="" class="style-scope ytcp-playlist-creation-dialog" tabindex="0" unified="" aria-disabled="false" aria-label="Tutup" role="button"><!--css-build:shady--><!--css_build_scope:ytcp-icon-button--><yt-icon class="remove-defaults style-scope ytcp-icon-button"><!--css-build:shady--><!--css_build_scope:yt-icon--><!--css_build_styles:video.youtube.src.web.polymer.shared.ui.styles.yt_base_styles.yt.base.styles.css.js,video.youtube.src.web.polymer.shared.core.yt_icon.yt.icon.css.js--><span class="yt-icon-shape style-scope yt-icon ytSpecIconShapeHost"><div style="width: 100%; height: 100%; display: block; fill: currentcolor;"><svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" focusable="false" aria-hidden="true" style="pointer-events: none; display: inherit; width: 100%; height: 100%;"><path d="M17.293 5.293 12 10.586 6.707 5.293a1 1 0 10-1.414 1.414L10.586 12l-5.293 5.293a1 1 0 001.414 1.414L12 13.414l5.293 5.293a1 1 0 001.414-1.414L13.414 12l5.293-5.293a1 1 0 10-1.414-1.414Z"></path></svg></div></span></yt-icon><ytcp-tooltip offset="6" suppress-aria-announcement="true" class="style-scope ytcp-icon-button" style="display: none;"></ytcp-tooltip><dom-if restamp="" class="style-scope ytcp-icon-button"></dom-if></ytcp-icon-button></div><tp-yt-paper-progress indeterminate="" class="style-scope ytcp-dialog" hidden="" aria-label="Proses sedang berjalan" role="progressbar" value="0" aria-valuemin="0" aria-valuemax="100" aria-disabled="false"><!--css-build:shady--><!--css_build_scope:tp-yt-paper-progress--><!--css_build_styles:video.youtube.src.web.polymer.shared.ui.styles.yt_base_styles.yt.base.styles.css.js,third_party.javascript.youtube_components.tp_yt_paper_progress.tp.yt.paper.progress.css.js--><div id="progressContainer" class="style-scope tp-yt-paper-progress">
+  <div id="secondaryProgress" class="style-scope tp-yt-paper-progress" hidden="" style="transform: scaleX(0);"></div>
+  <div id="primaryProgress" class="style-scope tp-yt-paper-progress indeterminate" style="transform: scaleX(0);"></div>
+</div>
+</tp-yt-paper-progress></div><div class="content style-scope ytcp-dialog"><div class="content style-scope ytcp-playlist-creation-dialog" slot="content"><div class="dialog-scrim style-scope ytcp-playlist-creation-dialog"></div><ps-dom-if restamp="" class="style-scope ytcp-playlist-creation-dialog"><template is="dom-if"></template></ps-dom-if><ps-dom-if restamp="" class="style-scope ytcp-playlist-creation-dialog"><template is="dom-if"></template></ps-dom-if><ps-dom-if restamp="" class="style-scope ytcp-playlist-creation-dialog"><template is="dom-if"></template></ps-dom-if><ps-dom-if restamp="" class="style-scope ytcp-playlist-creation-dialog"><template is="dom-if"></template></ps-dom-if><ps-dom-if restamp="" class="style-scope ytcp-playlist-creation-dialog"><template is="dom-if"></template></ps-dom-if><ps-dom-if restamp="" class="style-scope ytcp-playlist-creation-dialog"><template is="dom-if"></template></ps-dom-if><ps-dom-if restamp="" class="style-scope ytcp-playlist-creation-dialog"><template is="dom-if"></template></ps-dom-if><ytcp-playlist-metadata-editor class="style-scope ytcp-playlist-creation-dialog"><!--css-build:shady--><!--css_build_scope:ytcp-playlist-metadata-editor--><div class="left-col style-scope ytcp-playlist-metadata-editor"><div class="input-container title style-scope ytcp-playlist-metadata-editor"><ytcp-social-suggestions-textbox id="title-textarea" error-tip-position="bottom" hide-initial-errors="" is-new-line-forbidden="" required="" class="style-scope ytcp-playlist-metadata-editor" label="Judul"><!--css-build:shady--><!--css_build_scope:ytcp-social-suggestions-textbox--><ytcp-form-input-container id="container" class="fill-height style-scope ytcp-social-suggestions-textbox" counter="" label-icon-style="default"><!--css-build:shady--><!--css_build_scope:ytcp-form-input-container--><div id="outer" class="style-scope ytcp-form-input-container"><div id="label" class="style-scope ytcp-form-input-container"><ps-dom-if class="style-scope ytcp-form-input-container"><template is="dom-if"></template></ps-dom-if><span id="label-text" class="style-scope ytcp-form-input-container">Judul (wajib diisi)</span><ps-dom-if class="style-scope ytcp-form-input-container"><template is="dom-if"></template></ps-dom-if></div><ps-dom-if class="style-scope ytcp-form-input-container"><template is="dom-if"></template></ps-dom-if><div id="child-input" class="style-scope ytcp-form-input-container"><div slot="body" id="container-content" class="style-scope ytcp-social-suggestions-textbox">
+    <ytcp-social-suggestion-input id="input" class="fill-height style-scope ytcp-social-suggestions-textbox"><!--css-build:shady--><!--css_build_scope:ytcp-social-suggestion-input--><div id="textbox" slot="input" contenteditable="true" role="textbox" tabindex="0" class="style-scope ytcp-social-suggestions-textbox" aria-disabled="false" aria-required="true" aria-label="Tambahkan judul" aria-invalid="false" style="display: inline-block;"></div>
+</ytcp-social-suggestion-input>
+    
+    <div class="container-bottom style-scope ytcp-social-suggestions-textbox">
+      <dom-if class="style-scope ytcp-social-suggestions-textbox"></dom-if>
+      <dom-if class="style-scope ytcp-social-suggestions-textbox"></dom-if>
+      
+      <div class="char-counter style-scope ytcp-social-suggestions-textbox" role="status">0/150</div>
+    </div>
+  </div></div></div><div id="description" class="style-scope ytcp-form-input-container"></div><ytcp-form-error-tip anchor-selector="#child-input" class="style-scope ytcp-form-input-container" position="top" hidden=""><!--css-build:shady--><!--css_build_scope:ytcp-form-error-tip--><div id="message" role="alert" aria-live="polite" class="style-scope ytcp-form-error-tip">
+  
+  <ps-dom-if class="style-scope ytcp-form-error-tip"><template is="dom-if"></template></ps-dom-if></div><div id="tail" class="style-scope ytcp-form-error-tip"></div></ytcp-form-error-tip><ps-dom-if class="style-scope ytcp-form-input-container"><template is="dom-if"></template></ps-dom-if><ps-dom-if class="style-scope ytcp-form-input-container"><template is="dom-if"></template></ps-dom-if></ytcp-form-input-container>
+
+<ytcp-form-error-tip id="suggestion-form-error-tip" anchor-selector="#container" class="style-scope ytcp-social-suggestions-textbox" position="bottom" hidden=""><!--css-build:shady--><!--css_build_scope:ytcp-form-error-tip--><div id="message" role="alert" aria-live="polite" class="style-scope ytcp-form-error-tip">
+  
+  <ps-dom-if class="style-scope ytcp-form-error-tip"><template is="dom-if"></template></ps-dom-if></div><div id="tail" class="style-scope ytcp-form-error-tip"></div></ytcp-form-error-tip>
+<dom-if class="style-scope ytcp-social-suggestions-textbox"></dom-if>
+<dom-if class="style-scope ytcp-social-suggestions-textbox"></dom-if>
+</ytcp-social-suggestions-textbox></div><ps-dom-if restamp="" class="style-scope ytcp-playlist-metadata-editor"><template is="dom-if"></template></ps-dom-if><div class="input-container description style-scope ytcp-playlist-metadata-editor" id="description-container"><ytcp-social-suggestions-textbox id="description-textarea" class="style-scope ytcp-playlist-metadata-editor" label="Deskripsi"><!--css-build:shady--><!--css_build_scope:ytcp-social-suggestions-textbox--><ytcp-form-input-container id="container" class="fill-height style-scope ytcp-social-suggestions-textbox" counter="" label-icon-style="default"><!--css-build:shady--><!--css_build_scope:ytcp-form-input-container--><div id="outer" class="style-scope ytcp-form-input-container"><div id="label" class="style-scope ytcp-form-input-container"><ps-dom-if class="style-scope ytcp-form-input-container"><template is="dom-if"></template></ps-dom-if><span id="label-text" class="style-scope ytcp-form-input-container">Deskripsi</span><ps-dom-if class="style-scope ytcp-form-input-container"><template is="dom-if"></template></ps-dom-if></div><ps-dom-if class="style-scope ytcp-form-input-container"><template is="dom-if"></template></ps-dom-if><div id="child-input" class="style-scope ytcp-form-input-container"><div slot="body" id="container-content" class="style-scope ytcp-social-suggestions-textbox">
+    <ytcp-social-suggestion-input id="input" class="fill-height style-scope ytcp-social-suggestions-textbox"><!--css-build:shady--><!--css_build_scope:ytcp-social-suggestion-input--><div id="textbox" slot="input" contenteditable="true" role="textbox" tabindex="0" class="style-scope ytcp-social-suggestions-textbox" aria-disabled="false" aria-required="false" aria-label="Tambahkan deskripsi" aria-invalid="false" style="display: inline-block;"></div>
+</ytcp-social-suggestion-input>
+    
+    <div class="container-bottom style-scope ytcp-social-suggestions-textbox">
+      <dom-if class="style-scope ytcp-social-suggestions-textbox"></dom-if>
+      <dom-if class="style-scope ytcp-social-suggestions-textbox"></dom-if>
+      
+      <div class="char-counter style-scope ytcp-social-suggestions-textbox" role="status">0/5000</div>
+    </div>
+  </div></div></div><div id="description" class="style-scope ytcp-form-input-container"></div><ytcp-form-error-tip anchor-selector="#child-input" class="style-scope ytcp-form-input-container" position="top" hidden=""><!--css-build:shady--><!--css_build_scope:ytcp-form-error-tip--><div id="message" role="alert" aria-live="polite" class="style-scope ytcp-form-error-tip">
+  
+  <ps-dom-if class="style-scope ytcp-form-error-tip"><template is="dom-if"></template></ps-dom-if></div><div id="tail" class="style-scope ytcp-form-error-tip"></div></ytcp-form-error-tip><ps-dom-if class="style-scope ytcp-form-input-container"><template is="dom-if"></template></ps-dom-if><ps-dom-if class="style-scope ytcp-form-input-container"><template is="dom-if"></template></ps-dom-if></ytcp-form-input-container>
+
+<ytcp-form-error-tip id="suggestion-form-error-tip" anchor-selector="#container" class="style-scope ytcp-social-suggestions-textbox" position="top" hidden=""><!--css-build:shady--><!--css_build_scope:ytcp-form-error-tip--><div id="message" role="alert" aria-live="polite" class="style-scope ytcp-form-error-tip">
+  
+  <ps-dom-if class="style-scope ytcp-form-error-tip"><template is="dom-if"></template></ps-dom-if></div><div id="tail" class="style-scope ytcp-form-error-tip"></div></ytcp-form-error-tip>
+<dom-if class="style-scope ytcp-social-suggestions-textbox"></dom-if>
+<dom-if class="style-scope ytcp-social-suggestions-textbox"></dom-if>
+</ytcp-social-suggestions-textbox></div><ps-dom-if restamp="" class="style-scope ytcp-playlist-metadata-editor"><template is="dom-if"></template></ps-dom-if><ps-dom-if class="style-scope ytcp-playlist-metadata-editor"><template is="dom-if"></template></ps-dom-if><ps-dom-if class="style-scope ytcp-playlist-metadata-editor"><template is="dom-if"></template></ps-dom-if><ps-dom-if class="style-scope ytcp-playlist-metadata-editor"><template is="dom-if"></template></ps-dom-if><div class="section-label style-scope ytcp-playlist-metadata-editor">Visibilitas dan tata urutan</div><div class="compact-row style-scope ytcp-playlist-metadata-editor"><ytcp-playlist-metadata-visibility id="visibility-selector" class="col input-container style-scope ytcp-playlist-metadata-editor"><!--css-build:shady--><!--css_build_scope:ytcp-playlist-metadata-visibility--><div class="visibility style-scope ytcp-playlist-metadata-visibility"><ytcp-text-dropdown-trigger id="menu-button" label="Visibilitas" track-click="" class="style-scope ytcp-playlist-metadata-visibility" unified="" unified-typography=""><!--css-build:shady--><!--css_build_scope:ytcp-text-dropdown-trigger--><ytcp-dropdown-trigger role="button" class=" has-label style-scope ytcp-text-dropdown-trigger style-scope ytcp-text-dropdown-trigger" tabindex="0"><!--css-build:shady--><!--css_build_scope:ytcp-dropdown-trigger--><iron-a11y-keys keys="enter" class="style-scope ytcp-dropdown-trigger"></iron-a11y-keys>
+
+<div role="button" class="has-label container style-scope ytcp-dropdown-trigger style-scope ytcp-dropdown-trigger">
+  <ps-dom-if restamp="" class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+  <div class="color-marker style-scope ytcp-dropdown-trigger">
+    <div class="color-marker-inner style-scope ytcp-dropdown-trigger" style=""></div>
+  </div>
+  <ps-dom-if restamp="" class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+  <div class="left-container style-scope ytcp-dropdown-trigger">
+    
+      <div class="label-area style-scope ytcp-dropdown-trigger">
+        <div class="label-text style-scope ytcp-dropdown-trigger">Visibilitas</div>
+        <ps-dom-if restamp="" class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+      </div>
+    <ps-dom-if restamp="" class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+    <span class="dropdown-trigger-text style-scope ytcp-text-dropdown-trigger">
+    Publik
+  </span>
+  </div>
+  
+    <div class="right-container style-scope ytcp-dropdown-trigger">
+      <ps-dom-if class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+      
+        <yt-icon id="right-icon" class="right-icon style-scope ytcp-dropdown-trigger"><!--css-build:shady--><!--css_build_scope:yt-icon--><!--css_build_styles:video.youtube.src.web.polymer.shared.ui.styles.yt_base_styles.yt.base.styles.css.js,video.youtube.src.web.polymer.shared.core.yt_icon.yt.icon.css.js--><span class="yt-icon-shape style-scope yt-icon ytSpecIconShapeHost"><div style="width: 100%; height: 100%; display: block; fill: currentcolor;"><svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" focusable="false" aria-hidden="true" style="pointer-events: none; display: inherit; width: 100%; height: 100%;"><path d="M18.707 8.793a1 1 0 00-1.414 0L12 14.086 6.707 8.793a1 1 0 10-1.414 1.414L12 16.914l6.707-6.707a1 1 0 000-1.414Z"></path></svg></div></span></yt-icon>
+      <ps-dom-if class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+    </div>
+  <ps-dom-if class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+
+  
+    <tp-yt-paper-ripple class="style-scope ytcp-dropdown-trigger"><!--css-build:shady--><!--css_build_scope:tp-yt-paper-ripple--><!--css_build_styles:video.youtube.src.web.polymer.shared.ui.styles.yt_base_styles.yt.base.styles.css.js,third_party.javascript.youtube_components.tp_yt_paper_ripple.tp.yt.paper.ripple.css.js--><div id="background" class="style-scope tp-yt-paper-ripple"></div>
+<div id="waves" class="style-scope tp-yt-paper-ripple"></div>
+</tp-yt-paper-ripple>
+  <ps-dom-if class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+</div>
+<ps-dom-if class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+</ytcp-dropdown-trigger></ytcp-text-dropdown-trigger><ytcp-text-menu id="visibility-menu" class="style-scope ytcp-playlist-metadata-visibility" unified=""><!--css-build:shady--><!--css_build_scope:ytcp-text-menu--><tp-yt-paper-dialog id="dialog" style-target="dialog" class="style-scope ytcp-text-menu" role="dialog" tabindex="-1" aria-hidden="true" style="outline: none; display: none;"><!--css-build:shady--><!--css_build_scope:tp-yt-paper-dialog--><!--css_build_styles:video.youtube.src.web.polymer.shared.ui.styles.yt_base_styles.yt.base.styles.css.js,third_party.javascript.youtube_components.tp_yt_paper_dialog.tp.yt.paper.dialog.css.js-->
+  <dom-if restamp="" class="style-scope ytcp-text-menu"></dom-if>
+  <div class="content style-scope ytcp-text-menu">
+    <dom-if restamp="" class="style-scope ytcp-text-menu"></dom-if>
+    <tp-yt-paper-listbox id="paper-list" selectable=".selectable-item" class="style-scope ytcp-text-menu" role="listbox" tabindex="0"><!--css-build:shady--><!--css_build_scope:tp-yt-paper-listbox--><!--css_build_styles:video.youtube.src.web.polymer.shared.ui.styles.yt_base_styles.yt.base.styles.css.js,third_party.javascript.youtube_components.tp_yt_paper_listbox.tp.yt.paper.listbox.css.js-->
+      <dom-repeat as="item" class="style-scope ytcp-text-menu"></dom-repeat>
+      <dom-if restamp="" class="style-scope ytcp-text-menu"></dom-if>
+    
+</tp-yt-paper-listbox>
+  </div>
+
+</tp-yt-paper-dialog>
+</ytcp-text-menu></div></ytcp-playlist-metadata-visibility><ytcp-playlist-metadata-sorting id="metadata-sorting-menu" class="col input-container style-scope ytcp-playlist-metadata-editor"><!--css-build:shady--><!--css_build_scope:ytcp-playlist-metadata-sorting--><div class="sorting style-scope ytcp-playlist-metadata-sorting"><ytcp-text-dropdown-trigger id="menu-button" track-click="" class="style-scope ytcp-playlist-metadata-sorting" unified="" unified-typography=""><!--css-build:shady--><!--css_build_scope:ytcp-text-dropdown-trigger--><ytcp-dropdown-trigger role="button" class=" has-label style-scope ytcp-text-dropdown-trigger style-scope ytcp-text-dropdown-trigger" tabindex="0"><!--css-build:shady--><!--css_build_scope:ytcp-dropdown-trigger--><iron-a11y-keys keys="enter" class="style-scope ytcp-dropdown-trigger"></iron-a11y-keys>
+
+<div role="button" class="has-label container style-scope ytcp-dropdown-trigger style-scope ytcp-dropdown-trigger">
+  <ps-dom-if restamp="" class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+  <div class="color-marker style-scope ytcp-dropdown-trigger">
+    <div class="color-marker-inner style-scope ytcp-dropdown-trigger" style=""></div>
+  </div>
+  <ps-dom-if restamp="" class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+  <div class="left-container style-scope ytcp-dropdown-trigger">
+    
+      <div class="label-area style-scope ytcp-dropdown-trigger">
+        <div class="label-text style-scope ytcp-dropdown-trigger">Urutan video default</div>
+        <ps-dom-if restamp="" class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+      </div>
+    <ps-dom-if restamp="" class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+    <span class="dropdown-trigger-text style-scope ytcp-text-dropdown-trigger">
+    Tanggal dipublikasikan (terbaru)
+  </span>
+  </div>
+  
+    <div class="right-container style-scope ytcp-dropdown-trigger">
+      <ps-dom-if class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+      
+        <yt-icon id="right-icon" class="right-icon style-scope ytcp-dropdown-trigger"><!--css-build:shady--><!--css_build_scope:yt-icon--><!--css_build_styles:video.youtube.src.web.polymer.shared.ui.styles.yt_base_styles.yt.base.styles.css.js,video.youtube.src.web.polymer.shared.core.yt_icon.yt.icon.css.js--><span class="yt-icon-shape style-scope yt-icon ytSpecIconShapeHost"><div style="width: 100%; height: 100%; display: block; fill: currentcolor;"><svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" focusable="false" aria-hidden="true" style="pointer-events: none; display: inherit; width: 100%; height: 100%;"><path d="M18.707 8.793a1 1 0 00-1.414 0L12 14.086 6.707 8.793a1 1 0 10-1.414 1.414L12 16.914l6.707-6.707a1 1 0 000-1.414Z"></path></svg></div></span></yt-icon>
+      <ps-dom-if class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+    </div>
+  <ps-dom-if class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+
+  
+    <tp-yt-paper-ripple class="style-scope ytcp-dropdown-trigger"><!--css-build:shady--><!--css_build_scope:tp-yt-paper-ripple--><!--css_build_styles:video.youtube.src.web.polymer.shared.ui.styles.yt_base_styles.yt.base.styles.css.js,third_party.javascript.youtube_components.tp_yt_paper_ripple.tp.yt.paper.ripple.css.js--><div id="background" class="style-scope tp-yt-paper-ripple"></div>
+<div id="waves" class="style-scope tp-yt-paper-ripple"></div>
+</tp-yt-paper-ripple>
+  <ps-dom-if class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+</div>
+<ps-dom-if class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+</ytcp-dropdown-trigger></ytcp-text-dropdown-trigger><ytcp-text-menu id="sorting-menu" class="style-scope ytcp-playlist-metadata-sorting" unified=""><!--css-build:shady--><!--css_build_scope:ytcp-text-menu--><tp-yt-paper-dialog id="dialog" style-target="dialog" class="style-scope ytcp-text-menu" role="dialog" tabindex="-1" aria-hidden="true" style="outline: none; display: none;"><!--css-build:shady--><!--css_build_scope:tp-yt-paper-dialog--><!--css_build_styles:video.youtube.src.web.polymer.shared.ui.styles.yt_base_styles.yt.base.styles.css.js,third_party.javascript.youtube_components.tp_yt_paper_dialog.tp.yt.paper.dialog.css.js-->
+  <dom-if restamp="" class="style-scope ytcp-text-menu"></dom-if>
+  <div class="content style-scope ytcp-text-menu">
+    <dom-if restamp="" class="style-scope ytcp-text-menu"></dom-if>
+    <tp-yt-paper-listbox id="paper-list" selectable=".selectable-item" class="style-scope ytcp-text-menu" role="listbox" tabindex="0"><!--css-build:shady--><!--css_build_scope:tp-yt-paper-listbox--><!--css_build_styles:video.youtube.src.web.polymer.shared.ui.styles.yt_base_styles.yt.base.styles.css.js,third_party.javascript.youtube_components.tp_yt_paper_listbox.tp.yt.paper.listbox.css.js-->
+      <dom-repeat as="item" class="style-scope ytcp-text-menu"></dom-repeat>
+      <dom-if restamp="" class="style-scope ytcp-text-menu"></dom-if>
+    
+</tp-yt-paper-listbox>
+  </div>
+
+</tp-yt-paper-dialog>
+</ytcp-text-menu></div></ytcp-playlist-metadata-sorting></div><ps-dom-if class="style-scope ytcp-playlist-metadata-editor"><template is="dom-if"></template></ps-dom-if><div class="input-container style-scope ytcp-playlist-metadata-editor" id="language-container"><div class="section-label style-scope ytcp-playlist-metadata-editor">Bahasa</div><ytcp-form-language-input exclude-invalid-languages="" track-click="" use-new-on-change-behavior="" class="style-scope ytcp-playlist-metadata-editor"><!--css-build:shady--><!--css_build_scope:ytcp-form-language-input--><ytcp-form-select use-new-on-change-behavior="" class="style-scope ytcp-form-language-input"><!--css-build:shady--><!--css_build_scope:ytcp-form-select--><ytcp-select class="style-scope ytcp-form-select"><!--css-build:shady--><!--css_build_scope:ytcp-select--><ytcp-text-dropdown-trigger id="trigger" class="style-scope ytcp-select" aria-required="false" unified="" unified-typography=""><!--css-build:shady--><!--css_build_scope:ytcp-text-dropdown-trigger--><ytcp-dropdown-trigger role="button" class="use-placeholder has-label style-scope ytcp-text-dropdown-trigger style-scope ytcp-text-dropdown-trigger" tabindex="0"><!--css-build:shady--><!--css_build_scope:ytcp-dropdown-trigger--><iron-a11y-keys keys="enter" class="style-scope ytcp-dropdown-trigger"></iron-a11y-keys>
+
+<div role="button" class="has-label container style-scope ytcp-dropdown-trigger style-scope ytcp-dropdown-trigger">
+  <ps-dom-if restamp="" class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+  <div class="color-marker style-scope ytcp-dropdown-trigger">
+    <div class="color-marker-inner style-scope ytcp-dropdown-trigger" style=""></div>
+  </div>
+  <ps-dom-if restamp="" class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+  <div class="left-container style-scope ytcp-dropdown-trigger">
+    
+      <div class="label-area style-scope ytcp-dropdown-trigger">
+        <div class="label-text style-scope ytcp-dropdown-trigger">Judul dan deskripsi</div>
+        <ps-dom-if restamp="" class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+      </div>
+    <ps-dom-if restamp="" class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+    <span class="dropdown-trigger-text style-scope ytcp-text-dropdown-trigger">
+    Pilih
+  </span>
+  </div>
+  
+    <div class="right-container style-scope ytcp-dropdown-trigger">
+      <ps-dom-if class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+      
+        <yt-icon id="right-icon" class="right-icon style-scope ytcp-dropdown-trigger"><!--css-build:shady--><!--css_build_scope:yt-icon--><!--css_build_styles:video.youtube.src.web.polymer.shared.ui.styles.yt_base_styles.yt.base.styles.css.js,video.youtube.src.web.polymer.shared.core.yt_icon.yt.icon.css.js--><span class="yt-icon-shape style-scope yt-icon ytSpecIconShapeHost"><div style="width: 100%; height: 100%; display: block; fill: currentcolor;"><svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" focusable="false" aria-hidden="true" style="pointer-events: none; display: inherit; width: 100%; height: 100%;"><path d="M18.707 8.793a1 1 0 00-1.414 0L12 14.086 6.707 8.793a1 1 0 10-1.414 1.414L12 16.914l6.707-6.707a1 1 0 000-1.414Z"></path></svg></div></span></yt-icon>
+      <ps-dom-if class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+    </div>
+  <ps-dom-if class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+
+  
+    <tp-yt-paper-ripple class="style-scope ytcp-dropdown-trigger"><!--css-build:shady--><!--css_build_scope:tp-yt-paper-ripple--><!--css_build_styles:video.youtube.src.web.polymer.shared.ui.styles.yt_base_styles.yt.base.styles.css.js,third_party.javascript.youtube_components.tp_yt_paper_ripple.tp.yt.paper.ripple.css.js--><div id="background" class="style-scope tp-yt-paper-ripple"></div>
+<div id="waves" class="style-scope tp-yt-paper-ripple"></div>
+</tp-yt-paper-ripple>
+  <ps-dom-if class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+</div>
+<ps-dom-if class="style-scope ytcp-dropdown-trigger"><template is="dom-if"></template></ps-dom-if>
+</ytcp-dropdown-trigger></ytcp-text-dropdown-trigger>
+</ytcp-select>
+<ps-dom-if restamp="" class="style-scope ytcp-form-select"><template is="dom-if"></template></ps-dom-if>
+</ytcp-form-select>
+</ytcp-form-language-input></div><ps-dom-if restamp="" class="style-scope ytcp-playlist-metadata-editor"><template is="dom-if"></template></ps-dom-if><ps-dom-if class="style-scope ytcp-playlist-metadata-editor"><template is="dom-if"></template></ps-dom-if><ps-dom-if class="style-scope ytcp-playlist-metadata-editor"><template is="dom-if"></template></ps-dom-if><ps-dom-if restamp="" class="style-scope ytcp-playlist-metadata-editor"><template is="dom-if"></template></ps-dom-if><ps-dom-if class="style-scope ytcp-playlist-metadata-editor"><template is="dom-if"></template></ps-dom-if><ps-dom-if class="style-scope ytcp-playlist-metadata-editor"><template is="dom-if"></template></ps-dom-if><ps-dom-if class="style-scope ytcp-playlist-metadata-editor"><template is="dom-if"></template></ps-dom-if></div><ps-dom-if class="style-scope ytcp-playlist-metadata-editor"><template is="dom-if"></template></ps-dom-if><ps-dom-if class="style-scope ytcp-playlist-metadata-editor"><template is="dom-if"></template></ps-dom-if></ytcp-playlist-metadata-editor></div></div><div class="footer style-scope ytcp-dialog"><div slot="secondary-footer" class="style-scope ytcp-playlist-creation-dialog"><ytcp-button id="create-button" track-click="" type="filled" class="style-scope ytcp-playlist-creation-dialog" disabled="" tabindex="-1" button-style="default" icon-alignment="start" aria-disabled="true"><!--css-build:shady--><!--css_build_scope:ytcp-button--><dom-if class="style-scope ytcp-button"></dom-if><div style="display: contents;" class="style-scope ytcp-button"><ytcp-button-shape><button class="ytcpButtonShapeImplHost ytcpButtonShapeImpl--filled ytcpButtonShapeImpl--size-m ytcpButtonShapeImpl--disabled ytcpButtonShapeImpl--enable-backdrop-filter-experiment" title="" disabled="true" aria-label="Buat" aria-disabled="true" tabindex="0" style=""><div class="ytcpButtonShapeImpl__button-text-content">Buat</div></button></ytcp-button-shape></div></ytcp-button></div></div><ytcp-toast-manager class="style-scope ytcp-dialog" alignment="center" unified=""><!--css-build:shady--><!--css_build_scope:ytcp-toast-manager--><tp-yt-paper-toast id="paper-toast" restore-focus-on-close="" class="style-scope ytcp-toast-manager" aria-hidden="true" style="outline: none; display: none;"><!--css-build:shady--><!--css_build_scope:tp-yt-paper-toast--><!--css_build_styles:video.youtube.src.web.polymer.shared.ui.styles.yt_base_styles.yt.base.styles.css.js,third_party.javascript.youtube_components.tp_yt_paper_toast.tp.yt.paper.toast.css.js--><span id="label" class="style-scope tp-yt-paper-toast"></span>
+
+  <dom-if restamp="" class="style-scope ytcp-toast-manager"></dom-if>
+  <dom-if restamp="" class="style-scope ytcp-toast-manager"></dom-if>
+
+</tp-yt-paper-toast>
+</ytcp-toast-manager><div class="only-visible-for-accessibility style-scope ytcp-dialog" aria-live="polite"></div><dom-if restamp="" class="style-scope ytcp-dialog"></dom-if>
+</tp-yt-paper-dialog>

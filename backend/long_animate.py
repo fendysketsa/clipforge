@@ -30,6 +30,7 @@ import numpy as np
 
 from llm import AIConfig, chat_completion, extract_json
 from islamic_text import islamic_indonesian_tts_text, repair_islamic_asr_text
+from channel_branding import watermark_filter, watermark_metadata
 from remotion_story_renderer import (
     RemotionRenderError,
     render_story_with_remotion,
@@ -6452,10 +6453,7 @@ def render_long_animate(
             )
         if drawtext:
             vf_parts.append(
-                "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf:"
-                "text='@ryuundy':expansion=none:fontcolor=white@0.36:fontsize=28:"
-                "x=(w-text_w)/2:y=(h-text_h)*0.46:borderw=1:bordercolor=black@0.24:"
-                "shadowcolor=black@0.28:shadowx=2:shadowy=2"
+                watermark_filter("vertical_short" if output_height > output_width else "landscape_compilation")
             )
         duration = target_duration
         cut_points: list[float] = []
@@ -6811,6 +6809,11 @@ def render_long_animate(
         "remotion_manifest_path": (
             remotion_manifest_path.name if remotion_manifest_path else None
         ),
+        "channel_watermark": {
+            "enabled": render_engine == "remotion" or drawtext,
+            "text": "RYUUNDY",
+            **watermark_metadata("vertical_short" if output_height > output_width else "landscape_compilation"),
+        },
         "narrative_authoring": {
             "engine": "hypit_script_surface",
             "schema": "@hypit/script@1",

@@ -1,0 +1,15 @@
+{
+  "result": {
+    "id": "7ecaf7f3f07f489b80cd3e1c86afb825",
+    "status": "completed",
+    "upload_confirmed": true,
+    "video_url": "https://www.youtube.com/watch?v=H6pasroRqpE"
+  },
+  "posts": [
+    "http://localhost:8010/api/jobs/069b237c37f44732a208b24ec0e91375/youtube-uploads",
+    "http://localhost:8010/api/jobs/069b237c37f44732a208b24ec0e91375/youtube-uploads/reconcile",
+    "http://127.0.0.1:8010/api/jobs/069b237c37f44732a208b24ec0e91375/youtube-uploads/reconcile"
+  ],
+  "ordinary_post_replayed": false,
+  "new_upload_created": false
+}

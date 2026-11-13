@@ -112,6 +112,7 @@ from clipper import (
     scale_watermark_region,
     score_window,
     watermark_probe_skip_reason,
+    watermark_preview_filter,
     scheduled_social_card_layout_filter,
     scheduled_social_card_layout_profile,
     scheduled_reaction_avatar_layout_filter,
@@ -478,24 +479,17 @@ def test_build_subtitle_style_font_size_clamped():
     assert "FontSize=120" in build_subtitle_style(CaptionStyle(font_size=500))
 
 
-def test_channel_watermark_is_centered_italic_signature_seal():
+def test_channel_watermark_uses_the_real_channel_emblem_without_a_box():
     vertical = channel_watermark_filter("vertical_short")
     landscape = channel_watermark_filter("landscape_compilation")
 
-    assert "text='@ryuundy'" in vertical
+    assert "ryuundy-watermark-v2.svg" in vertical
     assert "FENDY" not in vertical
     assert "FND-" not in vertical
-    assert "DejaVuSans-Oblique.ttf" in vertical
-    assert "color=black@0.28" in vertical
-    assert "color=#D4A017@0.34" in vertical
-    assert "color=#22C55E@0.72" in vertical
-    assert "text='◆'" in vertical
-    assert "fontcolor=white@0.72:fontsize=32" in vertical
-    assert "x='(iw-252)/2':y='(ih-58)*0.46'" in vertical
-    assert "x='((w-252)/2)+52'" in vertical
-    assert "fontcolor=white@0.72:fontsize=26" in landscape
-    assert "x='(iw-218)/2':y='(ih-48)*0.46'" in landscape
-    assert "x='((w-218)/2)+52'" in landscape
+    assert "drawbox" not in vertical
+    assert "scale=208:208" in vertical
+    assert "scale=216:216" in landscape
+    assert "x='(main_w-overlay_w)/2':y='(main_h-overlay_h)*0.46'" in vertical
 
 
 def test_fendy_auditor_identity_is_stable_unique_and_transparent():
@@ -753,6 +747,12 @@ def test_watermark_probe_keeps_plain_single_source_layout_enabled():
     )
 
     assert reason is None
+
+
+def test_watermark_probe_samples_before_expensive_layout_without_changing_its_coordinates():
+    layout = 'scale=1920:1080,gblur=sigma=36,crop=1800:1000:60:40'
+    value = watermark_preview_filter(layout, 640)
+    assert value == f'fps=1,{layout},scale=640:-2:flags=area'
 
 
 def test_bounded_media_command_converts_timeout_to_render_fallback(monkeypatch):

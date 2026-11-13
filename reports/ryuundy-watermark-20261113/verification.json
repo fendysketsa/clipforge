@@ -1,0 +1,141 @@
+{
+  "channel_source": {
+    "channel_id": "UCAOZF9Qzj6DYoXKtLnP4UUQ",
+    "channel_name": "RYUUNDY",
+    "channel_url": "https://www.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ",
+    "owner_urls": [
+      "http://www.youtube.com/@ryuundy88"
+    ],
+    "downloaded_at": "2026-11-13T01:21:14.856916+00:00",
+    "avatar_url": "https://yt3.googleusercontent.com/QH7JhlYBIidAqf1hXuxYeVbw3LBADLVjIVQe_oRC-bSeu18z6mouctNxoKSY6qiWBMb2GOAssXQ=s900-c-k-c0x00ffffff-no-rj",
+    "avatar_sha256": "8def76a43360ad338d723d9a1741bc5b354eaae0508065a5d831132fa75fee4d",
+    "watermark_style_version": 2,
+    "watermark_asset": "ryuundy-watermark-v2.svg",
+    "design": "channel_monogram_champagne_seal",
+    "source_logo_redrawn": false,
+    "reference_logo_copied": false
+  },
+  "tests": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "403",
+      "time": "6.614",
+      "timestamp": "2026-11-13T08:25:44.063960+07:00",
+      "hostname": "fendycnugraha"
+    }
+  ],
+  "source_sha256": {
+    "backend/channel_branding.py": "30f8ff232ad47e89df4d2ac6b1afed7a53f0e5a4930ee8b05d3ebacf7813c60a",
+    "backend/clipper.py": "8a370ce8663f209c67dff17fec3f7f593ed04c8ff98bafeed50f624422b3eda9",
+    "backend/long_animate.py": "d8092c7a1f01685f7c29d2af9113f4688d47f935a16039dc3177d9af28b24c56",
+    "backend/remotion_story_renderer.py": "5c46c418f49143a37209f010fb4d364a75da09849075fe9921435badbdab86c2",
+    "backend/hypit_quick.py": "ee779486bc590464ed5103d3b74b6b62e3a7b7473e2561aacfb820471ac23a9e",
+    "backend/remotion/src/index.jsx": "15e0f76a43c5c0ab72978203236e77cae0279fe016b96740b3201f6cd30ebf21",
+    "backend/deployment_runtime.py": "bb76ded2d7be06d303aabd05f0a321300b13dd31cf5425371c34ceafdee2fc10",
+    "backend/assets/branding/ryuundy-watermark-v2.svg": "1bc210afe8262efd11a321d472809e4826c1121c526f401e22231022c9c78444"
+  },
+  "previews": {
+    "preview-short.mp4": {
+      "sha256": "c76c67ca59f81524fa195d44d0165d96262c17c6c45132ec3ba079244da48af4",
+      "probe": {
+        "programs": [],
+        "streams": [
+          {
+            "width": 1080,
+            "height": 1920,
+            "avg_frame_rate": "60/1",
+            "nb_frames": "300"
+          }
+        ],
+        "format": {
+          "duration": "5.000000"
+        }
+      }
+    },
+    "preview-long.mp4": {
+      "sha256": "ca26e2446cd8cce4b30065443794f0bc758dafb6acbb2f7bf6f8d1f7dd4d08f2",
+      "probe": {
+        "programs": [],
+        "streams": [
+          {
+            "width": 1920,
+            "height": 1080,
+            "avg_frame_rate": "60/1",
+            "nb_frames": "300"
+          }
+        ],
+        "format": {
+          "duration": "5.000000"
+        }
+      }
+    },
+    "preview-remotion.mp4": {
+      "sha256": "4fe99b108cb5d8147410e72c1cd31dbb79cbd9dfde0f3847e7021c6df5e0ef3e",
+      "probe": {
+        "programs": [],
+        "streams": [
+          {
+            "width": 1080,
+            "height": 1920,
+            "avg_frame_rate": "30/1",
+            "nb_frames": "30",
+            "side_data_list": [
+              {}
+            ]
+          }
+        ],
+        "format": {
+          "duration": "1.000000"
+        }
+      }
+    }
+  },
+  "decoded_frames_visually_inspected": true,
+  "runtime_activation_confirmed": false,
+  "docker_image_build_confirmed": false,
+  "activation_blocker": "Docker socket is not accessible; sudo -n docker-compose build backend frontend requires a password.",
+  "publication_attempted": false,
+  "clipper_full_export": {
+    "completed": true,
+    "sha256": "dce2955911e7c913fd777517f1000ad81e1aed5e0249b8303e44e56d16ec313f",
+    "probe": {
+      "programs": [],
+      "streams": [
+        {
+          "codec_type": "video",
+          "width": 1080,
+          "height": 1920
+        },
+        {
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "duration": "25.000000"
+      }
+    },
+    "watermark": {
+      "enabled": true,
+      "text": "RYUUNDY",
+      "auditor": "Fendy",
+      "brand": "Fendy Clipper",
+      "audit_id": "FND-ACF714A50D41",
+      "style_version": 2,
+      "style": "channel_monogram_champagne_seal",
+      "asset": "ryuundy-watermark-v2.svg",
+      "channel_url": "https://www.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ",
+      "position": "center_46_percent",
+      "size_px": 208,
+      "opacity": 0.24,
+      "wordmark_opacity": 0.34,
+      "backplate_opacity": 0.0,
+      "ornament": "original_channel_r_crescent_ring",
+      "animated": false,
+      "source_ownership_claimed": false
+    },
+    "preview_only": true
+  }
+}

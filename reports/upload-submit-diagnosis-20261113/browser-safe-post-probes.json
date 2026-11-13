@@ -1,0 +1,23 @@
+[
+  {
+    "base": "http://127.0.0.1:8010",
+    "status": 404,
+    "url": "http://127.0.0.1:8010/api/jobs/__clipforge_connection_probe_missing__/youtube-uploads/reconcile",
+    "body": "{\"detail\":\"Job not found\"}",
+    "ms": 573
+  },
+  {
+    "base": "http://localhost:8010",
+    "status": 404,
+    "url": "http://localhost:8010/api/jobs/__clipforge_connection_probe_missing__/youtube-uploads/reconcile",
+    "body": "{\"detail\":\"Job not found\"}",
+    "ms": 1217
+  },
+  {
+    "base": "",
+    "status": 404,
+    "url": "http://localhost:8010/api/jobs/__clipforge_connection_probe_missing__/youtube-uploads/reconcile",
+    "body": "{\"detail\":\"Job not found\"}",
+    "ms": 3131
+  }
+]

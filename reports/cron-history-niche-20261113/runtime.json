@@ -1,0 +1,37 @@
+{
+  "checked_at": "2026-11-13T02:40:49.746950+00:00",
+  "cron_playlist_creation_flag_live": false,
+  "health": {
+    "status": "ok"
+  },
+  "job": {
+    "id": "85fde21850f548b4af607f99edca5db5",
+    "status": "completed",
+    "progress_percent": 100,
+    "progress_detail": "Semua hasil siap direview dan diunduh",
+    "error": null
+  },
+  "schedule": {
+    "enabled": true,
+    "scheduler_running": true,
+    "cron_upload_recovery": {
+      "last_tick_at": "2026-11-13T02:40:50.096283+00:00",
+      "queued": {
+        "youtube": 0,
+        "tiktok": 0
+      },
+      "errors": {},
+      "enabled": true
+    }
+  },
+  "previous_long_qc": [
+    {
+      "source_job_id": "85fde21850f548b4af607f99edca5db5",
+      "status": "waiting_for_ai_or_evidence",
+      "audit": null,
+      "upload_id": null,
+      "upload_hold": null,
+      "youtube_worker_error": null
+    }
+  ]
+}

@@ -4467,7 +4467,82 @@ def playlist_dialog_open(page, timeout_ms: int = 1500) -> bool:
     return False
 
 
-def select_playlist(page, playlist: str) -> None:
+def playlist_search_state(page, playlist_name: str) -> str:
+    """Distinguish an absent result from an unavailable/still-loading dialog."""
+    return page.evaluate(
+        """target => {
+          const visible = e => e && e.getBoundingClientRect().width > 0
+            && e.getBoundingClientRect().height > 0;
+          for (const dialog of document.querySelectorAll('ytcp-playlist-dialog')) {
+            const surface = dialog.querySelector('tp-yt-paper-dialog#dialog');
+            if (!visible(surface) || surface.getAttribute('aria-hidden') === 'true') continue;
+            const search = dialog.querySelector('input#search-input');
+            const list = dialog.querySelector('#playlists-list');
+            if (!search || search.value.trim().toLowerCase() !== target || !list) return 'unknown';
+            if ([...dialog.querySelectorAll('[role="progressbar"], tp-yt-paper-spinner')]
+                .some(e => visible(e) && !e.hasAttribute('hidden'))) return 'unknown';
+            const labels = [...list.querySelectorAll('li.row .checkbox-label, li.row .label-text')]
+              .filter(visible).map(e => e.textContent.trim().toLowerCase());
+            return labels.includes(target) ? 'exists' : 'missing';
+          }
+          return 'unknown';
+        }""",
+        playlist_name.strip().lower(),
+    )
+
+
+def create_missing_playlist(page, playlist_name: str) -> None:
+    """Create once in Studio, then require the exact row before continuing.
+
+    Never retry the Create click after an uncertain response. The caller also
+    limits creation to once per upload, so selection failures cannot create
+    multiple playlists with the same name.
+    """
+    if not search_playlist(page, playlist_name):
+        raise UploadError("Pencarian playlist belum tersedia; pembuatan playlist ditahan.")
+    for _ in range(3):
+        state = playlist_search_state(page, playlist_name)
+        if state == "exists":
+            return
+        if state != "missing":
+            raise UploadError("Daftar playlist belum terverifikasi; pembuatan playlist ditahan.")
+        time.sleep(0.5)
+    try:
+        page.locator('ytcp-playlist-dialog .new-playlist-button button').click(timeout=5000)
+        # Current Studio opens a menu that also offers Podcast and Course.
+        # Some variants open the creation form directly.
+        form = page.locator('ytcp-playlist-creation-dialog')
+        if not form.is_visible(timeout=500):
+            page.locator('ytcp-playlist-dialog #action-menu').get_by_role(
+                'menuitem', name=re.compile(r'^(Playlist baru|New playlist)$', re.I)
+            ).click(timeout=5000)
+        form.wait_for(state='visible', timeout=5000)
+        title = form.locator('#title-textarea [contenteditable="true"], #title-textarea textarea').first
+        title.fill(playlist_name, timeout=5000)
+        if title.inner_text(timeout=1000).strip() != playlist_name:
+            raise UploadError("Judul playlist baru belum sesuai niche.")
+        # One submission only; disappearance of the form alone is not proof.
+        form.locator('#create-button button').click(timeout=5000)
+        form.wait_for(state='hidden', timeout=20000)
+        if not playlist_dialog_open(page, timeout_ms=1000):
+            if not open_playlist_dropdown(page, timeout_ms=5000):
+                raise UploadError("Daftar playlist tidak terbuka setelah pembuatan.")
+        search_playlist(page, playlist_name)
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if playlist_search_state(page, playlist_name) == 'exists':
+                log(f"PLAYLIST_CREATED_CONFIRMED: {playlist_name}")
+                return
+            time.sleep(0.4)
+        raise UploadError("Playlist baru belum muncul pada hasil pencarian.")
+    except Exception as exc:
+        raise UploadError(
+            f"Pembuatan playlist '{playlist_name}' belum terkonfirmasi: {exc}. "
+            "Tombol Buat tidak diulang agar tidak membuat duplikat."
+        ) from exc
+
+
+def select_playlist(page, playlist: str, *, create_missing: bool = False) -> None:
     playlist_name = playlist.strip()
     if not playlist_name:
         return
@@ -4475,6 +4550,7 @@ def select_playlist(page, playlist: str) -> None:
     attempts = max(1, min(5, int(os.environ.get("YOUTUBE_PLAYLIST_SELECT_ATTEMPTS", "3"))))
     escaped = re.escape(playlist_name)
     last_error = ""
+    creation_attempted = False
     for attempt in range(1, attempts + 1):
         dismiss_reload_prompt(page)
         log(f"Memilih playlist: {playlist_name} (verifikasi {attempt}/{attempts}).")
@@ -4511,6 +4587,13 @@ def select_playlist(page, playlist: str) -> None:
         if not selected and click_playlist_named(page, playlist_name, timeout_ms=3000):
             time.sleep(0.5)
             selected = playlist_is_selected(page, playlist_name, timeout_ms=2200)
+        if not selected:
+            if create_missing and not creation_attempted and playlist_search_state(page, playlist_name) == "missing":
+                creation_attempted = True
+                log(f"Playlist sesuai niche belum ada; membuat playlist: {playlist_name}.")
+                create_missing_playlist(page, playlist_name)
+                click_playlist_checkbox(page, playlist_name, timeout_ms=4000)
+                selected = playlist_is_selected(page, playlist_name, timeout_ms=2200)
         if not selected:
             last_error = f"Playlist '{playlist_name}' belum berhasil dicentang."
             continue
@@ -7617,7 +7700,7 @@ def run_upload(args: argparse.Namespace) -> None:
                                 f"oleh Studio ({exc}); upload video tetap dilanjutkan."
                             )
 
-            select_playlist(page, args.playlist)
+            select_playlist(page, args.playlist, create_missing=getattr(args, "create_missing_playlist", False))
             if args.made_for_kids:
                 click_text(page, [r"yes,.*made for kids", r"ya,.*anak"], timeout_ms=8000)
             else:
@@ -7995,6 +8078,7 @@ def build_parser() -> argparse.ArgumentParser:
     upload.add_argument("--tags", default="")
     upload.add_argument("--playlist", default=os.environ.get("YOUTUBE_DEFAULT_PLAYLIST", "Islam"))
     upload.add_argument("--playlist-resolved", action="store_true", help="Playlist sudah dipilih dari konteks sumber oleh API.")
+    upload.add_argument("--create-missing-playlist", action="store_true", help="Khusus cron: buat playlist niche bila daftar Studio memastikan belum tersedia.")
     upload.add_argument("--target-channel", default=os.environ.get("YOUTUBE_TARGET_CHANNEL", "ryuundyofficial"))
     upload.add_argument("--target-email", default=DEFAULT_TARGET_EMAIL)
     upload.add_argument("--target-channel-id", default=DEFAULT_TARGET_CHANNEL_ID)

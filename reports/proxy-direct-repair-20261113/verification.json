@@ -1,0 +1,24 @@
+{
+  "source_sha256": {
+    "frontend/lib/backendProxy.ts": "cd9acd020a1518e10c96f90111abe9c3024a8ec39d1b2f5d4ca17ff5ced3f1ac",
+    "frontend/app/api/[...path]/route.ts": "ed2f582a0a3adef84f0fbb17d3d0663ca30d3fc17570a69492ef7c81d3a1ad0d",
+    "frontend/lib/queueSubmission.ts": "9113270d419302bd36f20080c50e73fb25b727485b8bf9d21965087c64a3d302",
+    "frontend/lib/apiClient.ts": "1886adadc55bed06ad37adb28b86186e6fc0cf518fcf314ea4cd5eb296e3a547",
+    "frontend/tests/backendProxy.test.mjs": "02125e48c6a22dac785f308873f81a37def1989ad5756144b14f676833e98ed8"
+  },
+  "tests_passed": true,
+  "proxy_test_count": 5,
+  "submission_test_count": 20,
+  "queue_display_test_count": 3,
+  "typescript_passed": true,
+  "production_build_passed": true,
+  "build_manifest_verified": true,
+  "local_build_id": "DxZKgHbI-F2KPhWWjhcei",
+  "expected_release_id": "7d77726baa053786d7d0325711951742b08dfad00cc9c326cf93e02b0ba00696",
+  "native_chromium_verified": true,
+  "runtime_activation_confirmed": true,
+  "activation_blocker": null,
+  "pending_host_action": null,
+  "activation_evidence": "../cron-long-continuation-20261113/runtime.json",
+  "activation_checked_at": "2026-11-13T02:29:55.370124+00:00"
+}

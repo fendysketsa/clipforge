@@ -4,7 +4,23 @@ type UploadRecord = {
 };
 type Store = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 type Reservation = { baseline: Record<string, string> };
-type Input = { platform: "youtube" | "tiktok"; jobId: string; clipUrl: string; baseUrl: string };
+type Input = { platform: "youtube" | "tiktok"; jobId: string; clipUrl: string; baseUrl: string; fallbackBaseUrls?: string[] };
+
+/** Only loopback aliases refer to the same server; never guess a new host. */
+export function uploadApiBases(configured: string): string[] {
+  const bases = [configured.replace(/\/$/, "")];
+  try {
+    const url = new URL(configured);
+    if (["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) {
+      url.hostname = "127.0.0.1";
+      bases.push(url.toString().replace(/\/$/, ""));
+      url.hostname = "localhost";
+      bases.push(url.toString().replace(/\/$/, ""));
+    }
+  } catch { /* Relative API bases already share the page's origin. */ }
+  bases.push("");
+  return [...new Set(bases)];
+}
 
 /** Recover lost responses through the server's serialized admission check. */
 export function createQueueSubmitter(
@@ -19,6 +35,8 @@ export function createQueueSubmitter(
     const ongoing = active.get(key);
     if (ongoing) return ongoing as Promise<T>;
     const run = async (): Promise<UploadRecord> => {
+      const bases = [...new Set([input.baseUrl, ...(input.fallbackBaseUrls ?? [])])];
+      let preferredBase = input.baseUrl;
       let store: Store | null = null;
       try { store = getStore(); } catch { /* Private-mode storage may be disabled. */ }
       let reservation = reservations.get(key);
@@ -37,16 +55,19 @@ export function createQueueSubmitter(
         try { store?.removeItem(key); } catch { /* Memory reservation is already cleared. */ }
       };
       const read = async () => {
-        try {
-          const response = await fetcher(`${input.baseUrl}/api/${input.platform}/uploads`, {
-            cache: "no-store", signal: AbortSignal.timeout(15_000),
-          });
-          if (!response.ok) throw new Error("Queue unavailable");
-          const rows = await response.json() as UploadRecord[];
-          return rows.filter((row) => !row.dry_run && row.source_job_id === input.jobId && row.clip_url === input.clipUrl);
-        } catch {
-          throw new Error("Koneksi antrean upload belum tersedia. Tunggu koneksi pulih; file tidak dikirim ulang otomatis.");
+        for (const base of [preferredBase, ...bases.filter(base => base !== preferredBase)]) {
+          try {
+            const response = await fetcher(`${base}/api/${input.platform}/uploads`, {
+              cache: "no-store", signal: AbortSignal.timeout(15_000),
+            });
+            if (!response.ok) continue;
+            const rows = await response.json() as UploadRecord[];
+            if (!Array.isArray(rows)) continue;
+            preferredBase = base;
+            return rows.filter((row) => !row.dry_run && row.source_job_id === input.jobId && row.clip_url === input.clipUrl);
+          } catch { /* A GET can safely try another address of this backend. */ }
         }
+        throw new Error("Layanan antrean upload belum dapat dihubungi. Periksa koneksi ke server dan coba lagi.");
       };
       const known = (rows: UploadRecord[]) => rows.find((row) => row.status === "running" || row.status === "queued"
         || row.status === "completed" && row.upload_confirmed);
@@ -58,24 +79,50 @@ export function createQueueSubmitter(
       };
       const payload = JSON.stringify({ clip_url: input.clipUrl,
         ...(input.platform === "tiktok" ? { visibility: "only_you" } : {}) });
-      const endpoint = `${input.baseUrl}/api/jobs/${input.jobId}/${input.platform}-uploads`;
+      const endpointPath = `/api/jobs/${input.jobId}/${input.platform}-uploads`;
+      const platformName = input.platform === "youtube" ? "YouTube" : "TikTok";
       const recoverMissing = async (): Promise<UploadRecord> => {
         // An empty GET does not prove the original request stopped. This
         // endpoint waits for its creation lock and reuses ANY persisted
         // attempt, including failed/Post-unknown records, before admitting one.
-        let response: Response;
-        try {
-          response = await fetcher(`${endpoint}/reconcile`, {
-            method: "POST", headers: { "Content-Type": "application/json" }, body: payload,
-          });
-        } catch {
-          throw new Error("Koneksi pemulihan upload belum tersedia. Catatan pengiriman tetap disimpan; coba lagi setelah koneksi pulih.");
+        let response: Response | undefined;
+        const unavailableBases = new Set<string>();
+        let lastServerResponse: Response | undefined;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (attempt) {
+            await new Promise(resolve => setTimeout(resolve, attempt * 500));
+            const current = await read().catch(() => []);
+            const accepted = known(current) ?? current.find(row => reservation!.baseline[row.id] !== signature(row));
+            if (accepted) return finish(accepted);
+          }
+          const base = [preferredBase, ...bases.filter(base => base !== preferredBase)]
+            .find(base => !unavailableBases.has(base)) ?? preferredBase;
+          try {
+            response = await fetcher(`${base}${endpointPath}/reconcile`, {
+              method: "POST", headers: { "Content-Type": "application/json" }, body: payload,
+              signal: AbortSignal.timeout(90_000),
+            });
+            if (response.status < 500) { preferredBase = base; break; }
+            lastServerResponse = response;
+            unavailableBases.add(base);
+          } catch { response = undefined; unavailableBases.add(base); }
+        }
+        // Even the last lost response may have admitted the request. Check
+        // its durable record once more before reporting a connection failure.
+        if (!response || response.status >= 500) {
+          const current = await read().catch(() => []);
+          const accepted = known(current) ?? current.find(row => reservation!.baseline[row.id] !== signature(row));
+          if (accepted) return finish(accepted);
+        }
+        response ??= lastServerResponse;
+        if (!response) {
+          throw new Error(`Layanan upload ${platformName} belum dapat dihubungi setelah 3 percobaan. Permintaan tetap dicatat agar video tidak terkirim dua kali; periksa antrean sebelum mencoba lagi.`);
         }
         if ([404, 405].includes(response.status)) {
           const detail = await errorMessage(response, "Not Found");
           if (response.status === 405 || detail.trim().toLowerCase() === "not found") {
             // Old backend: do not replay a normal POST or discard the guard.
-            throw new Error("Backend belum mendukung pemulihan pengiriman. Perbarui backend agar upload yang tertahan dapat dilanjutkan dengan aman.");
+            throw new Error("Backend belum mendukung pemeriksaan pengiriman. Perbarui backend agar upload yang tertahan dapat dilanjutkan dengan aman.");
           }
           clear();
           throw new Error(detail);
@@ -85,14 +132,14 @@ export function createQueueSubmitter(
             clear();
             throw new Error(await errorMessage(response, "Upload ditahan pemeriksaan backend."));
           }
-          throw new Error("Pemulihan upload belum selesai. Catatan pengiriman disimpan dan akan diperiksa lagi saat dicoba kembali.");
+          throw new Error(await errorMessage(response, `Layanan upload ${platformName} sedang bermasalah. Permintaan tetap dicatat untuk pemeriksaan berikutnya.`));
         }
         let recovered: UploadRecord;
         try { recovered = await response.json() as UploadRecord; } catch {
-          throw new Error("Respons pemulihan upload terputus. Catatan pengiriman tetap disimpan untuk pemeriksaan berikutnya.");
+          throw new Error("Balasan layanan upload terputus. Permintaan tetap dicatat untuk pemeriksaan berikutnya.");
         }
         if (!recovered || !recovered.id || recovered.source_job_id !== input.jobId || recovered.clip_url !== input.clipUrl) {
-          throw new Error("Identitas hasil pemulihan upload tidak cocok. Pengiriman ditahan untuk mencegah duplikat.");
+          throw new Error("Identitas balasan upload tidak cocok. Pengiriman ditahan untuk mencegah duplikat.");
         }
         return finish(recovered);
       };
@@ -115,9 +162,10 @@ export function createQueueSubmitter(
       };
       let response: Response;
       try {
-        response = await fetcher(endpoint, {
+        response = await fetcher(`${preferredBase}${endpointPath}`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: payload,
+          signal: AbortSignal.timeout(90_000),
         });
       } catch { return reconcile(); }
       if (!response.ok) {

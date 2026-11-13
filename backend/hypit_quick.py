@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from llm import AIConfig, chat_completion, extract_json
+from channel_branding import watermark_data_uri, watermark_metadata
 from article_presenter import article_from_prompt, is_article_presenter_prompt, plan_article_presentation
 from remotion_story_renderer import RENDERER_DIR, RemotionRenderError, validate_hypit_script
 
@@ -2617,6 +2618,8 @@ def _quick_manifest(
             "body": "Tulis pendapatmu, lalu kita lanjut.",
         },
         "watermark": "@ryuundy · HYPIT",
+        "watermarkAsset": watermark_data_uri(),
+        "watermarkBranding": watermark_metadata("vertical_short"),
     }
     if isinstance(plan, HypitInfographicPlan):
         composition = {

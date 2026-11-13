@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Callable, Iterable
+from channel_branding import watermark_data_uri, watermark_metadata
 
 
 class RemotionRenderError(RuntimeError):
@@ -441,6 +442,8 @@ def render_story_with_remotion(
             "scenes": manifest_scenes,
             "captionCues": _caption_cues(storyboard.scenes, fps),
             "watermark": "@ryuundy",
+            "watermarkAsset": watermark_data_uri(),
+            "watermarkBranding": watermark_metadata("vertical_short" if height > width else "landscape_compilation"),
             "captionsEnabled": burn_subtitles,
             "motionDesign": {
                 "deterministic": True,

@@ -1,0 +1,20 @@
+{
+  "results": [
+    {
+      "base": "http://localhost:8010",
+      "status": 200,
+      "body": "{\"status\":\"ok\"}"
+    },
+    {
+      "base": "http://127.0.0.1:8010",
+      "status": 200,
+      "body": "{\"status\":\"ok\"}"
+    },
+    {
+      "base": "",
+      "status": 502,
+      "body": "{\"detail\":\"Backend API is not reachable: All promises were rejected\"}"
+    }
+  ],
+  "failures": []
+}

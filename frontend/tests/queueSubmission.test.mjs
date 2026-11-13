@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createQueueSubmitter } from '../lib/queueSubmission.ts';
+import { createQueueSubmitter, uploadApiBases } from '../lib/queueSubmission.ts';
 
 const input = {platform:'youtube',jobId:'job',clipUrl:'/outputs/job/clip.mp4',baseUrl:'http://api.test'};
 const row = (overrides={}) => ({id:'accepted',source_job_id:'job',clip_url:input.clipUrl,status:'queued',updated_at:'new',...overrides});
@@ -65,8 +65,8 @@ test('an unchanged older failure cannot falsely reconcile a newer uncertain requ
     return json([row({id:'old',status:'failed',updated_at:'old'})]);
   };
   const submit=createQueueSubmitter(fetcher,()=>state,message);
-  await assert.rejects(submit(input),/Koneksi pemulihan/);
-  await assert.rejects(submit(input),/Koneksi pemulihan/);assert.equal(posts,1);
+  await assert.rejects(submit(input),/Layanan upload/);
+  await assert.rejects(submit(input),/Layanan upload/);assert.equal(posts,1);
 });
 
 test('legacy empty reservations recover through serialized admission without another ordinary POST', async () => {
@@ -103,7 +103,7 @@ test('recovery cannot accept a mismatched clip or erase its reservation', async 
   const state=store();state.setItem(`clipforge:upload-request:youtube:job:${input.clipUrl}`,JSON.stringify({baseline:{}}));
   const submit=createQueueSubmitter(async url=>url.endsWith('/reconcile')
     ?json(row({clip_url:'/outputs/someone-else.mp4'})):json([]),()=>state,message);
-  await assert.rejects(submit(input),/Identitas hasil pemulihan/);assert.equal(state.data.size,1);
+  await assert.rejects(submit(input),/Identitas balasan upload/);assert.equal(state.data.size,1);
 });
 
 test('a malformed successful response also recovers through guarded admission', async () => {
@@ -132,5 +132,102 @@ test('queue connection failure does not submit and does not leak Failed to fetch
     if(options.method==='POST')posts++;
     throw new TypeError('Failed to fetch');
   },()=>null,message);
-  await assert.rejects(submit(input),/Koneksi antrean upload belum tersedia/);assert.equal(posts,0);
+  await assert.rejects(submit(input),/Layanan antrean upload belum dapat dihubungi/);assert.equal(posts,0);
+});
+
+test('temporary recovery connection failure retries guarded admission, never the ordinary POST', async () => {
+  let posts=0,recoveries=0;const state=store();
+  const submit=createQueueSubmitter(async (url,options={})=>{
+    if(url.endsWith('/reconcile')) {
+      recoveries++;
+      if(recoveries===1)throw new TypeError('Connection reset');
+      return json(row());
+    }
+    if(options.method==='POST'){posts++;throw new TypeError('Lost response');}
+    return json([]);
+  },()=>state,message);
+  assert.equal((await submit(input)).id,'accepted');
+  assert.equal(posts,1);assert.equal(recoveries,2);assert.equal(state.data.size,0);
+});
+
+test('lost recovery response discovers the accepted row before retrying admission', async () => {
+  let rows=[],posts=0,recoveries=0;
+  const submit=createQueueSubmitter(async (url,options={})=>{
+    if(url.endsWith('/reconcile')){recoveries++;rows=[row()];throw new TypeError('Lost response');}
+    if(options.method==='POST'){posts++;throw new TypeError('Lost response');}
+    return json(rows);
+  },()=>store(),message);
+  assert.equal((await submit(input)).id,'accepted');assert.equal(posts,1);assert.equal(recoveries,1);
+});
+
+test('exhausted recovery identifies the platform and retains the duplicate guard', async () => {
+  const state=store();let recoveries=0;
+  state.setItem(`clipforge:upload-request:youtube:job:${input.clipUrl}`,JSON.stringify({baseline:{}}));
+  const submit=createQueueSubmitter(async url=>{
+    if(url.endsWith('/reconcile')){recoveries++;throw new TypeError('Offline');}
+    return json([]);
+  },()=>state,message);
+  await assert.rejects(submit(input),/YouTube.*3 percobaan/);
+  assert.equal(recoveries,3);assert.equal(state.data.size,1);
+});
+
+test('loopback alternatives are explicit aliases and retain the configured path and port', () => {
+  assert.deepEqual(uploadApiBases('http://localhost:8010'),['http://localhost:8010','http://127.0.0.1:8010','']);
+  assert.deepEqual(uploadApiBases('http://127.0.0.1:8010/'),['http://127.0.0.1:8010','http://localhost:8010','']);
+  assert.deepEqual(uploadApiBases('https://api.example.test'),['https://api.example.test','']);
+  assert.deepEqual(uploadApiBases(''),['']);
+});
+
+test('a broken primary read selects a healthy backend before the one ordinary submission', async () => {
+  const posts=[];
+  const submit=createQueueSubmitter(async (url,options={})=>{
+    if(url.startsWith('http://api.test'))throw new TypeError('Connection refused');
+    if(options.method==='POST'){posts.push(url);return json(row());}
+    return json([]);
+  },()=>store(),message);
+  assert.equal((await submit({...input,fallbackBaseUrls:['http://127.0.0.1:8010']})).id,'accepted');
+  assert.deepEqual(posts,['http://127.0.0.1:8010/api/jobs/job/youtube-uploads']);
+});
+
+test('a failed primary recovery changes address without replaying the normal POST', async () => {
+  const posts=[];const state=store();
+  const submit=createQueueSubmitter(async (url,options={})=>{
+    if(options.method==='POST'){
+      posts.push(url);
+      if(url==='http://127.0.0.1:8010/api/jobs/job/youtube-uploads/reconcile')return json(row());
+      throw new TypeError('Connection reset');
+    }
+    return json([]);
+  },()=>state,message);
+  assert.equal((await submit({...input,fallbackBaseUrls:['http://127.0.0.1:8010']})).id,'accepted');
+  assert.deepEqual(posts,[
+    'http://api.test/api/jobs/job/youtube-uploads',
+    'http://api.test/api/jobs/job/youtube-uploads/reconcile',
+    'http://127.0.0.1:8010/api/jobs/job/youtube-uploads/reconcile',
+  ]);
+  assert.equal(state.data.size,0);
+});
+
+test('a 502 proxy falls back to serialized direct admission even when proxy GET works', async () => {
+  const state=store();const posts=[];
+  state.setItem(`clipforge:upload-request:youtube:job:${input.clipUrl}`,JSON.stringify({baseline:{}}));
+  const submit=createQueueSubmitter(async (url,options={})=>{
+    if(options.method==='POST'){
+      posts.push(url);
+      return url.startsWith('http://127.0.0.1:8010')?json(row()):json({detail:'Backend API is not reachable'},502);
+    }
+    return json([]);
+  },()=>state,message);
+  assert.equal((await submit({...input,baseUrl:'',fallbackBaseUrls:['http://127.0.0.1:8010']})).id,'accepted');
+  assert.deepEqual(posts,['/api/jobs/job/youtube-uploads/reconcile','http://127.0.0.1:8010/api/jobs/job/youtube-uploads/reconcile']);
+});
+
+test('an existing confirmed upload clears a stale reservation without another POST', async () => {
+  const state=store();let posts=0;
+  state.setItem(`clipforge:upload-request:youtube:job:${input.clipUrl}`,JSON.stringify({baseline:{}}));
+  const submit=createQueueSubmitter(async (_url,options={})=>{
+    if(options.method==='POST')posts++;
+    return json([row({status:'completed',upload_confirmed:true})]);
+  },()=>state,message);
+  assert.equal((await submit(input)).status,'completed');assert.equal(posts,0);assert.equal(state.data.size,0);
 });

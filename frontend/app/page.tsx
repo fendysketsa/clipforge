@@ -1860,6 +1860,7 @@ export default function HomePage() {
       >
         <ResultsSection
           clips={job?.clips ?? []}
+          jobs={jobs}
           selectedClipUrls={selectedClipUrls}
           youtubeEnabled={Boolean(youtubeConfig?.enabled)}
           youtubeStatusMessage={[

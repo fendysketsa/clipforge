@@ -42,6 +42,7 @@ from source_rights import (
 from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 from whisper_cache import cached_whisper_model_path
 from metadata_copy import choose_contextual_cta, contextual_engagement_copy
+from channel_branding import watermark_filter, watermark_metadata
 from hypit_quick import (
     hypit_prompt_body,
     is_hypit_infographic_auto_prompt,
@@ -3252,6 +3253,11 @@ def watermark_probe_skip_reason(
     if social_card_selected:
         return "social_card_composite_changes_source_coordinates"
     return None
+
+
+def watermark_preview_filter(source_filter: str, width: int) -> str:
+    """Sample before the costly layout; retain its exact output coordinates."""
+    return f"fps=1,{source_filter},scale={int(width)}:-2:flags=area"
 
 
 def detect_static_watermark_region(
@@ -15350,7 +15356,7 @@ AVAILABLE_FONTS = {
     "Noto Sans": "Noto Sans",
 }
 DEFAULT_FONT = "DejaVu Sans"
-CHANNEL_WATERMARK = "@ryuundy"
+CHANNEL_WATERMARK = "RYUUNDY"
 FENDY_AUDITOR_NAME = "Fendy"
 FENDY_AUDIT_SIGNATURE = "FENDY AUDIT"
 FENDY_PROVENANCE_BRAND = "Fendy Clipper"
@@ -15833,33 +15839,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 def channel_watermark_filter(output_format: str) -> str:
-    """Render a compact signature seal; audit details stay in metadata."""
-    if output_format == "landscape_compilation":
-        font_size, seal_width, seal_height = 26, 218, 48
-    else:
-        font_size, seal_width, seal_height = 32, 252, 58
-    seal_box_x = f"(iw-{seal_width})/2"
-    seal_box_y = f"(ih-{seal_height})*0.46"
-    seal_text_x = f"(w-{seal_width})/2"
-    seal_text_y = f"(h-{seal_height})*0.46"
-    return ",".join(
-        [
-            f"drawbox=x='{seal_box_x}':y='{seal_box_y}':w={seal_width}:h={seal_height}:"
-            "color=black@0.28:t=fill",
-            f"drawbox=x='({seal_box_x})+5':y='({seal_box_y})+5':w={seal_width - 10}:h={seal_height - 10}:"
-            "color=#D4A017@0.34:t=1",
-            f"drawbox=x='({seal_box_x})+13':y='({seal_box_y})+13':w=3:h={seal_height - 26}:"
-            "color=#22C55E@0.72:t=fill",
-            "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
-            "text='◆':expansion=none:fontcolor=#FACC15@0.70:fontsize=16:"
-            f"x='({seal_text_x})+24':y='({seal_text_y})+({seal_height}-text_h)/2'",
-            "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf:"
-            f"text='{CHANNEL_WATERMARK}':expansion=none:"
-            f"fontcolor=white@0.72:fontsize={font_size}:"
-            "borderw=1:bordercolor=black@0.32:shadowcolor=black@0.34:shadowx=1:shadowy=2:"
-            f"x='({seal_text_x})+52':y='({seal_text_y})+({seal_height}-text_h)/2'",
-        ]
-    )
+    """Use the channel's real monogram; audit details stay in metadata."""
+    return watermark_filter(output_format)
 
 
 THUMBNAIL_SYSTEM_PROMPT = (
@@ -18411,7 +18392,7 @@ def export_clip(
                     "0:v:0",
                     "-an",
                     "-vf",
-                    f"{vf},fps=1,scale={preview_scale_width}:-2:flags=area",
+                    watermark_preview_filter(vf, preview_scale_width),
                     "-c:v",
                     "libx264",
                     "-preset",
@@ -18754,14 +18735,10 @@ def export_clip(
             "auditor": FENDY_AUDITOR_NAME,
             "brand": FENDY_PROVENANCE_BRAND,
             "audit_id": auditor_identity["audit_id"],
-            "position": "center_compact_signature_seal",
-            "opacity": 0.72,
-            "backplate_opacity": 0.28,
-            "ornament": "green_gold_geometric",
-            "source_ownership_claimed": False,
+            **watermark_metadata(output_format),
         }
         applied_edits.append(
-            f"Watermark channel {CHANNEL_WATERMARK} dipoles sebagai signature seal hijau-emas yang ringkas dan transparan di tengah; detail audit disimpan di metadata."
+            "Logo R dan bulan sabit asli channel RYUUNDY tampil sebagai emblem champagne transparan di tengah, tanpa kotak gelap atau animasi kedip; detail audit tetap di metadata."
         )
         if output_format == "vertical_short" and subscribe_pulse_planned:
             vf = f"{vf},{shorts_mid_subscribe_pulse_filter(duration, follow_plan=cron_follow_plan)}"

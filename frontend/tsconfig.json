@@ -40,7 +40,15 @@
     ".next-director-recovery/types/**/*.ts",
     ".next-director-recovery/dev/types/**/*.ts",
     ".next-compose-check/types/**/*.ts",
-    ".next-compose-check/dev/types/**/*.ts"
+    ".next-compose-check/dev/types/**/*.ts",
+    ".next-niche-playlist/types/**/*.ts",
+    ".next-niche-playlist/dev/types/**/*.ts",
+    ".next-upload-connection/types/**/*.ts",
+    ".next-upload-connection/dev/types/**/*.ts",
+    ".next-proxy-direct/types/**/*.ts",
+    ".next-proxy-direct/dev/types/**/*.ts",
+    ".next-cron-long/types/**/*.ts",
+    ".next-cron-long/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

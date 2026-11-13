@@ -1,0 +1,38 @@
+{
+  "source_sha256": {
+    "backend/api.py": "e03f6261885c1f46cd9c7680459886f1d8d77cbd03a7da84473e261a67bdb392",
+    "backend/youtube_playlists.py": "51147973d65174937d43f784a2b8ae6ec53e20e3af837767e49d9bb8fe3e67db",
+    "backend/youtube_uploader.py": "d5f7eb55aa69a9dc1d30d50d4439af000b00fcb8a1b5d38e46a8b428dc755bcd",
+    "frontend/lib/queueSubmission.ts": "8181f2f2653cb3ee99ea9208e8392d6fdc5d64b5f66acc4f919f5496871e1a86"
+  },
+  "tests": {
+    "backend": [
+      {
+        "tests": "112",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      }
+    ],
+    "browser": [
+      {
+        "tests": "5",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      }
+    ]
+  },
+  "frontend_queue_tests_passed": true,
+  "frontend_queue_test_cases": 15,
+  "frontend_typecheck_passed": true,
+  "frontend_build_id": "RDrN5UVECSvECwqn2I6UO",
+  "frontend_build_verified": true,
+  "runtime_activation_confirmed": false,
+  "docker_image_build_confirmed": false,
+  "activation_blocker": "Docker socket permission denied; sudo -n docker-compose build backend frontend: a password is required",
+  "remote_playlist_creation_confirmed": false,
+  "live_studio_creation_form_inspected": true,
+  "live_studio_search_verified": false,
+  "live_studio_search_limitation": "Read-only CDP recheck could not reopen the playlist dialog; no playlist was created and no video changes were saved."
+}

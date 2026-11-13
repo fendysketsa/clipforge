@@ -1,0 +1,49 @@
+{
+  "checked_at": "2026-11-13T00:52:36.483926+00:00",
+  "health": {
+    "status": "ok"
+  },
+  "scheduler": {
+    "enabled": true,
+    "scheduler_running": true,
+    "active_run_id": "ad21ce388d7743d5a28942fd80c7c754",
+    "cron_upload_recovery": {
+      "last_tick_at": "2026-11-13T00:52:25.367400+00:00",
+      "queued": {
+        "youtube": 0,
+        "tiktok": 0
+      },
+      "errors": {},
+      "enabled": true
+    }
+  },
+  "active_jobs": [
+    {
+      "id": "85fde21850f548b4af607f99edca5db5",
+      "status": "running",
+      "progress_stage": "transcript",
+      "progress_percent": 30,
+      "progress_detail": "Transkripsi 13% berjalan di CPU",
+      "updated_at": "2026-11-13T00:51:43.406772+00:00",
+      "source_title": "Yuta Mio Main Charlie Charlie Jam 3 Malam Serem Banget | ROBLOX"
+    }
+  ],
+  "active_run": {
+    "id": "ad21ce388d7743d5a28942fd80c7c754",
+    "status": "running",
+    "progress_stage": "fallback_discovery",
+    "progress_detail": null,
+    "updated_at": "2026-11-13T00:51:30.148448+00:00"
+  },
+  "uploads": {
+    "youtube": {
+      "completed": 591,
+      "failed": 110,
+      "cancelled": 2
+    },
+    "tiktok": {
+      "completed": 33,
+      "failed": 25
+    }
+  }
+}

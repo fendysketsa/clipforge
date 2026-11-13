@@ -445,11 +445,27 @@ consequences for people, clear attribution, and a constructive takeaway.
 News outputs remain local for human fact/context/rights review before upload;
 reviewed uploads route to `News`. Failed or cancelled attempts consume their
 daily slot, so the maximum is enforced without forcing weak clips. Main upload
-targets and public release limits remain separate. The `News` playlist must
-exist in Studio; the uploader stops if it cannot confirm its checkbox.
-Use `sudo bash scripts/activate-cron-news-hot.sh` to build the backend, wait for
-active work, preserve runtime settings, and verify activation without stopping
-an active render.
+targets and public release limits remain separate. Uploads reuse the matching
+playlist in Studio. Cron uploads can also create it once when an exact search confirms it is
+missing. Creation must produce the exact playlist row, then its checkbox and
+saved selection must be confirmed before the upload advances. An uncertain
+Create response stops the upload without repeating Create.
+Activate changes with the standard Compose update/rebuild command in the
+deployment section below, after current work finishes.
+
+Cron jobs persist their niche as `scheduled_theme_key`; paired Shorts and Longs
+share it for playlist routing (for example, Drama China, Drama Korea, Gaming,
+Podcast, Sepak Bola, and Sejarah, Geografi & Budaya Nusantara). The history lane
+uses documentary questions about places, trade, colonial decisions and cultural
+heritage, preserving the source's distinction between facts, interpretation and
+myth. It participates in cron rotation; manual discovery keeps its own catalogue.
+Playlist creation permission is persisted on cron upload records and passed as
+`--create-missing-playlist`; manual uploads do not create missing playlists.
+Older/manual jobs retain content-based routing.
+When a queue response is lost, the dashboard retries serialized recovery up to
+three times, checking persisted upload records between attempts. It preserves
+the duplicate guard if recovery remains unavailable and names the affected
+platform in its connection message.
 
 Enable the internal cron-style scheduler in `.env` (restart the backend after
 changing these values):

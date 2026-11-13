@@ -24,10 +24,26 @@ from youtube_playlists import classify_youtube_playlist
         ("Ia beriman pada kemampuannya", "Everythings"),
         ("Kabar terbaru sepak bola", "Everythings"),
         ("", "Everythings"),
+        ("Review dracin: ustadz menasihati keluarga", "Drama China"),
+        ("Ulasan drama Korea tentang pengkhianatan", "Drama Korea"),
+        ("Yuta dikejar hantu di Sakura School Simulator", "Gaming"),
     ],
 )
 def test_topic_routing(text, expected):
     assert classify_youtube_playlist(text) == expected
+
+
+@pytest.mark.parametrize("theme,expected", [
+    ("chinese_drama_story", "Drama China"),
+    ("korean_drama_story", "Drama Korea"),
+    ("family_conflict", "Keluarga dan Rumah Tangga"),
+    ("gaming_story", "Gaming"),
+    ("podcast_conversation", "Podcast"),
+    ("news_hot", "News"),
+    ("history_geography_nusantara", "Sejarah, Geografi & Budaya Nusantara"),
+])
+def test_durable_cron_niche_does_not_depend_on_words_in_dialogue(theme, expected):
+    assert classify_youtube_playlist("Ustadz menasihati tokoh", theme_key=theme) == expected
 
 
 @pytest.fixture
@@ -105,6 +121,42 @@ def test_long_video_uses_gaming_rather_than_folklore_default(upload_context):
     api, job, clip = upload_context
     job.request.clip_mode = "highlight_5m"
     assert api.automatic_long_form_playlist(job, clip, "Petualangan Momon", "#Islam") == "Gaming"
+
+
+def test_short_and_long_use_persisted_niche_when_title_is_generic(upload_context):
+    api, job, clip = upload_context
+    job.request.scheduled_theme_key = "chinese_drama_story"
+    job = api.ClipJob.model_validate(job.model_dump())
+    assert api.automatic_youtube_playlist(job, clip) == "Drama China"
+    assert api.automatic_long_form_playlist(job, clip, "Satu keputusan", "") == "Drama China"
+
+
+def test_history_niche_survives_generic_short_and_long_titles(upload_context):
+    api, job, clip = upload_context
+    job.request.scheduled_theme_key = "history_geography_nusantara"
+    assert api.automatic_youtube_playlist(job, clip) == "Sejarah, Geografi & Budaya Nusantara"
+    assert api.automatic_long_form_playlist(job, clip, "Mengapa demikian?", "") == "Sejarah, Geografi & Budaya Nusantara"
+
+
+@pytest.mark.parametrize("scheduled", [False, True])
+def test_only_cron_persists_playlist_creation_permission_and_cli_flag(upload_context, scheduled):
+    api, job, clip = upload_context
+    job.request.scheduled_public_source_credit = scheduled
+    upload = api.create_youtube_upload_record(job.id, api.YouTubeUploadRequest(clip_url=clip.url))
+    restored = api.YouTubeUploadJob.model_validate(upload.model_dump())
+    assert restored.cron_create_missing_playlist is scheduled
+    assert ("--create-missing-playlist" in api.build_youtube_upload_command(restored)) is scheduled
+    # A cleaned source job cannot remove the durable cron permission.
+    api.jobs.clear()
+    assert ("--create-missing-playlist" in api.build_youtube_upload_command(restored)) is scheduled
+
+
+def test_old_cron_queue_record_inherits_permission_only_from_actual_cron_source(upload_context):
+    api, job, clip = upload_context
+    upload = api.create_youtube_upload_record(job.id, api.YouTubeUploadRequest(clip_url=clip.url))
+    assert not upload.cron_create_missing_playlist
+    job.request.scheduled_public_source_credit = True
+    assert "--create-missing-playlist" in api.build_youtube_upload_command(upload)
 
 
 def test_clip_transcript_routes_generic_title_without_caption_boilerplate(upload_context, monkeypatch):

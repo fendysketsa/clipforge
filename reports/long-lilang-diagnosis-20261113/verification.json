@@ -1,0 +1,22 @@
+{
+  "tests": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "317",
+      "time": "10.971",
+      "timestamp": "2026-11-13T08:55:10.337855+07:00",
+      "hostname": "fendycnugraha"
+    }
+  ],
+  "source_sha256": {
+    "backend/api.py": "1c62adc949b9321de292ebb07a7bfb7163dbbba45c92eefc180cd977554bcbca",
+    "backend/tests/test_long_video_qc.py": "a35cfa0e5402aa3006d307c1ddfc10a845e48c0a02c44b1f45a758224b4b54c8"
+  },
+  "runtime_activation_confirmed": false,
+  "source_preserved": true,
+  "qc_refusal_retried": false,
+  "youtube_upload_attempted": false
+}

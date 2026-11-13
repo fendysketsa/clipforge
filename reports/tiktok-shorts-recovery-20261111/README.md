@@ -1,3 +1,22 @@
+# Verified final outcome
+
+The batch source release is active and matches backend/bot startup and health reports. Two requested Shorts were recovered and are now completed with upload confirmation:
+
+- Only you: https://www.tiktok.com/@titikbalikislami/video/7706903370652585237
+- Public: https://www.tiktok.com/@titikbalikislami/video/7706911979381787925
+
+All eight planned existing-post records were reconciled through exact authenticated Studio ID, full caption and original-privacy verification. No new transfer or Post was made for those eight records. One additional automatically submitted Short hit the same delayed-review confirmation issue during this maintenance; it was also reconciled without another upload:
+
+https://www.tiktok.com/@titikbalikislami/video/7706914706942037269
+
+The retried public Short initially appeared as Only me / Content under review after TikTok accepted the Post. Its local uploader therefore correctly refused to confirm the requested public outcome. After platform review, Studio showed Everyone and the exact-remote verifier reconciled it to completed. No privacy edit was made: the normal privacy menu was inspected and closed, with Everyone already selected. The historical initial failure and browser-busy attempts are retained in execution-result.json for evidence and superseded by reconciliation-result.json, retried-short-confirmed.json and final-confirmed-records.json.
+
+Future cron launches were temporarily paused to let the active upload queues drain and prevent verification starvation. Existing renders/uploads were not cancelled. The original enabled state was restored and enabled=true / scheduler_running=true was confirmed through the live API. Long upload records in the initial snapshot remain unchanged.
+
+One real media group remains held: MOMON PANIK! ATUN jadi BUTA di MINECRAFT, source job b9f424ca5a364685b39c807d47d0b70d, four historical attempts. Its original file and job are missing, and prior Post acceptance has no exact verified outcome. It was not uploaded again. One synthetic test record was excluded. Historical failed sibling attempts remain as history; canonical matching records now carry exact verified remote URLs.
+
+The diagnostic/preparation history below is retained; its earlier activation-pending and reconciliation-pending statements are superseded by this outcome.
+
 # TikTok Shorts recovery, 11 November 2026
 
 Scope: existing TikTok failures excluding all Long media. The initial audit found 28 failed records grouped into 12 paths: 11 real Short files plus one synthetic `upload` / `job` / `clip.mp4` test record. Long records and visibility settings were not changed.

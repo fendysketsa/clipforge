@@ -20,10 +20,11 @@ import {
   Video,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { getOutputUrl } from "../../lib/apiClient";
+import { getOutputUrl, getLongProductionStatus } from "../../lib/apiClient";
+import { longAutomationForClip, type LongProductionSnapshot } from "../../lib/longAutomation";
 import { VIRAL_QUALITY_FLOOR } from "../../lib/constants";
 import { clipDisplayTitle, handleCopyTitle, handleDownload } from "../../lib/utils";
-import type { ClipFile, TikTokUploadJob, YouTubeUploadJob } from "../../types/clip.type";
+import type { ClipFile, ClipJob, TikTokUploadJob, YouTubeUploadJob } from "../../types/clip.type";
 import { uploadQueuePosition } from "../../lib/uploadQueue";
 import { tiktokAutomaticRetryLabel, tiktokUploadForClip } from "../../lib/tiktokRetry";
 
@@ -38,6 +39,7 @@ const CLEANUP_ITEMS = [
 ];
 type ResultsSectionProps = {
   clips: ClipFile[];
+  jobs: ClipJob[];
   selectedClipUrls: string[];
   youtubeEnabled: boolean;
   youtubeStatusMessage: string;
@@ -314,6 +316,7 @@ function uploadCleanupProgress(upload: YouTubeUploadJob, now: number) {
 
 export function ResultsSection({
   clips,
+  jobs,
   selectedClipUrls,
   youtubeEnabled,
   youtubeStatusMessage,
@@ -349,6 +352,20 @@ export function ResultsSection({
   onToggleClipCorrect,
 }: ResultsSectionProps) {
   const [uploadStatusNow, setUploadStatusNow] = useState(() => Date.now());
+  const [longProduction, setLongProduction] = useState<LongProductionSnapshot | null>(null);
+  const hasLongOutput = clips.some(clip => /^(resume_cerita_|highlight_5menit_|long_animate_)/i.test(clip.name));
+  const jakartaDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const allClipsHeldByLongQc = clips.length > 0 && clips.every(clip => longAutomationForClip(clip.url, longProduction, jobs, jakartaDay)?.hold);
+  useEffect(() => {
+    if (!hasLongOutput) return;
+    let disposed = false;
+    const refresh = () => getLongProductionStatus()
+      .then(value => { if (!disposed) setLongProduction(value); })
+      .catch(() => undefined);
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 10_000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [hasLongOutput]);
   const [refreshingPerformanceId, setRefreshingPerformanceId] = useState<string | null>(null);
   const [savingFeedMetricsId, setSavingFeedMetricsId] = useState<string | null>(null);
   const [feedMetricDrafts, setFeedMetricDrafts] = useState<Record<string, {
@@ -453,7 +470,7 @@ export function ResultsSection({
                 type="button"
                 onClick={onUploadAllToYouTube}
                 className="uiButton uiButton--youtube"
-                disabled={!youtubeEnabled}
+                disabled={!youtubeEnabled || allClipsHeldByLongQc}
                 title={
                   youtubeEnabled
                     ? youtubeUploadAllAboveTarget
@@ -721,7 +738,13 @@ export function ResultsSection({
 
       {clips.length ? (
         <div className="clipGrid">
-          {clips.map((clip) => {
+          {clips.map((originalClip) => {
+            const longAutomation = longAutomationForClip(originalClip.url, longProduction, jobs, jakartaDay);
+            const clip = longAutomation?.hold ? { ...originalClip,
+              youtube_upload_ready: false, youtube_upload_issue: longAutomation.reason,
+              tiktok_upload_issue: longAutomation.reason, production_qc_brief: longAutomation.reason,
+              automatic_repair_available: false,
+            } : originalClip;
             const title = clipDisplayTitle(clip);
             const url = getOutputUrl(clip.url);
             const isSelected = selectedClipUrls.includes(clip.url);
@@ -953,6 +976,12 @@ export function ResultsSection({
                     <span>Salin judul</span>
                   </button>
                 </div>
+                {longAutomation ? (
+                  <div className="clipMetrics" role="status">
+                    <span className={`clipMetric${longAutomation.hold ? " clipMetric--blocked" : ""}`}>{longAutomation.reason}</span>
+                    {longAutomation.next ? <span className="clipMetric">{longAutomation.next}</span> : null}
+                  </div>
+                ) : null}
                 {growthReadiness || clip.context_recut_required || (isLongForm && clip.thumbnail_url) ? (
                   <div className="clipMetrics">
                     {growthReadiness ? (

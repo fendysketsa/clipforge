@@ -10,6 +10,8 @@ import pytest
 import api
 import long_video_qc as qc
 
+ORIGINAL_YOUTUBE_PREFLIGHT = api.youtube_monetization_preflight_issue
+
 
 @pytest.fixture(autouse=True)
 def isolate_provider_credentials(monkeypatch, tmp_path):
@@ -381,6 +383,35 @@ def test_long_hold_display_explains_caption_failure(tiktok_long):
         evidence=['Invalid or overlapping output caption timing'])
     api.save_long_qc(api.long_qc_path(job.id, job.clips[0].url), dict(status='reviewed', audit=audit))
     assert 'subtitle' in api.long_tiktok_review_hold(job, job.clips[0])
+
+
+def test_terminal_long_qc_blocks_youtube_even_when_manual_review_is_checked(tiktok_long, monkeypatch):
+    job, _, _, _, audit = tiktok_long
+    clip = job.clips[0]
+    clip.is_correct = True
+    audit.update(decision='DROP_SOURCE', upload_allowed=False,
+        hard_gates={**audit['hard_gates'], 'context_safe': False},
+        evidence=['AI provider explicitly declined this source during content safety screening.'])
+    api.save_long_qc(api.long_qc_path(job.id, clip.url), dict(status='reviewed', audit=audit))
+    assert 'DROP_SOURCE' in ORIGINAL_YOUTUBE_PREFLIGHT(job, clip)
+    assert api.long_upload_review_hold(job, clip) == api.long_tiktok_review_hold(job, clip)
+
+
+def test_display_exposes_long_qc_hold_instead_of_false_youtube_ready(tiktok_long, monkeypatch):
+    job, _, _, _, audit = tiktok_long
+    audit.update(decision='DROP_SOURCE', upload_allowed=False,
+        hard_gates={**audit['hard_gates'], 'context_safe': False},
+        evidence=['AI provider explicitly declined this source during content safety screening.'])
+    api.save_long_qc(api.long_qc_path(job.id, job.clips[0].url), dict(status='reviewed', audit=audit))
+    for name in ['enrich_job_source_metadata', 'enrich_job_codex_feedback',
+                 'enrich_job_clip_titles', 'enrich_job_director_recovery', 'attach_job_telemetry']:
+        monkeypatch.setattr(api, name, lambda item: item)
+    display = api.enrich_job_for_display(job).clips[0]
+    assert display.youtube_upload_ready is False
+    assert 'DROP_SOURCE' in display.youtube_upload_issue
+    assert display.tiktok_upload_issue == display.youtube_upload_issue
+    assert display.production_qc_brief == display.youtube_upload_issue
+    assert display.automatic_repair_available is False
 
 
 def test_changed_media_during_platform_setup_cannot_enter_tiktok(tiktok_long, monkeypatch):

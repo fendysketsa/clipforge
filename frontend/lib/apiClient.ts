@@ -17,10 +17,19 @@ import type {
   YouTubeLoginStatus,
   YouTubeUploadJob,
 } from "../types/clip.type";
-import { createQueueSubmitter } from "./queueSubmission";
+import { createQueueSubmitter, uploadApiBases } from "./queueSubmission";
+import type { LongProductionSnapshot } from "./longAutomation";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8010";
 const CLIENT_API_BASE = API_BASE;
+
+export const getLongProductionStatus = async (): Promise<LongProductionSnapshot> => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/automation/viral-cc/long-production`, {
+    cache: "no-store", signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new Error("Status cron Long belum tersedia");
+  return response.json();
+};
 
 export type LocalLlmProvider = {
   label: string;
@@ -500,7 +509,8 @@ export const syncYouTubeCdpSession = async () => {
 };
 
 export const createYouTubeUpload = async (jobId: string, clipUrl: string) => {
-  return submitQueuedUpload<YouTubeUploadJob>({ platform: "youtube", jobId, clipUrl, baseUrl: CLIENT_API_BASE });
+  const [baseUrl, ...fallbackBaseUrls] = uploadApiBases(CLIENT_API_BASE);
+  return submitQueuedUpload<YouTubeUploadJob>({ platform: "youtube", jobId, clipUrl, baseUrl, fallbackBaseUrls });
 };
 
 export const createYouTubeUploadBatch = async (jobId: string, clipUrls: string[] = [], bestCount = 3) => {
@@ -516,7 +526,8 @@ export const createYouTubeUploadBatch = async (jobId: string, clipUrls: string[]
 };
 
 export const createTikTokUpload = async (jobId: string, clipUrl: string) => {
-  return submitQueuedUpload<TikTokUploadJob>({ platform: "tiktok", jobId, clipUrl, baseUrl: CLIENT_API_BASE });
+  const [baseUrl, ...fallbackBaseUrls] = uploadApiBases(CLIENT_API_BASE);
+  return submitQueuedUpload<TikTokUploadJob>({ platform: "tiktok", jobId, clipUrl, baseUrl, fallbackBaseUrls });
 };
 
 export const createTikTokUploadBatch = async (jobId: string, clipUrls: string[] = [], bestCount = 2) => {

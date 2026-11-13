@@ -4,7 +4,7 @@
     "queued_at": "2026-11-11T13:53:20.995703+00:00",
     "auto_retry_count": 2,
     "auto_retry_at": null,
-    "auto_retry_reason": "restart_before_post_revalidated",
+    "auto_retry_reason": "",
     "auto_retry_original_caption": null,
     "submission_started": true,
     "submission_accepted": true,
@@ -13,19 +13,19 @@
     "source_job_id": "41f39b2a11e241b7bc1b798d2b88d5fc",
     "clip_url": "/outputs/41f39b2a11e241b7bc1b798d2b88d5fc/yuta-mio-dan-baby-celine-terjebak-didalam-rumah-tok-dalang-roblox/clips/clip_01_nanti-kalau-kelamaan-kita-bisa-ketinggalan-bis-lagi.mp4",
     "clip_name": "clip_01_nanti-kalau-kelamaan-kita-bisa-ketinggalan-bis-lagi.mp4",
-    "status": "running",
+    "status": "completed",
     "created_at": "2026-11-11T09:48:33.855710+00:00",
-    "updated_at": "2026-11-11T13:54:43.660064+00:00",
+    "updated_at": "2026-11-11T14:15:42.104299+00:00",
     "started_at": "2026-11-11T13:53:23.378994+00:00",
-    "finished_at": null,
-    "duration_seconds": null,
+    "finished_at": "2026-11-11T13:59:47.865571+00:00",
+    "duration_seconds": 384.49,
     "caption": "Bahas momennya: Kalau kamu yang bermain, strategi apa yang akan kamu ubah?\n\nSimak konteks dan akhir penjelasannya.\n\nIkuti untuk klip dengan tema serupa.\n\n#CeritaIndonesia #PenjelasanSingkat\n\nSumber: Dunia Farash ROBLOX — Yuta, Mio Dan Baby Celine Terjebak Didalam Rumah Tok Dalang || ROBLOX\nhttps://www.youtube.com/watch?v=7FsANvkwVdQ",
     "visibility": "public",
     "target_handle": "titikbalikislami",
     "target_email": "fendycn88@gmail.com",
     "dry_run": false,
-    "profile_url": null,
-    "upload_confirmed": false,
+    "profile_url": "https://www.tiktok.com/@titikbalikislami/video/7706911979381787925",
+    "upload_confirmed": true,
     "clip_sha256": "80d637da9555d58be93b3d81f731152a95d3674e571c9754c31d0d899575bd6a",
     "series_id": "cerita_umum",
     "series_label": "Cerita & Penjelasan",
@@ -86,10 +86,138 @@
       "Tombol Post diklik setelah privasi public terverifikasi.",
       "POST_CONFIRMATION_DIALOG_ACCEPTED:Continue to post? The copyright check is incomplete. Posting your video now will stop the check. We're still checking your video for potential issues. Do you want to continue posting before the check is complete? Cancel Post now",
       "POST_API_ACCEPTED:https://www.tiktok.com/tiktok/web/project/post/v1/",
-      "POST_SUBMISSION_SETTLED:TikTok membuka daftar Posts."
+      "POST_SUBMISSION_SETTLED:TikTok membuka daftar Posts.",
+      "USER_ERROR:TikTok tidak menampilkan video baru di Studio Posts setelah tombol Post diklik. Status tidak ditandai berhasil; periksa daftar Posts sebelum mencoba ulang.",
+      "REMOTE_POST_RECONCILED:https://www.tiktok.com/@titikbalikislami/video/7706911979381787925",
+      "ID, caption lengkap dan privasi terverifikasi di Studio; tidak ada transfer atau Post baru."
     ],
     "error": null
   },
-  "verified": [],
-  "verification_errors": []
+  "verified": [
+    {
+      "id": "8c6a17ff099e44189b7704ce9fed44f7",
+      "status": "completed",
+      "upload_confirmed": true,
+      "profile_url": "https://www.tiktok.com/@titikbalikislami/video/7706778926332251393",
+      "visibility": "only_you"
+    },
+    {
+      "id": "0ea19ab252a040f5ba55daf94d8d64c7",
+      "status": "completed",
+      "upload_confirmed": true,
+      "profile_url": "https://www.tiktok.com/@titikbalikislami/video/7706787118877609237",
+      "visibility": "public"
+    },
+    {
+      "id": "406bd8430a854c1786b499b0237170fe",
+      "status": "completed",
+      "upload_confirmed": true,
+      "profile_url": "https://www.tiktok.com/@titikbalikislami/video/7706571020089429269",
+      "visibility": "public"
+    },
+    {
+      "id": "7f622739c51c4859aa2f90add61ecd67",
+      "status": "completed",
+      "upload_confirmed": true,
+      "profile_url": "https://www.tiktok.com/@titikbalikislami/video/7706416860450868501",
+      "visibility": "only_you"
+    },
+    {
+      "id": "cfd628e633f5494aa8ae260c9f383e1c",
+      "status": "completed",
+      "upload_confirmed": true,
+      "profile_url": "https://www.tiktok.com/@titikbalikislami/video/7706416266482896148",
+      "visibility": "only_you"
+    },
+    {
+      "id": "52e909e7468d4912801848664e40d333",
+      "status": "completed",
+      "upload_confirmed": true,
+      "profile_url": "https://www.tiktok.com/@titikbalikislami/video/7706415757357272340",
+      "visibility": "only_you"
+    },
+    {
+      "id": "2cb6e0efa3f64065b6be1d92580f326c",
+      "status": "completed",
+      "upload_confirmed": true,
+      "profile_url": "https://www.tiktok.com/@titikbalikislami/video/7706311648990235925",
+      "visibility": "public"
+    },
+    {
+      "id": "32bc654ad2ff43968b734cae17aa9389",
+      "status": "completed",
+      "upload_confirmed": true,
+      "profile_url": "https://www.tiktok.com/@titikbalikislami/video/7706311356974320917",
+      "visibility": "public"
+    }
+  ],
+  "finished_at": "2026-11-11T14:18:36.228835+00:00",
+  "initial_busy_verification_attempts": [
+    {
+      "upload_id": "8c6a17ff099e44189b7704ce9fed44f7",
+      "status": 409,
+      "detail": "{\"detail\":\"Browser sedang dipakai upload; verifikasi ditunda.\"}"
+    },
+    {
+      "upload_id": "0ea19ab252a040f5ba55daf94d8d64c7",
+      "status": 409,
+      "detail": "{\"detail\":\"Browser sedang dipakai upload; verifikasi ditunda.\"}"
+    },
+    {
+      "upload_id": "406bd8430a854c1786b499b0237170fe",
+      "status": 409,
+      "detail": "{\"detail\":\"Browser sedang dipakai upload; verifikasi ditunda.\"}"
+    },
+    {
+      "upload_id": "7f622739c51c4859aa2f90add61ecd67",
+      "status": 409,
+      "detail": "{\"detail\":\"Browser sedang dipakai upload; verifikasi ditunda.\"}"
+    },
+    {
+      "upload_id": "cfd628e633f5494aa8ae260c9f383e1c",
+      "status": 409,
+      "detail": "{\"detail\":\"Browser sedang dipakai upload; verifikasi ditunda.\"}"
+    },
+    {
+      "upload_id": "52e909e7468d4912801848664e40d333",
+      "status": 409,
+      "detail": "{\"detail\":\"Browser sedang dipakai upload; verifikasi ditunda.\"}"
+    },
+    {
+      "upload_id": "2cb6e0efa3f64065b6be1d92580f326c",
+      "status": 409,
+      "detail": "{\"detail\":\"Browser sedang dipakai upload; verifikasi ditunda.\"}"
+    },
+    {
+      "upload_id": "32bc654ad2ff43968b734cae17aa9389",
+      "status": 409,
+      "detail": "{\"detail\":\"Browser sedang dipakai upload; verifikasi ditunda.\"}"
+    }
+  ],
+  "verification_errors": [],
+  "additional_reconciliation": {
+    "id": "0bf6109a25874c0fb31019d8beb55cb8",
+    "status": "completed",
+    "profile_url": "https://www.tiktok.com/@titikbalikislami/video/7706914706942037269",
+    "visibility": "public",
+    "upload_confirmed": true
+  },
+  "blocked": [
+    {
+      "upload_ids": [
+        "583000a30142427cade21d8d9d332db7",
+        "ba61438a0f2e4a27804ab102a6cc44d6",
+        "0abf129145a54e7186f8e095188ad9ef",
+        "aee89716f6b040ccab195408c1fa65d2"
+      ],
+      "clip_url": "/outputs/b9f424ca5a364685b39c807d47d0b70d/momon-panik-atun-jadi-buta-di-minecraft/clips/clip_01_ada-telepon-sebentar-ya-halo-pak-presiden-hah.mp4",
+      "reason": "local job and media missing; a prior Post was accepted but no exact current remote match was verified"
+    },
+    {
+      "upload_ids": [
+        "upload"
+      ],
+      "reason": "synthetic test record; no real job or media"
+    }
+  ]
 }

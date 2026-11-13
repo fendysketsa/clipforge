@@ -264,6 +264,7 @@ export type ClipJob = {
   error: string | null;
   telemetry?: JobTelemetry | null;
   request: {
+    publication_review_required?: boolean;
     url: string;
     source_file: string;
     script_text: string;

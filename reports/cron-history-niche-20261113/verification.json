@@ -1,0 +1,41 @@
+{
+  "checked_at": "2026-11-13T02:42:57.450652+00:00",
+  "source_sha256": {
+    "backend/api.py": "047e87d3e5638952e2de2c2dc032164a300c3b075606b537b64087e1de22e54b",
+    "backend/youtube_playlists.py": "dc280f359f8bd259d088b01dd162a49e630590068f115f498f659929d1bf3335",
+    "backend/youtube_uploader.py": "4261648d0b5d6c6fe105e4d62cd9dee026d5bf5415c9be98c9bde7ca596c0a0f",
+    "backend/tests/test_cron_history_niche.py": "5f6a2253d62e0e43150559f8520a2a11c84e8cd033335365ee5c3b8a787fd9b3",
+    "backend/tests/test_youtube_playlist_routing.py": "a06910f557ec76e0357bffddc8b69156ad7c383bc094a84835ba6874d7aa207a",
+    "backend/tests/test_youtube_playlist_creation_browser.py": "afdb914048e08e67114bc38c1c4daa9c3a4d601b9913e2906ad9a47abbc39838",
+    "README.md": "a62e3716c265131aa16894a08c4f1fd0d5fd71d403538c62bb58e6bdee30fa33"
+  },
+  "theme_key": "history_geography_nusantara",
+  "playlist": "Sejarah, Geografi & Budaya Nusantara",
+  "scope": "cron only",
+  "tests": {
+    "tests.xml": {
+      "tests": 195,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "browser-tests.xml": {
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "cron-api-regression-tests.xml": {
+      "tests": 58,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "runtime_activation_confirmed": false,
+  "remote_playlist_created": false,
+  "activation_blocker": "Docker unavailable to this session; sudo requires host administrator password.",
+  "expected_backend_release_id": "43d4aa2846d10340ed9ec83db399781025d9ec96cdf137c9ddbd72f5650fa7c3",
+  "total_passed": 260,
+  "broad_api_run": "Interrupted at unrelated storyboard stream; not counted as passing."
+}

@@ -109,6 +109,7 @@ def test_real_short_and_long_requests_carry_truthful_drama_metadata(monkeypatch,
     assert len(captured)==2
     assert captured[0].clip_mode=='short' and captured[1].clip_mode=='highlight_5m'
     for job in captured:
+        assert api.ClipJobRequest.model_validate(job.model_dump()).scheduled_theme_key == lane
         assert 'CeritaFiksi' in job.required_hashtags
         assert not any(tag in job.required_hashtags for tag in ('KisahNyata','KisahIslami'))
         assert 'sesuai agama Islam' not in job.creator_perspective

@@ -1,0 +1,61 @@
+{
+  "checked_at": "2026-11-13T03:11:28.517721+00:00",
+  "youtube": [
+    {
+      "id": "2f546df2dfe545559f12fdd4fd1fc2eb",
+      "source_job_id": "85fde21850f548b4af607f99edca5db5",
+      "status": "queued",
+      "clip_name": "resume_cerita_5menit_mio-mio-dimana-mio-mio-mio-dimana-mio.mp4",
+      "created_at": "2026-11-13T03:07:53.712380+00:00",
+      "updated_at": "2026-11-13T03:07:53.712380+00:00",
+      "started_at": null,
+      "finished_at": null,
+      "queue_position": 1,
+      "queue_total": 1,
+      "error": null,
+      "logs": [
+        "Thumbnail otomatis 16:9 siap dipasang: resume_cerita_5menit_mio-mio-dimana-mio-mio-mio-dimana-mio_thumb.jpg",
+        "Preflight monetisasi lolos untuk upload public; keputusan akhir tetap mengikuti pemeriksaan YouTube.",
+        "Playlist dipilih otomatis dari isi video: Gaming.",
+        "Publikasi dijadwalkan otomatis oleh YouTube pada 17-11-2026 20:30 WIB; laptop tidak perlu tetap menyala setelah upload terkonfirmasi.",
+        "Playlist long-form dipilih otomatis dari isi cerita: Gaming."
+      ],
+      "video_url": null,
+      "upload_confirmed": false
+    }
+  ],
+  "tiktok": [
+    {
+      "id": "ab6ffbbd2fd248b09527f667f8d37ffb",
+      "source_job_id": "85fde21850f548b4af607f99edca5db5",
+      "status": "running",
+      "clip_name": "resume_cerita_5menit_mio-mio-dimana-mio-mio-mio-dimana-mio.mp4",
+      "created_at": "2026-11-13T03:07:18.110478+00:00",
+      "updated_at": "2026-11-13T03:07:33.019758+00:00",
+      "started_at": "2026-11-13T03:07:18.309580+00:00",
+      "finished_at": null,
+      "queue_position": null,
+      "queue_total": null,
+      "error": null,
+      "logs": [
+        "Upload TikTok dikunci Only you; publikasi umum tetap keputusan manual setelah review.",
+        "TARGET_ACCOUNT_CONFIRMED:@titikbalikislami",
+        "SESSION_SAVED:/app/data/tiktok_storage_state.json",
+        "POST_BASELINE_MATCHES:0",
+        "POST_BASELINE_VISIBLE_IDS:5"
+      ],
+      "video_url": null,
+      "upload_confirmed": false
+    }
+  ],
+  "replacement_qc": [
+    {
+      "status": "waiting_for_ai_or_evidence",
+      "audit": null,
+      "upload_id": null,
+      "youtube_worker_error": null,
+      "retry_at": "2026-11-13T03:18:22.604474+00:00",
+      "upload_hold": null
+    }
+  ]
+}

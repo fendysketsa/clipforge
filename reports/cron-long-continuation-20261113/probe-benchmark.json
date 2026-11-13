@@ -1,0 +1,35 @@
+{
+  "previous": {
+    "seconds": 16.091,
+    "probe": {
+      "programs": [],
+      "streams": [
+        {
+          "width": 640,
+          "height": 360,
+          "nb_frames": "3"
+        }
+      ],
+      "format": {
+        "duration": "3.000000"
+      }
+    }
+  },
+  "sample_first": {
+    "seconds": 1.33,
+    "probe": {
+      "programs": [],
+      "streams": [
+        {
+          "width": 640,
+          "height": 360,
+          "nb_frames": "3"
+        }
+      ],
+      "format": {
+        "duration": "3.000000"
+      }
+    }
+  },
+  "speedup": 12.1
+}

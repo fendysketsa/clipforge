@@ -51,6 +51,17 @@ def test_invalid_python_fails_during_build_before_recreation(project):
     with pytest.raises(SyntaxError):deploy.build_manifest(project)
 
 
+def test_changed_channel_logo_cannot_pass_image_verification(project):
+    branding = project / 'assets' / 'branding'
+    branding.mkdir(parents=True)
+    seal = branding / 'ryuundy-watermark-v2.svg'
+    seal.write_text('<svg/>')
+    deploy.build_manifest(project)
+    seal.write_text('<svg><text>changed logo</text></svg>')
+    with pytest.raises(RuntimeError, match='Image source differs'):
+        deploy.verify_manifest(project)
+
+
 def test_prepare_preserves_cron_session_and_upload_checkpoints(project,tmp_path,monkeypatch):
     state=tmp_path/'data';state.mkdir()
     files={'auto_viral_schedule_control.json':'{"enabled":false}',

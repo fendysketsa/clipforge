@@ -105,6 +105,9 @@ def test_remotion_manifest_projects_hypit_scenes_to_measured_timeline(
     assert manifest["hypit"]["scriptSurface"] == "@hypit/script@1"
     assert manifest["hypit"]["validatedByCli"] is True
     assert composition["captionsEnabled"] is True
+    assert composition["watermarkAsset"].startswith("data:image/svg+xml;base64,")
+    assert composition["watermarkBranding"]["style_version"] == 2
+    assert composition["watermarkBranding"]["backplate_opacity"] == 0
     assert composition["shots"][0]["kind"] == "image"
     assert composition["shots"][1]["kind"] == "video"
     assert composition["shots"][1]["start"] == 2.0

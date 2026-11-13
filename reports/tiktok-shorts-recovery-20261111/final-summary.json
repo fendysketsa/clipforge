@@ -1,0 +1,27 @@
+{
+  "updated_at": "2026-11-11T14:18:36.228835+00:00",
+  "retried_uploads_confirmed": [
+    {
+      "upload_id": "864a5c5c78d04fc889306aab6f8c2996",
+      "video_url": "https://www.tiktok.com/@titikbalikislami/video/7706903370652585237",
+      "visibility": "only_you"
+    },
+    {
+      "upload_id": "a73ad80494d8444eb4ec2ecd4827e9d5",
+      "video_url": "https://www.tiktok.com/@titikbalikislami/video/7706911979381787925",
+      "visibility": "public"
+    }
+  ],
+  "existing_remote_files_reconciled": 8,
+  "additional_auto_upload_reconciled": {
+    "id": "0bf6109a25874c0fb31019d8beb55cb8",
+    "status": "completed",
+    "profile_url": "https://www.tiktok.com/@titikbalikislami/video/7706914706942037269",
+    "visibility": "public",
+    "upload_confirmed": true
+  },
+  "real_missing_file_groups_held": 1,
+  "test_records_excluded": 1,
+  "long_uploads_processed": 0,
+  "scheduler_pause_restored": true
+}

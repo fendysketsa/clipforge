@@ -1,0 +1,31 @@
+{
+  "browser_verified": true,
+  "result": {
+    "health": {
+      "status": 200,
+      "url": "http://localhost:8010/api/health",
+      "body": {
+        "status": "ok"
+      }
+    },
+    "probe": {
+      "status": 404,
+      "url": "http://localhost:8010/api/jobs/__connection_probe__/youtube-uploads/reconcile",
+      "body": {
+        "detail": "Job not found"
+      }
+    }
+  },
+  "post_requests": [
+    {
+      "url": "http://localhost:3000/api/jobs/__connection_probe__/youtube-uploads/reconcile",
+      "body": "{\"clip_url\":\"/outputs/__connection_probe__.mp4\",\"dry_run\":true}"
+    },
+    {
+      "url": "http://localhost:8010/api/jobs/__connection_probe__/youtube-uploads/reconcile",
+      "body": "{\"clip_url\":\"/outputs/__connection_probe__.mp4\",\"dry_run\":true}"
+    }
+  ],
+  "backend_post_count": 1,
+  "new_upload_created": false
+}

@@ -1,0 +1,70 @@
+{
+  "job": {
+    "id": "85fde21850f548b4af607f99edca5db5",
+    "status": "running",
+    "progress_percent": 85,
+    "progress_stage": "render",
+    "progress_detail": "Encoding visual, motion, dan subtitle · bagian cerita 8 dari 10",
+    "updated_at": "2026-11-13T02:24:36.061949+00:00"
+  },
+  "policy": {
+    "enabled": true,
+    "daily_target": 1,
+    "auto_qc_enabled": true,
+    "auto_qc_private_upload": true,
+    "auto_qc_tiktok_upload": true
+  },
+  "scheduler": {
+    "enabled": true,
+    "scheduler_running": true,
+    "cron_upload_recovery": {
+      "last_tick_at": "2026-11-13T02:26:39.223120+00:00",
+      "queued": {
+        "youtube": 0,
+        "tiktok": 0
+      },
+      "errors": {},
+      "enabled": true
+    }
+  },
+  "attempts_today": [
+    {
+      "day": "2026-11-13",
+      "short_job_id": "c19efa03f597447982ca6b31b69aa43c",
+      "job_id": "74a52b6c25ef45fba32d4ab83279ae09",
+      "source_run_id": "300f5dfd2f7a4cc5ac400c4d5829bd3d",
+      "status": "failed",
+      "review_required": true,
+      "error": "clipper.py exited with code 1 Workspace dan seluruh file sementara proses gagal telah dihapus."
+    },
+    {
+      "day": "2026-11-13",
+      "short_job_id": "bf6c2c5e46564cc1bf14104066956158",
+      "job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+      "source_run_id": "205e2e10b4174889afd615470a207097",
+      "status": "queued",
+      "review_required": true,
+      "qc_decision": "DROP_SOURCE"
+    },
+    {
+      "day": "2026-11-13",
+      "short_job_id": "e4958d6247d347a082628eb2fc0f6eb5",
+      "job_id": "85fde21850f548b4af607f99edca5db5",
+      "source_run_id": "c62e66976f094d4aaa69f28a029fdd2a",
+      "status": "queued",
+      "review_required": true
+    }
+  ],
+  "frontend_health": {
+    "status": 200,
+    "body": {
+      "status": "ok"
+    }
+  },
+  "frontend_deployment": {
+    "schema": 1,
+    "build_id": "l7iHYOsElOd5NDA6RzLA-",
+    "release_id": "7d77726baa053786d7d0325711951742b08dfad00cc9c326cf93e02b0ba00696",
+    "ui_verified": true
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "source_sha256": {
+    "frontend/lib/queueSubmission.ts": "9113270d419302bd36f20080c50e73fb25b727485b8bf9d21965087c64a3d302",
+    "frontend/lib/apiClient.ts": "1886adadc55bed06ad37adb28b86186e6fc0cf518fcf314ea4cd5eb296e3a547",
+    "frontend/tests/queueSubmission.test.mjs": "0f0bf762b68140d8ce612d52a0bb2ceeca0c8563bd6ae0152a8c3b0373aa727c"
+  },
+  "unit_tests_passed": true,
+  "unit_queue_test_cases": 20,
+  "unit_queue_display_test_cases": 3,
+  "typescript_passed": true,
+  "production_build_passed": true,
+  "production_build_id": "vcSZsgRsqmiAewiA2H2jx",
+  "chromium_failed_primary_fallback_passed": true,
+  "original_post_replayed": false,
+  "original_clip_youtube_upload_confirmed": true,
+  "youtube_video_url": "https://www.youtube.com/watch?v=H6pasroRqpE",
+  "visibility": "private",
+  "playlist": "News",
+  "frontend_runtime_activation_confirmed": false,
+  "proxy_502_still_observed": true,
+  "historical_browser_disconnect_reproduced": false,
+  "frontend_activation_error": "sudo: a password is required"
+}
