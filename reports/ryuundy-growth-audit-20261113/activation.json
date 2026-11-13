@@ -1,0 +1,13 @@
+{
+  "activated": false,
+  "reason": "sudo: a password is required",
+  "running_release": "72a81fe51fc83ec6d118712c803fe527db2bf85d1d3631883029beb10f171ced",
+  "expected_release": "82149bd6cbbfe3873976beea47ac4383d519265c728cc21ee6c4cd393dcb8369",
+  "command": "sudo bash scripts/activate-ryuundy-growth.sh",
+  "configured_policy": {
+    "winner_share_percent": 75,
+    "lookback_days": 28,
+    "minimum_age_hours": 24
+  },
+  "tests_passed": 96
+}

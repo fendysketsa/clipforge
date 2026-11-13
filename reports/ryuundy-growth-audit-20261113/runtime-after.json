@@ -1,0 +1,11 @@
+{
+  "health": {
+    "status": 200,
+    "body": {
+      "status": "ok"
+    }
+  },
+  "growth": {
+    "status": 404
+  }
+}

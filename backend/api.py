@@ -68,6 +68,7 @@ import long_video_qc
 import cron_source_policy
 import automatic_retry
 import automatic_output_cleanup
+import ryuundy_growth_learning
 from cron_drama import (
     DRAMA_THEME_PROFILES, DRAMA_THEME_SIGNALS, DRAMA_EDITOR_BRIEF,
     drama_source_rejection_reason, drama_trend_query, drama_hashtags, drama_lane_enabled,
@@ -19849,6 +19850,8 @@ def auto_viral_format_perspective(
         parts.append(RYUUNDY_REFERENCE_EDITOR_BRIEF)
     if request.cron_theme_key in DRAMA_THEME_PROFILES:
         parts.append(DRAMA_EDITOR_BRIEF)
+    if request.cron_theme_key in {"gaming_story", "quirky_animation", "islamic_animation_kids", "islamic_animation_general", *DRAMA_THEME_PROFILES}:
+        parts.append(ryuundy_growth_learning.CHARACTER_EDITOR_BRIEF)
     if request.cron_short_role or request.cron_long_role:
         parts.append(
             "Short dan Long harus saling melengkapi dari sumber yang sama: Short memberi hook, "
@@ -23716,97 +23719,62 @@ def create_and_start_auto_viral_campaign(
     return run
 
 
-CRON_GAMING_WINNER_SIGNALS = frozenset(
-    {
-        "roblox", "yuta", "mio", "baby celine", "baby-celine", "godzilla",
-        "obby", "mabar", "gameplay", "gaming", "minecraft", "streamer",
-    }
-)
+def ryuundy_channel_growth_report() -> dict[str, Any]:
+    with youtube_uploads_lock:
+        uploads = list(youtube_uploads.values())
+    report = ryuundy_growth_learning.performance_report(
+        uploads, signals=RYUUNDY_CRON_THEME_SIGNALS,
+        enabled_themes={key for key in RYUUNDY_CRON_THEME_PROFILES if drama_lane_enabled(key)},
+        lookback_days=max(3, min(60, env_int("AUTO_VIRAL_SCHEDULE_PERFORMANCE_LOOKBACK_DAYS", 28))),
+        minimum_samples=max(2, min(20, env_int("AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_SAMPLES", 3))),
+        minimum_views=max(100, env_int("AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_MEDIAN_VIEWS", 1000)),
+        minimum_lift=max(1.1, min(10.0, env_float("AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_LIFT", 1.5))),
+        minimum_age_hours=max(24, min(168, env_int("AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_AGE_HOURS", 24))),
+        target_channel=os.environ.get("YOUTUBE_TARGET_CHANNEL", "ryuundyofficial"),
+    )
+    report["configured_winner_share_percent"] = max(25, min(90,
+        env_int("AUTO_VIRAL_SCHEDULE_PERFORMANCE_WINNER_SHARE_PERCENT", 75)))
+    report["learning_enabled"] = env_bool("AUTO_VIRAL_SCHEDULE_PERFORMANCE_WINNER_ENABLED", True)
+    return report
+
+
+@app.get("/api/automation/viral-cc/growth")
+def get_ryuundy_channel_growth() -> dict[str, Any]:
+    return ryuundy_channel_growth_report()
 
 
 def scheduled_performance_winner_profile() -> tuple[str, dict[str, Any]] | None:
-    """Turn recent public performance into a bounded cron niche preference.
-
-    A winner owns only a configured share of scheduled runs. The remaining
-    runs keep exploring other safe themes, so one temporary spike cannot lock
-    the channel forever.
-    """
+    """Prefer proven public Short cohorts while retaining bounded exploration."""
     if not env_bool("AUTO_VIRAL_SCHEDULE_PERFORMANCE_WINNER_ENABLED", True):
         return None
-    lookback_days = max(
-        3,
-        min(60, env_int("AUTO_VIRAL_SCHEDULE_PERFORMANCE_LOOKBACK_DAYS", 14)),
-    )
-    cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
-    with youtube_uploads_lock:
-        uploads = list(youtube_uploads.values())
-
-    gaming_views: list[int] = []
-    other_views: list[int] = []
-    for upload in uploads:
-        if (
-            upload.status != "completed"
-            or not upload.upload_confirmed
-            or not upload.performance_snapshots
-            or parse_utc_datetime(upload.created_at, cutoff) < cutoff
-            or upload.clip_name.startswith(("highlight_5menit_", "resume_cerita_", "long_animate_"))
-        ):
-            continue
-        latest = upload.performance_snapshots[-1]
-        searchable = f"{upload.title} {upload.clip_name} {upload.clip_url}".casefold()
-        target = (
-            gaming_views
-            if any(signal in searchable for signal in CRON_GAMING_WINNER_SIGNALS)
-            else other_views
-        )
-        target.append(max(0, int(latest.views)))
-
-    minimum_samples = max(
-        2,
-        min(20, env_int("AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_SAMPLES", 3)),
-    )
-    if len(gaming_views) < minimum_samples:
+    report = ryuundy_channel_growth_report()
+    key = report["winner"]
+    if not key:
         return None
-    gaming_median = float(median(gaming_views))
-    other_median = float(median(other_views)) if other_views else 0.0
-    minimum_views = max(
-        100,
-        env_int("AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_MEDIAN_VIEWS", 1000),
-    )
-    lift_ratio = gaming_median / max(1.0, other_median)
-    minimum_lift = max(
-        1.1,
-        min(
-            10.0,
-            env_float("AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_LIFT", 1.5),
-        ),
-    )
-    if gaming_median < minimum_views or lift_ratio < minimum_lift:
-        return None
-
-    share_percent = max(
-        25,
-        min(90, env_int("AUTO_VIRAL_SCHEDULE_PERFORMANCE_WINNER_SHARE_PERCENT", 75)),
-    )
+    share_percent = max(25, min(90, env_int("AUTO_VIRAL_SCHEDULE_PERFORMANCE_WINNER_SHARE_PERCENT", 75)))
     with auto_viral_lock:
-        scheduled_run_count = sum(
-            run.trigger == "schedule" for run in auto_viral_runs.values()
-        )
+        scheduled_run_count = sum(run.trigger == "schedule" for run in auto_viral_runs.values())
     if (scheduled_run_count * 37) % 100 >= share_percent:
         return None
-
-    profile = dict(RYUUNDY_CRON_THEME_PROFILES["gaming_story"])
+    profile = dict(RYUUNDY_CRON_THEME_PROFILES[key])
+    evidence = report["cohorts"][key]
     profile["performance_winner"] = True
     profile["performance_evidence"] = {
-        "lookback_days": lookback_days,
-        "gaming_samples": len(gaming_views),
-        "other_samples": len(other_views),
-        "gaming_median_views": round(gaming_median),
-        "other_median_views": round(other_median),
-        "lift_ratio": round(lift_ratio, 2),
-        "scheduled_share_percent": share_percent,
+        **evidence, "lookback_days": report["lookback_days"],
+        "lift_ratio": evidence["median_age_matched_lift"],
+        "scheduled_share_percent": share_percent, "basis": report["basis"],
+        "causal_claim": False, "retention_verified": False,
+        "excluded": report["excluded"],
     }
-    return "gaming_story", profile
+    if key == "gaming_story" and evidence["character_series_qualified"]:
+        profile["queries"] = list(ryuundy_growth_learning.CHARACTER_QUERIES)
+        profile["short_role"] += (
+            "; buka masalah atau tindakan tokoh dalam dua detik pertama, "
+            "pertahankan nama karakter dari sumber, lalu tuntaskan akibatnya; "
+            "seri konsisten tanpa cliffhanger atau memperpanjang durasi"
+        )
+        profile["performance_evidence"]["series"] = "character_roleplay"
+    return key, profile
 
 
 def scheduled_search_term_winner_profile() -> tuple[str, dict[str, Any]] | None:
@@ -24242,7 +24210,7 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
             and not youtube_channel_recovery_mode()
         ),
     )
-    if theme_key in DRAMA_THEME_PROFILES:
+    if theme_key in DRAMA_THEME_PROFILES or theme_profile.get("performance_winner"):
         request = request.model_copy(update={'queries': merge_unique_queries([theme_focus], theme_queries)})
     elif trend_expansion_enabled:
         request = request.model_copy(

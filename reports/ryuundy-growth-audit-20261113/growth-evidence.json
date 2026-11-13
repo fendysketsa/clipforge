@@ -1,0 +1,206 @@
+{
+  "version": 1,
+  "basis": "measured_public_short_views",
+  "causal_claim": false,
+  "actual_retention_verified": false,
+  "lookback_days": 28,
+  "minimum_age_hours": 24,
+  "eligible_samples": 156,
+  "excluded": {
+    "outside_mature_publication_window": 12,
+    "unconfirmed_or_dry_run": 113,
+    "long_format": 33,
+    "not_public": 381,
+    "stale_or_immature_measurement": 7,
+    "independent_news_lane": 1,
+    "unmeasured": 1,
+    "missing_or_duplicate_remote_id": 4
+  },
+  "cohorts": {
+    "gaming_story": {
+      "samples": 44,
+      "median_views": 1572.5,
+      "age_matched_samples": 44,
+      "median_age_matched_lift": 1.753,
+      "character_series_samples": 43,
+      "character_series_median_views": 1552,
+      "character_series_age_matched_lift": 1.792,
+      "character_series_qualified": true,
+      "retention_samples": 0,
+      "stayed_to_watch_samples": 0
+    },
+    "unclassified": {
+      "samples": 81,
+      "median_views": 485,
+      "age_matched_samples": 81,
+      "median_age_matched_lift": 0.623,
+      "character_series_samples": 0,
+      "character_series_median_views": 0,
+      "character_series_age_matched_lift": 0,
+      "character_series_qualified": false,
+      "retention_samples": 0,
+      "stayed_to_watch_samples": 0
+    },
+    "family_conflict": {
+      "samples": 17,
+      "median_views": 243,
+      "age_matched_samples": 17,
+      "median_age_matched_lift": 0.963,
+      "character_series_samples": 0,
+      "character_series_median_views": 0,
+      "character_series_age_matched_lift": 0,
+      "character_series_qualified": false,
+      "retention_samples": 0,
+      "stayed_to_watch_samples": 0
+    },
+    "history_geography_nusantara": {
+      "samples": 1,
+      "median_views": 326,
+      "age_matched_samples": 1,
+      "median_age_matched_lift": 0.297,
+      "character_series_samples": 0,
+      "character_series_median_views": 0,
+      "character_series_age_matched_lift": 0,
+      "character_series_qualified": false,
+      "retention_samples": 0,
+      "stayed_to_watch_samples": 0
+    },
+    "mystery_story": {
+      "samples": 3,
+      "median_views": 464,
+      "age_matched_samples": 3,
+      "median_age_matched_lift": 0.41,
+      "character_series_samples": 0,
+      "character_series_median_views": 0,
+      "character_series_age_matched_lift": 0,
+      "character_series_qualified": false,
+      "retention_samples": 0,
+      "stayed_to_watch_samples": 0
+    },
+    "friendship_twist": {
+      "samples": 4,
+      "median_views": 850.5,
+      "age_matched_samples": 4,
+      "median_age_matched_lift": 0.825,
+      "character_series_samples": 0,
+      "character_series_median_views": 0,
+      "character_series_age_matched_lift": 0,
+      "character_series_qualified": false,
+      "retention_samples": 0,
+      "stayed_to_watch_samples": 0
+    },
+    "football_story": {
+      "samples": 2,
+      "median_views": 1029.0,
+      "age_matched_samples": 2,
+      "median_age_matched_lift": 0.909,
+      "character_series_samples": 0,
+      "character_series_median_views": 0,
+      "character_series_age_matched_lift": 0,
+      "character_series_qualified": false,
+      "retention_samples": 0,
+      "stayed_to_watch_samples": 0
+    },
+    "quirky_animation": {
+      "samples": 1,
+      "median_views": 1487,
+      "age_matched_samples": 1,
+      "median_age_matched_lift": 6.274,
+      "character_series_samples": 0,
+      "character_series_median_views": 0,
+      "character_series_age_matched_lift": 0,
+      "character_series_qualified": false,
+      "retention_samples": 0,
+      "stayed_to_watch_samples": 0
+    },
+    "lecture_wisdom": {
+      "samples": 1,
+      "median_views": 280,
+      "age_matched_samples": 1,
+      "median_age_matched_lift": 1.181,
+      "character_series_samples": 0,
+      "character_series_median_views": 0,
+      "character_series_age_matched_lift": 0,
+      "character_series_qualified": false,
+      "retention_samples": 0,
+      "stayed_to_watch_samples": 0
+    },
+    "life_comeback": {
+      "samples": 1,
+      "median_views": 11,
+      "age_matched_samples": 1,
+      "median_age_matched_lift": 0.04,
+      "character_series_samples": 0,
+      "character_series_median_views": 0,
+      "character_series_age_matched_lift": 0,
+      "character_series_qualified": false,
+      "retention_samples": 0,
+      "stayed_to_watch_samples": 0
+    },
+    "faith_life": {
+      "samples": 1,
+      "median_views": 9,
+      "age_matched_samples": 1,
+      "median_age_matched_lift": 0.032,
+      "character_series_samples": 0,
+      "character_series_median_views": 0,
+      "character_series_age_matched_lift": 0,
+      "character_series_qualified": false,
+      "retention_samples": 0,
+      "stayed_to_watch_samples": 0
+    }
+  },
+  "winner": "gaming_story",
+  "top_examples": [
+    {
+      "theme": "gaming_story",
+      "series": "character_roleplay",
+      "views": 28619,
+      "age_bucket": "14d+",
+      "video_url": "https://www.youtube.com/watch?v=9kxgP070cBQ",
+      "title": "Macet Karena Kamperfan di Depan, Kak Yuta Cepatkan Gigi! #Islam #Shorts",
+      "retained": false,
+      "stayed": false
+    },
+    {
+      "theme": "gaming_story",
+      "series": "character_roleplay",
+      "views": 17339,
+      "age_bucket": "7-14d",
+      "video_url": "https://www.youtube.com/watch?v=IhdepP3l8zs",
+      "title": "Yuta larang beri es krim ke anomali, Mio menyerang #Shorts",
+      "retained": false,
+      "stayed": false
+    },
+    {
+      "theme": "gaming_story",
+      "series": "character_roleplay",
+      "views": 10728,
+      "age_bucket": "1-3d",
+      "video_url": "https://www.youtube.com/watch?v=VvbjwylWzMU",
+      "title": "Mio dan Baby Selin Terjebak dalam Labirin Kayuta #Shorts",
+      "retained": false,
+      "stayed": false
+    },
+    {
+      "theme": "unclassified",
+      "series": null,
+      "views": 9240,
+      "age_bucket": "7-14d",
+      "video_url": "https://www.youtube.com/watch?v=nYW_vOGCVBg",
+      "title": "Beli Hara Kucing? Tapi Gak Boleh Di Rumah #Shorts",
+      "retained": false,
+      "stayed": false
+    },
+    {
+      "theme": "gaming_story",
+      "series": "character_roleplay",
+      "views": 7071,
+      "age_bucket": "14d+",
+      "video_url": "https://www.youtube.com/watch?v=L-mh66DPmZc",
+      "title": "Kalau Kayuta, Butter Mio Suara Renyahan? #Shorts",
+      "retained": false,
+      "stayed": false
+    }
+  ]
+}

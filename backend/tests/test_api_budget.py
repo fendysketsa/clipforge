@@ -4337,6 +4337,7 @@ def test_trend_expansion_is_owned_only_by_cron_schedule(monkeypatch):
 
 def test_cron_prefers_recent_gaming_winner_without_ending_exploration(monkeypatch):
     import api
+    from datetime import datetime, timedelta, timezone
 
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PERFORMANCE_WINNER_ENABLED", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PERFORMANCE_WINNER_SHARE_PERCENT", "75")
@@ -4345,16 +4346,19 @@ def test_cron_prefers_recent_gaming_winner_without_ending_exploration(monkeypatc
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PERFORMANCE_MIN_LIFT", "1.5")
 
     def upload(upload_id: str, title: str, views: int):
+        published = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
         return api.YouTubeUploadJob(
             id=upload_id,
             source_job_id=f"job-{upload_id}",
             clip_url=f"/outputs/{upload_id}/{title.casefold().replace(' ', '-')}.mp4",
             clip_name=f"clip_{upload_id}.mp4",
             status="completed",
-            created_at=api.now_iso(),
+            created_at=published,
+            finished_at=published,
             updated_at=api.now_iso(),
             title=title,
-            video_url=f"https://www.youtube.com/watch?v={upload_id}",
+            visibility="public", target_channel="ryuundyofficial",
+            video_url=f"https://www.youtube.com/watch?v={upload_id:0<11}",
             upload_confirmed=True,
             performance_snapshots=[
                 api.YouTubePerformanceSnapshot(
@@ -4371,6 +4375,7 @@ def test_cron_prefers_recent_gaming_winner_without_ending_exploration(monkeypatc
         upload("game3", "Mio dan Baby Celine Jadi Admin", 1600),
         upload("story1", "Kisah Kehidupan di Kantor", 180),
         upload("story2", "Malam yang Terasa Berbeda", 20),
+        upload("story3", "Percakapan di Tempat Kerja", 30),
     ]
     monkeypatch.setattr(api, "youtube_uploads", {item.id: item for item in uploads})
     monkeypatch.setattr(api, "auto_viral_runs", {})
@@ -4380,8 +4385,8 @@ def test_cron_prefers_recent_gaming_winner_without_ending_exploration(monkeypatc
     assert key == "gaming_story"
     assert profile["performance_winner"] is True
     evidence = profile["performance_evidence"]
-    assert evidence["gaming_samples"] == 3
-    assert evidence["gaming_median_views"] == 1900
+    assert evidence["samples"] == 3
+    assert evidence["median_views"] == 1900
     assert evidence["lift_ratio"] > 10
 
 
