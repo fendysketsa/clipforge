@@ -1,0 +1,14 @@
+{
+  "source_sha256": {
+    "backend/long_video_qc.py": "a8a16ba0675816f2d72242b460f43781a46ce6783fcd2fa7918a6736f0968987",
+    "backend/tests/test_long_video_qc.py": "f4b33c06d5574a7b08ecc5dc1671dae3355c047ba1962c388fafdf5cc7f92421"
+  },
+  "tests_passed": 59,
+  "runtime_activation_confirmed": false,
+  "external_report_sent": true,
+  "provider_resubmitted": false,
+  "lilang_youtube_upload_started": false,
+  "external_report_message_id": "1a1d39d859db05b6",
+  "external_report_thread_id": "1a1d39d859db05b6",
+  "provider_decision_received": false
+}

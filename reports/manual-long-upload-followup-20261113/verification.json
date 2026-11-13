@@ -1,0 +1,14 @@
+{
+  "checked_at": "2026-11-13T06:04:42.441036+00:00",
+  "source_job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+  "human_review_checked": true,
+  "source_permission_recorded": true,
+  "local_media_present": true,
+  "existing_qc_decision": "DROP_SOURCE",
+  "hold_origin": "explicit_provider_content_safety_refusal",
+  "manual_upload_started": false,
+  "qc_approval_fabricated": false,
+  "provider_resubmitted": false,
+  "upload_control_weakened": false,
+  "status": "blocked_by_existing_content_review_refusal"
+}

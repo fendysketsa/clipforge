@@ -1,0 +1,19 @@
+{
+  "checked_at": "2026-11-13T06:40:27.273683+00:00",
+  "deleted_job_absent": true,
+  "job_endpoint_status": 404,
+  "local_work_directory_absent": true,
+  "local_bytes_removed": 252991048,
+  "local_files_removed": 13,
+  "tiktok_records_retained": [
+    {
+      "id": "970310922e1e4fb7835a05223b8bc260",
+      "status": "completed",
+      "upload_confirmed": true,
+      "video_url": "https://www.tiktok.com/@titikbalikislami/video/7707449979572374804"
+    }
+  ],
+  "remote_deletion_requested": false,
+  "refusal_checkpoint_retained": true,
+  "source_not_resubmitted": true
+}

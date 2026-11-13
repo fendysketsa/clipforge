@@ -1,0 +1,15 @@
+{
+  "message_id": "1a1d39d859db05b6",
+  "thread_id": "1a1d39d859db05b6",
+  "label_ids": [
+    "SENT"
+  ],
+  "to": "support@openrouter.ai",
+  "subject": "Request for review of content-screening rejection in video QC",
+  "sent_at_jakarta": "2026-11-13 13:34:38",
+  "sent_readback_verified": true,
+  "credential_pattern_absent": true,
+  "attachment_sent": false,
+  "provider_decision_received": false,
+  "lilang_youtube_upload_confirmed": false
+}

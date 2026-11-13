@@ -1,0 +1,511 @@
+{
+  "checked_at": "2026-11-13T05:35:32.003808+00:00",
+  "jobs": [
+    {
+      "id": "403b1cdef5dd4a669c5af49c40b207f3",
+      "status": "completed",
+      "title": "Menantu super kaya nyamar penjual kaki lima tes keluarga istri, tak duga diremehkan & dipaksa cerai",
+      "mode": "highlight_5m",
+      "clips": [
+        {
+          "url": "/outputs/403b1cdef5dd4a669c5af49c40b207f3/menantu-super-kaya-nyamar-penjual-kaki-lima-tes-keluarga-istri-tak-duga-diremehk/clips/resume_cerita_5menit_lilang-sebaiknya-kamu-bangun-dari-mimpi-jangan-b.mp4",
+          "title": "Resume Cerita: Lilang, sebaiknya kamu bangun dari mimpi. jangan buang",
+          "is_correct": true,
+          "youtube_upload_ready": false,
+          "youtube_upload_issue": "Long ditahan QC (DROP_SOURCE): sumber ditolak pemeriksaan konten; tidak dikirim ulang otomatis.",
+          "tiktok_upload_issue": "Long ditahan QC (DROP_SOURCE): sumber ditolak pemeriksaan konten; tidak dikirim ulang otomatis."
+        }
+      ]
+    }
+  ],
+  "production": {
+    "enabled": true,
+    "daily_target": 1,
+    "auto_qc_enabled": true,
+    "auto_qc_private_upload": true,
+    "attempts": [
+      {
+        "day": "2026-11-12",
+        "short_job_id": "345d39d8cc7647bc8a2608b544840bc0",
+        "job_id": "dd7aab52da5b47629a5a5f7db5f93b39",
+        "source_run_id": "39b0b707a3864d69b904b5f17c188ff6",
+        "status": "completed",
+        "review_required": true,
+        "error": null,
+        "relevance": {
+          "passed": true,
+          "same_source": true,
+          "source_url": "https://www.youtube.com/watch?v=Jr2AVxsP3Vk",
+          "required_short_count": 1,
+          "matched_short_count": 1,
+          "matches": [
+            {
+              "short_index": 1,
+              "long_part_index": 1,
+              "source_overlap_seconds": 41.37,
+              "short_coverage": 1.0,
+              "passed": true
+            }
+          ]
+        },
+        "qc_decision": "DROP_SOURCE",
+        "confirmed_upload_id": "fb5266884b38498d883f99fb14014371",
+        "confirmed_video_url": "https://www.youtube.com/watch?v=SWBoYM6ul0s"
+      },
+      {
+        "day": "2026-11-13",
+        "short_job_id": "c19efa03f597447982ca6b31b69aa43c",
+        "job_id": "74a52b6c25ef45fba32d4ab83279ae09",
+        "source_run_id": "300f5dfd2f7a4cc5ac400c4d5829bd3d",
+        "status": "failed",
+        "review_required": true,
+        "error": "clipper.py exited with code 1 Workspace dan seluruh file sementara proses gagal telah dihapus."
+      },
+      {
+        "day": "2026-11-13",
+        "short_job_id": "bf6c2c5e46564cc1bf14104066956158",
+        "job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+        "source_run_id": "205e2e10b4174889afd615470a207097",
+        "status": "completed",
+        "review_required": true,
+        "qc_decision": "DROP_SOURCE",
+        "error": null
+      },
+      {
+        "day": "2026-11-13",
+        "short_job_id": "e4958d6247d347a082628eb2fc0f6eb5",
+        "job_id": "85fde21850f548b4af607f99edca5db5",
+        "source_run_id": "c62e66976f094d4aaa69f28a029fdd2a",
+        "status": "completed",
+        "review_required": true,
+        "confirmed_upload_id": "2f546df2dfe545559f12fdd4fd1fc2eb",
+        "confirmed_video_url": "https://www.youtube.com/watch?v=2PRl4z8aSx4",
+        "error": null
+      }
+    ],
+    "qc_reviews": [
+      {
+        "status": "waiting_for_ai_or_evidence",
+        "audit": null,
+        "reason": "ValueError",
+        "retry_after_seconds": 600,
+        "fingerprint": "90b7966d2ad969c3fc0b54ecb6879710a9a70a0ae349264888076da9e5590003",
+        "source_job_id": "2a08735031e3425faa863fd198665238",
+        "source_clip_url": "/outputs/2a08735031e3425faa863fd198665238/atun-momon-menjadi-besar-dan-balas-dendam-pada-desa-feat-sapipurba-minecraft/clips/resume_cerita_5menit_ok-berarti-intinya-adalah-kita-butuh-bahan-dan.mp4",
+        "updated_at": "2026-11-11T13:05:18.488283+00:00",
+        "retry_at": "2026-11-11T13:15:18.488300+00:00"
+      },
+      {
+        "status": "waiting_for_ai_or_evidence",
+        "audit": null,
+        "reason": "ValueError",
+        "retry_after_seconds": 600,
+        "fingerprint": "9212d95ff6ebe480dbc5b7220181bae2de24d4669851391d6d2043880791b880",
+        "source_job_id": "85fde21850f548b4af607f99edca5db5",
+        "source_clip_url": "/outputs/85fde21850f548b4af607f99edca5db5/yuta-mio-main-charlie-charlie-jam-3-malam-serem-banget-roblox/clips/resume_cerita_5menit_mio-mio-dimana-mio-mio-mio-dimana-mio.mp4",
+        "updated_at": "2026-11-13T03:22:27.815312+00:00",
+        "retry_at": "2026-11-13T03:32:27.815332+00:00"
+      },
+      {
+        "status": "reviewed",
+        "audit": {
+          "schema_version": 1,
+          "source_job_id": "ea85e504653c45d2b17a1e1953a6181d",
+          "source_clip_url": "/outputs/ea85e504653c45d2b17a1e1953a6181d/suamiku-hina-ibuku-di-depan-20-saudara-aku-cuma-bayar-2-porsi-saat-tagihan-27-ju/clips/resume_cerita_5menit_yang-penting-kamu-transfer-dulu-uang-tabunganmu-.mp4",
+          "repair_attempted": false,
+          "decision": "DROP_SOURCE",
+          "confidence": 1.0,
+          "hard_gates": {
+            "rights": true,
+            "media_integrity": true,
+            "meaning_preserved": true,
+            "context_safe": false
+          },
+          "ai_checks": {
+            "hook": null,
+            "standalone_clarity": null,
+            "payoff": null,
+            "caption": null,
+            "crop": null,
+            "visual_quality": null,
+            "audio_quality": null
+          },
+          "evidence": [
+            "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+          ],
+          "repair_instructions": [],
+          "delete_source": true,
+          "upload_allowed": false
+        },
+        "fingerprint": "5765b88300ec626210194b37ffcb07f0f8f89ce59efbd301613ee15b29a2e1f0",
+        "source_job_id": "ea85e504653c45d2b17a1e1953a6181d",
+        "source_clip_url": "/outputs/ea85e504653c45d2b17a1e1953a6181d/suamiku-hina-ibuku-di-depan-20-saudara-aku-cuma-bayar-2-porsi-saat-tagihan-27-ju/clips/resume_cerita_5menit_yang-penting-kamu-transfer-dulu-uang-tabunganmu-.mp4",
+        "updated_at": "2026-11-12T06:35:43.426494+00:00"
+      },
+      {
+        "status": "reviewed",
+        "audit": {
+          "schema_version": 1,
+          "source_job_id": "d14fe9c4666a441799a4033509e93df3",
+          "source_clip_url": "/outputs/d14fe9c4666a441799a4033509e93df3/kisah-viral-di-bogor-urban-legend-angkot-biru-gaib-semua-penumpang-sudah-meningg/clips/resume_cerita_5menit_kenapa-mas-waktu-itu-sempat-ngirim-cerita-ke.mp4",
+          "repair_attempted": false,
+          "decision": "DROP_SOURCE",
+          "confidence": 1.0,
+          "hard_gates": {
+            "rights": true,
+            "media_integrity": true,
+            "meaning_preserved": null,
+            "context_safe": false
+          },
+          "ai_checks": {
+            "hook": null,
+            "standalone_clarity": null,
+            "payoff": null,
+            "caption": null,
+            "crop": null,
+            "visual_quality": null,
+            "audio_quality": null
+          },
+          "evidence": [
+            "AI provider explicitly declined this source during content safety screening; automatic upload rejected without resubmitting the same source."
+          ],
+          "repair_instructions": [],
+          "delete_source": true,
+          "upload_allowed": false
+        },
+        "reason": "ai_http_422",
+        "provider_error": "{\"error\":{\"message\":\"Provider returned error\",\"code\":422,\"metadata\":{\"raw\":\"{\\\"error\\\": {\\\"message\\\": \\\"input rejected by content safety screening\\\"}}\",\"provider_name\":\"Nvidia\",\"is_byok\":false}},\"user_id\":\"user_3D6vLqnNu2pbYsF9qWbysUfrXed\"}",
+        "retry_after_seconds": 600,
+        "source_job_id": "d14fe9c4666a441799a4033509e93df3",
+        "source_clip_url": "/outputs/d14fe9c4666a441799a4033509e93df3/kisah-viral-di-bogor-urban-legend-angkot-biru-gaib-semua-penumpang-sudah-meningg/clips/resume_cerita_5menit_kenapa-mas-waktu-itu-sempat-ngirim-cerita-ke.mp4",
+        "fingerprint": "3eaa3b362d04097cd3e38d72033e8a46edf10e2e4586a6d2f3631480704953d9",
+        "updated_epoch": 1794065730.4222596
+      },
+      {
+        "status": "reviewed",
+        "audit": {
+          "schema_version": 1,
+          "source_job_id": "dd7aab52da5b47629a5a5f7db5f93b39",
+          "source_clip_url": "/outputs/dd7aab52da5b47629a5a5f7db5f93b39/lantai-dua-khw-part-403/clips/resume_cerita_5menit_desi-bilang-mbak-ini-ternyata-tempat-aku-selanju.mp4",
+          "repair_attempted": false,
+          "decision": "DROP_SOURCE",
+          "confidence": 1.0,
+          "hard_gates": {
+            "rights": true,
+            "media_integrity": true,
+            "meaning_preserved": true,
+            "context_safe": false
+          },
+          "ai_checks": {
+            "hook": null,
+            "standalone_clarity": null,
+            "payoff": null,
+            "caption": null,
+            "crop": null,
+            "visual_quality": null,
+            "audio_quality": null
+          },
+          "evidence": [
+            "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+          ],
+          "repair_instructions": [],
+          "delete_source": true,
+          "upload_allowed": false
+        },
+        "fingerprint": "0e75de5ca7b60165dd992828bf0f9b5f08cd9253cf53d089384ffb3d9a524b70",
+        "source_job_id": "dd7aab52da5b47629a5a5f7db5f93b39",
+        "source_clip_url": "/outputs/dd7aab52da5b47629a5a5f7db5f93b39/lantai-dua-khw-part-403/clips/resume_cerita_5menit_desi-bilang-mbak-ini-ternyata-tempat-aku-selanju.mp4",
+        "updated_at": "2026-11-12T08:15:59.228384+00:00"
+      },
+      {
+        "status": "reviewed",
+        "audit": {
+          "schema_version": 1,
+          "source_job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+          "source_clip_url": "/outputs/403b1cdef5dd4a669c5af49c40b207f3/menantu-super-kaya-nyamar-penjual-kaki-lima-tes-keluarga-istri-tak-duga-diremehk/clips/resume_cerita_5menit_lilang-sebaiknya-kamu-bangun-dari-mimpi-jangan-b.mp4",
+          "repair_attempted": false,
+          "decision": "DROP_SOURCE",
+          "confidence": 1.0,
+          "hard_gates": {
+            "rights": true,
+            "media_integrity": true,
+            "meaning_preserved": true,
+            "context_safe": false
+          },
+          "ai_checks": {
+            "hook": null,
+            "standalone_clarity": null,
+            "payoff": null,
+            "caption": null,
+            "crop": null,
+            "visual_quality": null,
+            "audio_quality": null
+          },
+          "evidence": [
+            "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+          ],
+          "repair_instructions": [],
+          "delete_source": true,
+          "upload_allowed": false
+        },
+        "fingerprint": "04aeb6fed7c15a69c2d957e4b7bed3c9c33d056319bcdb62dd93ba9b1c08ac10",
+        "source_job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+        "source_clip_url": "/outputs/403b1cdef5dd4a669c5af49c40b207f3/menantu-super-kaya-nyamar-penjual-kaki-lima-tes-keluarga-istri-tak-duga-diremehk/clips/resume_cerita_5menit_lilang-sebaiknya-kamu-bangun-dari-mimpi-jangan-b.mp4",
+        "updated_at": "2026-11-13T00:30:18.784267+00:00"
+      },
+      {
+        "status": "reviewed",
+        "audit": {
+          "schema_version": 1,
+          "source_job_id": "7b00e5e4412a487694c8216eb865d503",
+          "source_clip_url": "/outputs/7b00e5e4412a487694c8216eb865d503/drama-korea-sedih-terbaru-berpisah-dengan-kekasih-demi-menyelamatkanya-alur-ceri/clips/resume_cerita_5menit_namun-ketika-mengetahui-inhe-sedang-mengandung-k.mp4",
+          "repair_attempted": false,
+          "decision": "DROP_SOURCE",
+          "confidence": 1.0,
+          "hard_gates": {
+            "rights": true,
+            "media_integrity": true,
+            "meaning_preserved": true,
+            "context_safe": false
+          },
+          "ai_checks": {
+            "hook": null,
+            "standalone_clarity": null,
+            "payoff": null,
+            "caption": null,
+            "crop": null,
+            "visual_quality": null,
+            "audio_quality": null
+          },
+          "evidence": [
+            "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+          ],
+          "repair_instructions": [],
+          "delete_source": true,
+          "upload_allowed": false
+        },
+        "fingerprint": "798ff3e1a6d74870e992a98c9044461c81d5d44e95d94bf2a28e93f0f2692807",
+        "source_job_id": "7b00e5e4412a487694c8216eb865d503",
+        "source_clip_url": "/outputs/7b00e5e4412a487694c8216eb865d503/drama-korea-sedih-terbaru-berpisah-dengan-kekasih-demi-menyelamatkanya-alur-ceri/clips/resume_cerita_5menit_namun-ketika-mengetahui-inhe-sedang-mengandung-k.mp4",
+        "updated_at": "2026-11-12T04:51:47.743423+00:00"
+      },
+      {
+        "status": "reviewed",
+        "audit": {
+          "schema_version": 1,
+          "source_job_id": "ba8226bb1e104699a20b36a285001d24",
+          "source_clip_url": "/outputs/ba8226bb1e104699a20b36a285001d24/mio-baby-celine-kesel-yuta-prank-jadi-admin-di-game-steal-an-egg-roblox/clips/resume_cerita_5menit_makasih-ayo-kita-kejarin-lagi-nis-ya-mamam.mp4",
+          "repair_attempted": false,
+          "decision": "DROP_SOURCE",
+          "confidence": 1.0,
+          "hard_gates": {
+            "rights": true,
+            "media_integrity": true,
+            "meaning_preserved": true,
+            "context_safe": false
+          },
+          "ai_checks": {
+            "hook": null,
+            "standalone_clarity": null,
+            "payoff": null,
+            "caption": null,
+            "crop": null,
+            "visual_quality": null,
+            "audio_quality": null
+          },
+          "evidence": [
+            "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+          ],
+          "repair_instructions": [],
+          "delete_source": true,
+          "upload_allowed": false
+        },
+        "source_job_id": "ba8226bb1e104699a20b36a285001d24",
+        "source_clip_url": "/outputs/ba8226bb1e104699a20b36a285001d24/mio-baby-celine-kesel-yuta-prank-jadi-admin-di-game-steal-an-egg-roblox/clips/resume_cerita_5menit_makasih-ayo-kita-kejarin-lagi-nis-ya-mamam.mp4",
+        "fingerprint": "0c41f6ef6c745b7a3bd2e59fe47823c866a466867d24419aa21b23f15f80bb7e",
+        "updated_epoch": 1794264293.1740866
+      },
+      {
+        "status": "reviewed",
+        "audit": {
+          "schema_version": 1,
+          "source_job_id": "60da3eb153194ef9ac443c184bdbd8c9",
+          "source_clip_url": "/outputs/60da3eb153194ef9ac443c184bdbd8c9/mio-baby-celine-sakit-tapi-yuta-tidak-peduli-sedih-banget-roblox/clips/resume_cerita_5menit_hah-yuta-ada-apa-lihat-lihat-mio-baby.mp4",
+          "repair_attempted": false,
+          "decision": "DROP_SOURCE",
+          "confidence": 1.0,
+          "hard_gates": {
+            "rights": true,
+            "media_integrity": true,
+            "meaning_preserved": true,
+            "context_safe": false
+          },
+          "ai_checks": {
+            "hook": null,
+            "standalone_clarity": null,
+            "payoff": null,
+            "caption": null,
+            "crop": null,
+            "visual_quality": null,
+            "audio_quality": null
+          },
+          "evidence": [
+            "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+          ],
+          "repair_instructions": [],
+          "delete_source": true,
+          "upload_allowed": false
+        },
+        "source_job_id": "60da3eb153194ef9ac443c184bdbd8c9",
+        "source_clip_url": "/outputs/60da3eb153194ef9ac443c184bdbd8c9/mio-baby-celine-sakit-tapi-yuta-tidak-peduli-sedih-banget-roblox/clips/resume_cerita_5menit_hah-yuta-ada-apa-lihat-lihat-mio-baby.mp4",
+        "fingerprint": "74fd0e443294b2b6d0e88128ff79d380515d40a3eaaaf667b71646e3eec0df32",
+        "updated_epoch": 1794067947.2127252
+      },
+      {
+        "status": "reviewed",
+        "audit": {
+          "schema_version": 1,
+          "source_job_id": "0093888d10ba4c7290ab1673be7fd24e",
+          "source_clip_url": "/outputs/0093888d10ba4c7290ab1673be7fd24e/yuta-mio-dan-baby-celine-digigit-nyamuk-sampai-kurus-roblox/clips/resume_cerita_5menit_apakah-ini-akan-bagus-guys-lihat-nih-ini.mp4",
+          "repair_attempted": false,
+          "decision": "DROP_SOURCE",
+          "confidence": 1.0,
+          "hard_gates": {
+            "rights": true,
+            "media_integrity": true,
+            "meaning_preserved": true,
+            "context_safe": false
+          },
+          "ai_checks": {
+            "hook": null,
+            "standalone_clarity": null,
+            "payoff": null,
+            "caption": null,
+            "crop": null,
+            "visual_quality": null,
+            "audio_quality": null
+          },
+          "evidence": [
+            "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+          ],
+          "repair_instructions": [],
+          "delete_source": true,
+          "upload_allowed": false
+        },
+        "source_job_id": "0093888d10ba4c7290ab1673be7fd24e",
+        "source_clip_url": "/outputs/0093888d10ba4c7290ab1673be7fd24e/yuta-mio-dan-baby-celine-digigit-nyamuk-sampai-kurus-roblox/clips/resume_cerita_5menit_apakah-ini-akan-bagus-guys-lihat-nih-ini.mp4",
+        "fingerprint": "912c19a3744df8261d6b1097bda9284673e674d5f16e57f5a4407fae388cd1ab",
+        "updated_epoch": 1794267472.8613224
+      },
+      {
+        "status": "reviewed",
+        "audit": {
+          "schema_version": 1,
+          "source_job_id": "60646d1b4607453180c42595a49699a2",
+          "source_clip_url": "/outputs/60646d1b4607453180c42595a49699a2/hidayah-mertua-galak-kamu-tidak-pantas-jadi-menantuku-tapi-akhirnya-menyesal/clips/resume_cerita_5menit_nisa-menyusun-semua-ini-dari-siang-sampai-malam.mp4",
+          "repair_attempted": false,
+          "decision": "DROP_SOURCE",
+          "confidence": 1.0,
+          "hard_gates": {
+            "rights": true,
+            "media_integrity": false,
+            "meaning_preserved": null,
+            "context_safe": true
+          },
+          "ai_checks": {
+            "hook": null,
+            "standalone_clarity": null,
+            "payoff": null,
+            "caption": null,
+            "crop": null,
+            "visual_quality": null,
+            "audio_quality": null
+          },
+          "evidence": [
+            "Invalid or overlapping output caption timing"
+          ],
+          "repair_instructions": [],
+          "delete_source": true,
+          "upload_allowed": false
+        },
+        "source_job_id": "60646d1b4607453180c42595a49699a2",
+        "source_clip_url": "/outputs/60646d1b4607453180c42595a49699a2/hidayah-mertua-galak-kamu-tidak-pantas-jadi-menantuku-tapi-akhirnya-menyesal/clips/resume_cerita_5menit_nisa-menyusun-semua-ini-dari-siang-sampai-malam.mp4",
+        "fingerprint": "1b32b4a89218cb0270f28b718b50c282432c64fb59955a57629970cd09cdf49b",
+        "updated_epoch": 1794194100.1829653
+      },
+      {
+        "status": "reviewed",
+        "audit": {
+          "schema_version": 1,
+          "source_job_id": "755bd27102f64802980b2b66d6be99e3",
+          "source_clip_url": "/outputs/755bd27102f64802980b2b66d6be99e3/yuta-mio-buat-rumah-rahasia-di-dalam-patung-super-bear-adventure-roblox/clips/resume_cerita_5menit_temen-temen-hari-ini-kak-yuta-mio-dan.mp4",
+          "repair_attempted": false,
+          "decision": "DROP_SOURCE",
+          "confidence": 1.0,
+          "hard_gates": {
+            "rights": true,
+            "media_integrity": true,
+            "meaning_preserved": true,
+            "context_safe": false
+          },
+          "ai_checks": {
+            "hook": null,
+            "standalone_clarity": null,
+            "payoff": null,
+            "caption": null,
+            "crop": null,
+            "visual_quality": null,
+            "audio_quality": null
+          },
+          "evidence": [
+            "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+          ],
+          "repair_instructions": [],
+          "delete_source": true,
+          "upload_allowed": false
+        },
+        "source_job_id": "755bd27102f64802980b2b66d6be99e3",
+        "source_clip_url": "/outputs/755bd27102f64802980b2b66d6be99e3/yuta-mio-buat-rumah-rahasia-di-dalam-patung-super-bear-adventure-roblox/clips/resume_cerita_5menit_temen-temen-hari-ini-kak-yuta-mio-dan.mp4",
+        "fingerprint": "2b45731a46af43587beb86927bc1a1092f69115ddebfceec39548a09f1b7928a",
+        "updated_epoch": 1794221626.1289926
+      }
+    ]
+  },
+  "youtube": [
+    {
+      "id": "2f546df2dfe545559f12fdd4fd1fc2eb",
+      "source_job_id": "85fde21850f548b4af607f99edca5db5",
+      "clip_name": "resume_cerita_5menit_mio-mio-dimana-mio-mio-mio-dimana-mio.mp4",
+      "status": "completed",
+      "upload_confirmed": true,
+      "video_url": "https://www.youtube.com/watch?v=2PRl4z8aSx4",
+      "visibility": "public",
+      "publish_at": "2026-11-17T13:30:00+00:00",
+      "error": null
+    }
+  ],
+  "tiktok": [
+    {
+      "id": "ab6ffbbd2fd248b09527f667f8d37ffb",
+      "source_job_id": "85fde21850f548b4af607f99edca5db5",
+      "clip_name": "resume_cerita_5menit_mio-mio-dimana-mio-mio-mio-dimana-mio.mp4",
+      "status": "completed",
+      "upload_confirmed": true,
+      "video_url": null,
+      "visibility": "only_you",
+      "publish_at": null,
+      "error": null
+    },
+    {
+      "id": "970310922e1e4fb7835a05223b8bc260",
+      "source_job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+      "clip_name": "resume_cerita_5menit_lilang-sebaiknya-kamu-bangun-dari-mimpi-jangan-b.mp4",
+      "status": "completed",
+      "upload_confirmed": true,
+      "video_url": null,
+      "visibility": "only_you",
+      "publish_at": null,
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "checked_at": "2026-11-13T06:39:03.023235+00:00",
+  "job": {
+    "id": "403b1cdef5dd4a669c5af49c40b207f3",
+    "status": "completed",
+    "clips": [
+      {
+        "url": "/outputs/403b1cdef5dd4a669c5af49c40b207f3/menantu-super-kaya-nyamar-penjual-kaki-lima-tes-keluarga-istri-tak-duga-diremehk/clips/resume_cerita_5menit_lilang-sebaiknya-kamu-bangun-dari-mimpi-jangan-b.mp4",
+        "name": "resume_cerita_5menit_lilang-sebaiknya-kamu-bangun-dari-mimpi-jangan-b.mp4",
+        "youtube_upload_ready": false,
+        "youtube_upload_issue": "Long ditahan QC (DROP_SOURCE): sumber ditolak pemeriksaan konten; tidak dikirim ulang otomatis."
+      }
+    ]
+  },
+  "youtube": [],
+  "tiktok": [
+    {
+      "id": "970310922e1e4fb7835a05223b8bc260",
+      "source_job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+      "clip_url": "/outputs/403b1cdef5dd4a669c5af49c40b207f3/menantu-super-kaya-nyamar-penjual-kaki-lima-tes-keluarga-istri-tak-duga-diremehk/clips/resume_cerita_5menit_lilang-sebaiknya-kamu-bangun-dari-mimpi-jangan-b.mp4",
+      "status": "completed",
+      "upload_confirmed": true,
+      "video_url": null,
+      "logs": [
+        "Preflight hak sumber dan transformasi editorial lolos.",
+        "Paket TikTok diterapkan: Cerita & Penjelasan · hook varian 2.",
+        "Upload TikTok dikunci Only you; publikasi umum tetap keputusan manual setelah review.",
+        "TARGET_ACCOUNT_CONFIRMED:@titikbalikislami",
+        "SESSION_SAVED:/app/data/tiktok_storage_state.json",
+        "POST_BASELINE_MATCHES:0",
+        "POST_BASELINE_VISIBLE_IDS:5",
+        "Video 240.60 MiB disiapkan menjadi 16.70 MiB untuk CDP.",
+        "Mengirim resume_cerita_5menit_lilang-sebaiknya-kamu-bangun-dari-mimpi-jangan-b.mp4 dengan identitas file clipforge-c662fa3368006db661694de8da446be58ca5226189104969bfc5ddd8701c5ca0...",
+        "Video dipilih: resume_cerita_5menit_lilang-sebaiknya-kamu-bangun-dari-mimpi-jangan-b.mp4",
+        "Caption TikTok terisi tanpa nama file.",
+        "PRIVACY_REQUESTED:Only you",
+        "FINAL_VISIBILITY:private",
+        "Menunggu pemrosesan video selesai dan tombol Post aktif...",
+        "Caption TikTok terisi tanpa nama file.",
+        "PRIVACY_REQUESTED:Only you",
+        "FINAL_VISIBILITY:private",
+        "ACTIVATION_READY_BEFORE_POST: keyboard native dipilih sebelum percobaan Post; belum ada posting.",
+        "POST_SUBMIT_INTENT: Post akan dicoba; hasil tanpa konfirmasi harus diverifikasi sebelum transfer ulang.",
+        "Tombol Post diklik setelah privasi only_you terverifikasi.",
+        "POST_CONFIRMATION_DIALOG_ACCEPTED:Continue to post? The copyright check is incomplete. Posting your video now will stop the check. We're still checking your video for potential issues. Do you want to continue posting before the check is complete? Cancel Post now",
+        "POST_API_ACCEPTED:https://www.tiktok.com/tiktok/web/project/post/v1/",
+        "POST_SUBMISSION_SETTLED:API TikTok menerima posting.",
+        "POST_CONFIRMED_BY_EXACT_ROW:7707449979572374804",
+        "UPLOAD_CONFIRMED:private",
+        "VIDEO_URL:https://www.tiktok.com/@titikbalikislami/video/7707449979572374804"
+      ],
+      "submission_started": true,
+      "submission_accepted": true
+    }
+  ]
+}

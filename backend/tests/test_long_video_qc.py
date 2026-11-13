@@ -115,6 +115,26 @@ def test_provider_safety_refusal_is_terminal_and_not_retried_as_outage(media):
     assert result['audit']['upload_allowed'] is False
 
 
+@pytest.mark.parametrize('status', [422, 503])
+def test_provider_diagnostics_preserve_request_id_without_credentials(media, monkeypatch, status):
+    from urllib.error import HTTPError
+    monkeypatch.setenv('CLIPFORGE_QC_AI_API_KEY', 'test-api-key')
+    def failed(*args):
+        message = 'input rejected by content safety screening' if status == 422 else 'temporarily unavailable'
+        raise HTTPError('https://test.invalid', status, 'Provider error',
+            {'x-request-id': 'req-support-123'},
+            io.BytesIO(json.dumps({'error': message, 'key': 'test-api-key', 'authorization': 'Bearer another-token'}).encode()))
+    result = qc.audit_long(media, context(), reviewer=failed)
+    assert result['provider_request_id'] == 'req-support-123'
+    assert result['provider_http_status'] == status and result['stage'] == 'vision_review'
+    assert 'test-api-key' not in result['provider_error'] and 'another-token' not in result['provider_error']
+    if status == 422:
+        assert qc.terminal_provider_rejection(result)
+        assert not result['audit']['upload_allowed'] and 'retry_after_seconds' not in result
+    else:
+        assert result['audit'] is None and result['status'] == 'waiting_for_ai_or_evidence'
+
+
 def test_provider_receives_images_and_audio_as_evidence(monkeypatch):
     monkeypatch.setenv('CLIPFORGE_QC_AI_BASE_URL', 'http://test.invalid/v1')
     monkeypatch.setenv('CLIPFORGE_QC_AI_MODEL', 'multimodal-test')

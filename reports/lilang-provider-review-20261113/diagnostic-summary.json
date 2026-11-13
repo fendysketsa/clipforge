@@ -1,0 +1,17 @@
+{
+  "source_job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+  "review_updated_at": "2026-11-13T00:30:18.784267+00:00",
+  "review_time_jakarta": "2026-11-13T07:30:18.784267+07:00",
+  "decision": "DROP_SOURCE",
+  "media_sha256": "c662fa3368006db661694de8da446be58ca5226189104969bfc5ddd8701c5ca0",
+  "media_size_bytes": 252284147,
+  "current_model": "nvidia/nemotron-3.5-super-vl:free",
+  "original_model_confirmed": false,
+  "original_provider_response_retained": false,
+  "original_request_id_retained": false,
+  "provider_resubmitted": false,
+  "external_report_sent": true,
+  "external_report_message_id": "1a1d39d859db05b6",
+  "external_report_thread_id": "1a1d39d859db05b6",
+  "provider_decision_received": false
+}

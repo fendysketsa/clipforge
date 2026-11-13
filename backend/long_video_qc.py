@@ -415,16 +415,23 @@ def audit_long(media: Path, context: dict, *, reviewer=None) -> dict:
         key = provider_config()['api_key']
         if key:
             detail = detail.replace(key, '[redacted]')
+        detail = re.sub(r'(?i)Bearer\s+[^\s"\\]+', 'Bearer [redacted]', detail)
+        request_id = next((str((exc.headers or {}).get(name) or '').strip()
+                           for name in ('x-request-id', 'x-openrouter-request-id', 'request-id')
+                           if (exc.headers or {}).get(name)), '')
+        diagnostics = {'stage': stage, 'provider_http_status': exc.code,
+                       'provider_error': detail[:600]}
+        if re.fullmatch(r'[A-Za-z0-9_.:-]{1,160}', request_id):
+            diagnostics['provider_request_id'] = request_id
         if exc.code == 422 and 'content safety screening' in detail.casefold():
             # This is a refusal, not an outage. Do not send the same rejected
             # source again forever or route it around the provider's screening.
             gates['context_safe'] = False
-            return {'status': 'reviewed', 'audit': _decision(context, gates=gates,
+            return {**diagnostics, 'status': 'reviewed', 'audit': _decision(context, gates=gates,
                 evidence=['AI provider explicitly declined this source during content safety screening; '
                           'semantic/visual approval is unavailable, so automatic upload is rejected.'])}
-        return {"status": "waiting_for_ai_or_evidence", "audit": None,
-                "stage": stage,
-                "reason": "ai_http_" + str(exc.code), "provider_error": detail[:600],
+        return {**diagnostics, "status": "waiting_for_ai_or_evidence", "audit": None,
+                "reason": "ai_http_" + str(exc.code),
                 "retry_after_seconds": 600}
     except Exception as exc:
         # Provider timeouts, unsupported vision models, malformed JSON and
