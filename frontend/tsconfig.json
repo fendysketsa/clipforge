@@ -48,7 +48,9 @@
     ".next-proxy-direct/types/**/*.ts",
     ".next-proxy-direct/dev/types/**/*.ts",
     ".next-cron-long/types/**/*.ts",
-    ".next-cron-long/dev/types/**/*.ts"
+    ".next-cron-long/dev/types/**/*.ts",
+    ".next-upload-final/types/**/*.ts",
+    ".next-upload-final/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

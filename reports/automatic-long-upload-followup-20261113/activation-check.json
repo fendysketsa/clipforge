@@ -1,0 +1,19 @@
+{
+  "checked_at": "2026-11-13T03:37:03.697481+00:00",
+  "schema": false,
+  "frontend": {
+    "schema": 1,
+    "build_id": "WEQ6giT-Q01ewxYTkEKiE",
+    "release_id": "a51aab87c6aa42f39bc9db76c1276a0251a14c441d001d5336fc1e80906387ba",
+    "ui_verified": true
+  },
+  "health": {
+    "status": "ok"
+  },
+  "backend_deployment": {
+    "release_id": "940b6b611ff1a37990206366a7231f9c14fa900f03714c821afb207dbcaca4a0",
+    "verified": true,
+    "source_verified": true,
+    "prepared_at": 1794534678.1481876
+  }
+}

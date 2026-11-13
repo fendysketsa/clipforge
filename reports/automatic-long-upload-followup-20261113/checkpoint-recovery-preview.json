@@ -1,0 +1,14 @@
+{
+  "read_only": true,
+  "attempt": {
+    "day": "2026-11-13",
+    "short_job_id": "e4958d6247d347a082628eb2fc0f6eb5",
+    "job_id": "85fde21850f548b4af607f99edca5db5",
+    "source_run_id": "c62e66976f094d4aaa69f28a029fdd2a",
+    "status": "completed",
+    "review_required": true,
+    "confirmed_upload_id": "2f546df2dfe545559f12fdd4fd1fc2eb",
+    "confirmed_video_url": "https://www.youtube.com/watch?v=2PRl4z8aSx4",
+    "error": null
+  }
+}

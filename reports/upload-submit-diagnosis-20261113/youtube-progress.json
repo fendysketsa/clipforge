@@ -1,0 +1,31 @@
+{
+  "checked_at": "2026-11-13T03:23:13.621362+00:00",
+  "youtube": {
+    "id": "2f546df2dfe545559f12fdd4fd1fc2eb",
+    "status": "running",
+    "updated_at": "2026-11-13T03:23:03.205565+00:00",
+    "error": null,
+    "video_url": "https://www.youtube.com/watch?v=2PRl4z8aSx4",
+    "upload_confirmed": false,
+    "playlist_confirmed": true,
+    "thumbnail_attached": true,
+    "visibility": "public",
+    "publish_at": "2026-11-17T13:30:00+00:00",
+    "logs": [
+      "Tab upload aktif: VIDEO_ELEMENTS.",
+      "Masuk ke tab Elemen video.",
+      "Menambahkan subtitle manual: FCN.",
+      "Tombol Tambahkan subtitle diklik.",
+      "Mode subtitle manual dipilih.",
+      "Menunggu editor subtitle siap 1500ms sebelum isi dari env.",
+      "Subtitle 'FCN' belum terverifikasi; mencoba force-fill terakhir.",
+      "Subtitle force-fill terverifikasi: FCN.",
+      "Menunggu 500ms setelah subtitle selesai diisi.",
+      "Subtitle manual disimpan dan editor subtitle sudah tertutup.",
+      "Tab upload aktif: CHECKS.",
+      "Step Elemen video sudah tercentang; masuk ke tab Pemeriksaan awal.",
+      "Menunggu YouTube Studio Checks sampai semua pemeriksaan aman...",
+      "Checks masih berjalan; menunggu sampai semua centang aman (maksimal sekitar 60 menit lagi)."
+    ]
+  }
+}

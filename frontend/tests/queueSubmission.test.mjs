@@ -47,6 +47,21 @@ test('double clicks share one submission and TikTok preserves Only-you visibilit
   assert.equal(posts,1);assert.equal(a.id,b.id);assert.equal(payload.visibility,'only_you');
 });
 
+test('manual YouTube review explicitly requests Private for original and recovered admission', async () => {
+  const payloads=[];
+  const submit=createQueueSubmitter(async (url,options={})=>{
+    if(options.method==='POST'){
+      payloads.push(JSON.parse(options.body));
+      if(!url.endsWith('/reconcile'))throw new TypeError('Lost response');
+      return json(row());
+    }
+    return json([]);
+  },()=>store(),message);
+  assert.equal((await submit(input)).id,'accepted');
+  assert.equal(payloads.length,2);
+  assert.ok(payloads.every(payload=>payload.visibility==='private'));
+});
+
 test('definite preflight rejection releases its reservation and keeps the backend explanation', async () => {
   let posts=0;const state=store();
   const fetcher=async (_url,options={})=>options.method==='POST'

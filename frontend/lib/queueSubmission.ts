@@ -78,7 +78,7 @@ export function createQueueSubmitter(
         return row;
       };
       const payload = JSON.stringify({ clip_url: input.clipUrl,
-        ...(input.platform === "tiktok" ? { visibility: "only_you" } : {}) });
+        visibility: input.platform === "tiktok" ? "only_you" : "private" });
       const endpointPath = `/api/jobs/${input.jobId}/${input.platform}-uploads`;
       const platformName = input.platform === "youtube" ? "YouTube" : "TikTok";
       const recoverMissing = async (): Promise<UploadRecord> => {

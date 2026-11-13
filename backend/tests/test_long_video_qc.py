@@ -155,6 +155,44 @@ def test_local_audio_review_compares_actual_recognition_with_timed_captions(monk
         qc.local_audio_evidence([sample], subtitles)
 
 
+def test_audio_caption_mismatch_is_a_source_failure_not_an_outage_retry(media, monkeypatch):
+    monkeypatch.setattr(qc, 'provider_config', lambda: {'audio_review_mode': 'local_whisper'})
+    def mismatch(*args):
+        raise qc.AudioCaptionMismatch('Rendered audio does not sufficiently match timed captions at output 0.000-3.000s')
+    monkeypatch.setattr(qc, 'local_audio_evidence', mismatch)
+    result = qc.audit_long(media, context(), reviewer=lambda *args: pytest.fail('Mismatched audio reached AI'))
+    assert result['status'] == 'reviewed' and result['stage'] == 'local_audio'
+    assert result['audit']['decision'] == 'DROP_SOURCE'
+    assert result['audit']['upload_allowed'] is False
+    assert '0.000-3.000s' in result['audit']['evidence'][0]
+    assert 'retry_after_seconds' not in result
+    assert media.is_file()
+
+
+def test_failed_ai_contract_reports_stage_and_redacts_credentials(media, monkeypatch):
+    monkeypatch.setattr(qc, 'provider_config', lambda: {'audio_review_mode': 'remote', 'api_key': 'test-secret-token'})
+    def invalid(*args):
+        raise ValueError('Invalid boolean test-secret-token Bearer another-secret https://user:password@example.test/v1')
+    monkeypatch.setattr(qc, 'validate_ai_result', invalid)
+    result = qc.audit_long(media, context(), reviewer=lambda *args: model_result())
+    assert result['status'] == 'waiting_for_ai_or_evidence'
+    assert result['audit'] is None and result['stage'] == 'ai_validation'
+    assert result['reason'] == 'ValueError'
+    assert 'Invalid boolean' in result['reason_detail']
+    assert all(secret not in result['reason_detail'] for secret in ('test-secret-token', 'another-secret', 'user:password'))
+
+
+def test_unavailable_local_recognizer_keeps_hold_instead_of_rejecting_source(media, monkeypatch):
+    monkeypatch.setattr(qc, 'provider_config', lambda: {'audio_review_mode': 'local_whisper'})
+    def unavailable(*args):
+        raise ValueError('Cached local Whisper model unavailable')
+    monkeypatch.setattr(qc, 'local_audio_evidence', unavailable)
+    result = qc.audit_long(media, context())
+    assert result['status'] == 'waiting_for_ai_or_evidence' and result['audit'] is None
+    assert result['stage'] == 'local_audio'
+    assert result['reason_detail'] == 'Cached local Whisper model unavailable'
+
+
 @pytest.mark.parametrize("change", ["false_check", "string_bool", "missing_gate", "low_score", "low_confidence", "no_evidence"])
 def test_contradictory_pass_is_rejected(change):
     raw, c = model_result(), context()

@@ -92,6 +92,30 @@ def test_reservation_survives_restart_without_duplicate(setup_long):
     assert api.queue_review_long_once()['status'] == 'reserved'
 
 
+@pytest.mark.parametrize('confirmed', [True, False])
+def test_remote_confirmation_settles_cleaned_render_without_approving_qc(setup_long, confirmed):
+    result = api.queue_review_long_once()
+    state = api.long_production_state()
+    state['auto_qc_enabled'] = True
+    api.save_long_production_state(state)
+    api.jobs.clear()
+    row = api.YouTubeUploadJob(id='uploaded-long', source_job_id=result['job_id'],
+        clip_url='/outputs/long/resume_cerita_test.mp4', clip_name='resume_cerita_test.mp4',
+        title='Existing Long', status='completed', created_at=api.now_iso(), updated_at=api.now_iso(),
+        upload_confirmed=confirmed, video_url='https://www.youtube.com/watch?v=abcdefghijk')
+    api.youtube_uploads[row.id] = row
+    outcome = api.queue_review_long_once()
+    assert outcome['status'] == ('daily_target_reached' if confirmed else 'reserved')
+    attempt = api.long_production_state()['attempts'][0]
+    assert attempt.get('qc_decision') is None  # remote success never invents PASS_UPLOAD
+    if confirmed:
+        assert attempt['status'] == 'completed'
+        assert attempt['confirmed_upload_id'] == row.id
+        assert attempt['confirmed_video_url'] == row.video_url
+    else:
+        assert 'confirmed_upload_id' not in attempt
+
+
 def test_restart_completed_job_repairs_queued_checkpoint_before_cleanup(setup_long):
     result = api.queue_review_long_once()
     api.jobs[result['job_id']].status = 'completed'

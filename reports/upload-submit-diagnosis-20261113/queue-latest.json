@@ -1,0 +1,38 @@
+{
+  "checked_at": "2026-11-13T03:17:04.860138+00:00",
+  "youtube": {
+    "id": "2f546df2dfe545559f12fdd4fd1fc2eb",
+    "status": "running",
+    "updated_at": "2026-11-13T03:15:53.094509+00:00",
+    "logs": [
+      "Thumbnail otomatis 16:9 siap dipasang: resume_cerita_5menit_mio-mio-dimana-mio-mio-mio-dimana-mio_thumb.jpg",
+      "Preflight monetisasi lolos untuk upload public; keputusan akhir tetap mengikuti pemeriksaan YouTube.",
+      "Playlist dipilih otomatis dari isi video: Gaming.",
+      "Publikasi dijadwalkan otomatis oleh YouTube pada 17-11-2026 20:30 WIB; laptop tidak perlu tetap menyala setelah upload terkonfirmasi.",
+      "Playlist long-form dipilih otomatis dari isi cerita: Gaming.",
+      "UPLOAD_BROWSER_COOLDOWN: menunggu jeda 45 detik; tidak ada transfer atau Post bersamaan."
+    ],
+    "error": null,
+    "video_url": null,
+    "upload_confirmed": false
+  },
+  "tiktok": {
+    "id": "ab6ffbbd2fd248b09527f667f8d37ffb",
+    "status": "completed",
+    "updated_at": "2026-11-13T03:15:07.116916+00:00",
+    "logs": [
+      "ACTIVATION_READY_BEFORE_POST: keyboard native dipilih sebelum percobaan Post; belum ada posting.",
+      "POST_SUBMIT_INTENT: Post akan dicoba; hasil tanpa konfirmasi harus diverifikasi sebelum transfer ulang.",
+      "Tombol Post diklik setelah privasi only_you terverifikasi.",
+      "POST_CONFIRMATION_DIALOG_ACCEPTED:Continue to post? We're still checking your video for potential issues. Do you want to continue posting before the check is complete? Cancel Post now",
+      "POST_API_ACCEPTED:https://www.tiktok.com/tiktok/web/project/post/v1/",
+      "POST_SUBMISSION_SETTLED:API TikTok menerima posting.",
+      "POST_CONFIRMED_BY_EXACT_ROW:7707489276685995285",
+      "UPLOAD_CONFIRMED:private",
+      "VIDEO_URL:https://www.tiktok.com/@titikbalikislami/video/7707489276685995285"
+    ],
+    "error": null,
+    "video_url": null,
+    "upload_confirmed": true
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "source_sha256": {
+    "frontend/lib/queueSubmission.ts": "a2de7a104797d81d8b3aae831bf2902abbdaaaa48889cc7f52a9353b1e961df1",
+    "frontend/lib/longAutomation.ts": "c982b007af50d38d514d7c8043cac49a401192dfb6864b88bb2d72c648e9d23b",
+    "frontend/app/_components/ResultsSection.tsx": "d590c9360fa6474f2861a9a68810d01bb9f044a45e9c31f82bc6a4b695cd0f4b",
+    "frontend/tests/queueSubmission.test.mjs": "72f8f5a82089dcdaddbddbc1e8301ea7937a09e64e44097dbb711dca73698707"
+  },
+  "tests_passed": 38,
+  "typescript_passed": true,
+  "production_build_passed": true,
+  "build_manifest_verified": true,
+  "expected_frontend_release_id": "a51aab87c6aa42f39bc9db76c1276a0251a14c441d001d5336fc1e80906387ba",
+  "build_id": "luuIgEKC3nM1xJ8FZ1Le5",
+  "runtime_activation_confirmed": true,
+  "activation_blocker": null,
+  "production_frontend_release_observed": "7d77726baa053786d7d0325711951742b08dfad00cc9c326cf93e02b0ba00696",
+  "previous_tiktok_remote_id": "7707489276685995285",
+  "youtube_upload_id": "2f546df2dfe545559f12fdd4fd1fc2eb",
+  "youtube_upload_confirmed": true,
+  "youtube_video_url": "https://www.youtube.com/watch?v=2PRl4z8aSx4",
+  "youtube_playlist_confirmed": true,
+  "youtube_thumbnail_attached": true,
+  "youtube_stage": "Studio Checks",
+  "activation_evidence": "../automatic-long-upload-followup-20261113/runtime.json"
+}

@@ -40,6 +40,20 @@ def terminal_provider_rejection(record: dict) -> bool:
 PROVIDER_CONFIG_PATH = Path(__file__).resolve().parent / "data" / "long_qc_provider.json"
 
 
+class AudioCaptionMismatch(ValueError):
+    """Actual output recognition contradicts its timed caption evidence."""
+
+
+def safe_error_detail(exc: Exception) -> str:
+    detail = str(exc)
+    config = provider_config()
+    if config.get("api_key"):
+        detail = detail.replace(config["api_key"], "[redacted]")
+    detail = re.sub(r"(?i)Bearer\s+\S+", "Bearer [redacted]", detail)
+    detail = re.sub(r"(https?://)[^/\s@]+@", r"\1[redacted]@", detail)
+    return " ".join(detail.split())[:300]
+
+
 def provider_config() -> dict:
     """Read mounted provider settings without exposing its key in API state."""
     path = PROVIDER_CONFIG_PATH
@@ -91,7 +105,9 @@ def local_audio_evidence(samples: list[dict], subtitles: str) -> list[dict]:
         expected_words = set(re.findall(r'\w+', expected.casefold()))
         overlap = 2 * len(actual_words & expected_words) / max(1, len(actual_words) + len(expected_words))
         if len(expected_words) >= 3 and (not actual_words or overlap < .30):
-            raise ValueError('Rendered audio does not sufficiently match timed captions')
+            raise AudioCaptionMismatch(
+                f'Rendered audio does not sufficiently match timed captions at output {start:.3f}-{end:.3f}s'
+            )
         result.append({'start_seconds': start, 'duration_seconds': sample['duration_seconds'],
             'recognized_text': text, 'expected_captions': expected, 'caption_overlap_f1': round(overlap, 3),
             'mean_log_probability': sum(s.avg_logprob for s in segments) / max(1, len(segments)),
@@ -343,6 +359,7 @@ def audit_long(media: Path, context: dict, *, reviewer=None) -> dict:
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         gates["media_integrity"] = False
         return {"status": "reviewed", "audit": _decision(context, gates=gates, evidence=[str(exc)[:300]])}
+    stage = "frames"
     try:
         frames = []
         for timestamp in sample_times(metadata["duration_seconds"], sidecar):
@@ -354,11 +371,13 @@ def audit_long(media: Path, context: dict, *, reviewer=None) -> dict:
                 raise ValueError("Representative frame missing")
             frames.append({"timestamp_seconds": timestamp,
                            "data_url": "data:image/jpeg;base64," + base64.b64encode(data).decode()})
+        stage = "thumbnail"
         thumbnail = media.with_name(media.stem + "_thumb.jpg")
         if not thumbnail.is_file():
             raise ValueError("Thumbnail evidence missing")
         frames.append({"timestamp_seconds": "thumbnail", "data_url": "data:image/jpeg;base64,"
                        + base64.b64encode(thumbnail.read_bytes()).decode()})
+        stage = "audio_samples"
         audio_samples = []
         duration = metadata["duration_seconds"]
         for start in sorted({0.0, round(duration / 2, 3), round(duration * .85, 3), max(0.0, round(duration - 6, 3))}):
@@ -376,12 +395,21 @@ def audit_long(media: Path, context: dict, *, reviewer=None) -> dict:
             "audio_samples": audio_samples,
             "growth": sidecar.get("growth_readiness"), "story_director": sidecar.get("story_director")}
         if provider_config()['audio_review_mode'] == 'local_whisper':
+            stage = "local_audio"
             evidence['local_audio_review'] = local_audio_evidence(audio_samples, subtitles)
             evidence['audio_samples'] = []
+        stage = "vision_review"
         raw = (reviewer or vision_review)(evidence, frames)
+        stage = "ai_validation"
         audit = validate_ai_result(raw, context, gates, ["Full media decode succeeded; audio and representative frames inspected."])
         return {"status": "reviewed", "audit": audit,
                 "frame_timestamps_seconds": [f["timestamp_seconds"] for f in frames]}
+    except AudioCaptionMismatch as exc:
+        # A repeat on unchanged media cannot fix mismatched captions. Settle
+        # this source so the capped production lane can choose another one.
+        gates["media_integrity"] = False
+        return {"status": "reviewed", "stage": stage,
+                "audit": _decision(context, gates=gates, evidence=[str(exc)])}
     except HTTPError as exc:
         detail = exc.read(1500).decode('utf-8', errors='replace')
         key = provider_config()['api_key']
@@ -395,10 +423,12 @@ def audit_long(media: Path, context: dict, *, reviewer=None) -> dict:
                 evidence=['AI provider explicitly declined this source during content safety screening; '
                           'semantic/visual approval is unavailable, so automatic upload is rejected.'])}
         return {"status": "waiting_for_ai_or_evidence", "audit": None,
+                "stage": stage,
                 "reason": "ai_http_" + str(exc.code), "provider_error": detail[:600],
                 "retry_after_seconds": 600}
     except Exception as exc:
         # Provider timeouts, unsupported vision models, malformed JSON and
         # missing optional frame evidence cannot certify an automatic pass.
         return {"status": "waiting_for_ai_or_evidence", "audit": None,
-                "reason": type(exc).__name__, "retry_after_seconds": 600}
+                "reason": type(exc).__name__, "stage": stage,
+                "reason_detail": safe_error_detail(exc), "retry_after_seconds": 600}

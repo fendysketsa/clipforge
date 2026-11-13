@@ -1,0 +1,25 @@
+{
+  "checked_at": "2026-11-13T03:22:24.949080+00:00",
+  "youtube": {
+    "id": "2f546df2dfe545559f12fdd4fd1fc2eb",
+    "status": "running",
+    "updated_at": "2026-11-13T03:22:21.890537+00:00",
+    "error": null,
+    "video_url": "https://www.youtube.com/watch?v=2PRl4z8aSx4",
+    "upload_confirmed": false,
+    "logs": [
+      "Transfer thumbnail dimulai satu kali; menunggu konfirmasi YouTube Studio: resume_cerita_5menit_mio-mio-dimana-mio-mio-mio-dimana-mio_thumb.jpg.",
+      "THUMBNAIL_ATTACHED: resume_cerita_5menit_mio-mio-dimana-mio-mio-mio-dimana-mio_thumb.jpg (1280x720)",
+      "Memilih playlist: Gaming (verifikasi 1/3).",
+      "Dropdown playlist terbuka.",
+      "Search playlist: Gaming.",
+      "Checkbox playlist tercentang dan terverifikasi: Gaming."
+    ]
+  },
+  "frontend": {
+    "schema": 1,
+    "build_id": "l7iHYOsElOd5NDA6RzLA-",
+    "release_id": "7d77726baa053786d7d0325711951742b08dfad00cc9c326cf93e02b0ba00696",
+    "ui_verified": true
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "checked_at": "2026-11-13T03:35:04.465987+00:00",
+  "source_sha256": {
+    "backend/api.py": "405bf34ce9828021b66e71252d9f273757ae264d87543a495877a28d407f1d46",
+    "backend/long_video_qc.py": "0edd17eb0a580d29a9fcc77ace91a345ad56488641489dd69cacdfb937494a80",
+    "backend/tests/test_long_video_qc.py": "aeb82eddddba6188ce3baee837fc07d70343fc653ee8562695a9ebfb62c08d6b",
+    "backend/tests/test_long_production.py": "2bdd0cfd3538ad02e08bd59d4b4385e2206ec53d025b5e07b8dfc9cb5d421ec3"
+  },
+  "tests_passed": 132,
+  "backend_runtime_activation_confirmed": false,
+  "frontend_runtime_activation_confirmed": true,
+  "frontend_release_id": "a51aab87c6aa42f39bc9db76c1276a0251a14c441d001d5336fc1e80906387ba",
+  "expected_backend_release_id": "72a81fe51fc83ec6d118712c803fe527db2bf85d1d3631883029beb10f171ced",
+  "youtube_upload_confirmed": true,
+  "youtube_video_url": "https://www.youtube.com/watch?v=2PRl4z8aSx4",
+  "youtube_publish_at": "2026-11-17T13:30:00+00:00",
+  "activation_blocker": "sudo requires host administrator password",
+  "historical_qc_error": "ValueError; old record lacks detail/stage. Exact old failure is not recoverable after its confirmed-upload cleanup."
+}

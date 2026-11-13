@@ -20409,7 +20409,19 @@ def paired_short_snapshot(job: ClipJob) -> dict[str, Any]:
     })
 
 
-def reconcile_long_production_attempts(state: dict[str, Any], current_jobs: dict[str, ClipJob]) -> bool:
+def confirmed_long_uploads_by_job() -> dict[str, YouTubeUploadJob]:
+    with youtube_uploads_lock:
+        return {row.source_job_id: row for row in youtube_uploads.values()
+                if row.status == "completed" and row.upload_confirmed and row.video_url
+                and youtube_video_id_from_url(row.video_url)
+                and not row.dry_run and row.clip_name.casefold().startswith(
+                    ("highlight_5menit_", "resume_cerita_", "long_animate_"))}
+
+
+def reconcile_long_production_attempts(
+    state: dict[str, Any], current_jobs: dict[str, ClipJob],
+    confirmed_uploads: dict[str, YouTubeUploadJob] | None = None,
+) -> bool:
     """Recover checkpoints when a restart lost the wrapper's finally block.
 
     A completed QC audit also proves rendering ended after its job was cleaned
@@ -20418,11 +20430,17 @@ def reconcile_long_production_attempts(state: dict[str, Any], current_jobs: dict
     """
     changed = False
     for attempt in state.get("attempts", []):
+        confirmed = (confirmed_uploads or {}).get(attempt.get("job_id"))
+        if confirmed:
+            fields = {"confirmed_upload_id": confirmed.id, "confirmed_video_url": confirmed.video_url}
+            if any(attempt.get(key) != value for key, value in fields.items()):
+                attempt.update(fields)
+                changed = True
         job = current_jobs.get(attempt.get("job_id"))
         if job is not None:
             status, error = job.status, job.error
         elif (attempt.get("status") in {"queued", "running"}
-              and attempt.get("qc_decision") in {"PASS_UPLOAD", "REPAIR_ONCE", "DROP_SOURCE"}):
+              and (confirmed or attempt.get("qc_decision") in {"PASS_UPLOAD", "REPAIR_ONCE", "DROP_SOURCE"})):
             status, error = "completed", None
         else:
             continue
@@ -20451,13 +20469,14 @@ def run_review_long_job(job_id: str, short_job: ClipJob) -> None:
 
 def queue_review_long_once() -> dict[str, Any]:
     """Backfill a review-only Long independently of Short publication capacity."""
+    confirmed_uploads = confirmed_long_uploads_by_job()
     with long_production_lock:
         state = long_production_state()
         if not state["enabled"]:
             return {"status": "disabled"}
         with jobs_lock:
             current_jobs = dict(jobs)
-        if reconcile_long_production_attempts(state, current_jobs):
+        if reconcile_long_production_attempts(state, current_jobs, confirmed_uploads):
             save_long_production_state(state)
         if any(job.status in {"queued", "running"} for job in current_jobs.values()):
             return {"status": "waiting_for_render"}
@@ -20478,7 +20497,7 @@ def queue_review_long_once() -> dict[str, Any]:
                 # Includes an interrupted durable reservation; require inspection.
                 return {"status": "reserved", "job_id": row.get("job_id")}
             if status == "completed":
-                if state.get("auto_qc_enabled"):
+                if state.get("auto_qc_enabled") and row.get("job_id") not in confirmed_uploads:
                     if row.get("job_id") in rejected_ids:
                         continue
                     if row.get("qc_decision") != "PASS_UPLOAD":
@@ -25211,11 +25230,12 @@ def set_auto_viral_schedule(
 
 @app.get("/api/automation/viral-cc/long-production")
 def get_long_production() -> dict[str, Any]:
+    confirmed_uploads = confirmed_long_uploads_by_job()
     with long_production_lock:
         state = long_production_state()
     with jobs_lock:
         current_jobs = dict(jobs)
-    reconcile_long_production_attempts(state, current_jobs)
+    reconcile_long_production_attempts(state, current_jobs, confirmed_uploads)
     state["active_jobs"] = [
         {"id": job.id, "status": job.status, "source_title": job.source_title,
          "progress_percent": job.progress_percent, "progress_stage": job.progress_stage,

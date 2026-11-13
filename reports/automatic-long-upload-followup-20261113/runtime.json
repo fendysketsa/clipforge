@@ -1,0 +1,199 @@
+{
+  "checked_at": "2026-11-13T03:28:53.364896+00:00",
+  "frontend": {
+    "schema": 1,
+    "build_id": "WEQ6giT-Q01ewxYTkEKiE",
+    "release_id": "a51aab87c6aa42f39bc9db76c1276a0251a14c441d001d5336fc1e80906387ba",
+    "ui_verified": true
+  },
+  "health": {
+    "status": "ok"
+  },
+  "schedule": {
+    "enabled": true,
+    "scheduler_running": true,
+    "cron_upload_recovery": {
+      "last_tick_at": "2026-11-13T03:28:51.195774+00:00",
+      "queued": {
+        "youtube": 0,
+        "tiktok": 0
+      },
+      "errors": {},
+      "enabled": true
+    },
+    "next_run_at": null,
+    "last_error": null,
+    "current_run": null
+  },
+  "production": {
+    "enabled": true,
+    "daily_target": 1,
+    "auto_qc_enabled": true,
+    "auto_qc_private_upload": true,
+    "auto_qc_tiktok_upload": true,
+    "attempts": [
+      {
+        "day": "2026-11-12",
+        "short_job_id": "345d39d8cc7647bc8a2608b544840bc0",
+        "job_id": "dd7aab52da5b47629a5a5f7db5f93b39",
+        "source_run_id": "39b0b707a3864d69b904b5f17c188ff6",
+        "status": "completed",
+        "review_required": true,
+        "error": null,
+        "relevance": {
+          "passed": true,
+          "same_source": true,
+          "source_url": "https://www.youtube.com/watch?v=Jr2AVxsP3Vk",
+          "required_short_count": 1,
+          "matched_short_count": 1,
+          "matches": [
+            {
+              "short_index": 1,
+              "long_part_index": 1,
+              "source_overlap_seconds": 41.37,
+              "short_coverage": 1.0,
+              "passed": true
+            }
+          ]
+        },
+        "qc_decision": "DROP_SOURCE"
+      },
+      {
+        "day": "2026-11-13",
+        "short_job_id": "c19efa03f597447982ca6b31b69aa43c",
+        "job_id": "74a52b6c25ef45fba32d4ab83279ae09",
+        "source_run_id": "300f5dfd2f7a4cc5ac400c4d5829bd3d",
+        "status": "failed",
+        "review_required": true,
+        "error": "clipper.py exited with code 1 Workspace dan seluruh file sementara proses gagal telah dihapus."
+      },
+      {
+        "day": "2026-11-13",
+        "short_job_id": "bf6c2c5e46564cc1bf14104066956158",
+        "job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+        "source_run_id": "205e2e10b4174889afd615470a207097",
+        "status": "queued",
+        "review_required": true,
+        "qc_decision": "DROP_SOURCE"
+      },
+      {
+        "day": "2026-11-13",
+        "short_job_id": "e4958d6247d347a082628eb2fc0f6eb5",
+        "job_id": "85fde21850f548b4af607f99edca5db5",
+        "source_run_id": "c62e66976f094d4aaa69f28a029fdd2a",
+        "status": "queued",
+        "review_required": true
+      }
+    ],
+    "qc_reviews": [
+      {
+        "status": "waiting_for_ai_or_evidence",
+        "audit": null,
+        "reason": "ValueError",
+        "retry_after_seconds": 600,
+        "fingerprint": "9212d95ff6ebe480dbc5b7220181bae2de24d4669851391d6d2043880791b880",
+        "source_job_id": "85fde21850f548b4af607f99edca5db5",
+        "source_clip_url": "/outputs/85fde21850f548b4af607f99edca5db5/yuta-mio-main-charlie-charlie-jam-3-malam-serem-banget-roblox/clips/resume_cerita_5menit_mio-mio-dimana-mio-mio-mio-dimana-mio.mp4",
+        "updated_at": "2026-11-13T03:22:27.815312+00:00",
+        "retry_at": "2026-11-13T03:32:27.815332+00:00"
+      },
+      {
+        "status": "reviewed",
+        "audit": {
+          "schema_version": 1,
+          "source_job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+          "source_clip_url": "/outputs/403b1cdef5dd4a669c5af49c40b207f3/menantu-super-kaya-nyamar-penjual-kaki-lima-tes-keluarga-istri-tak-duga-diremehk/clips/resume_cerita_5menit_lilang-sebaiknya-kamu-bangun-dari-mimpi-jangan-b.mp4",
+          "repair_attempted": false,
+          "decision": "DROP_SOURCE",
+          "confidence": 1.0,
+          "hard_gates": {
+            "rights": true,
+            "media_integrity": true,
+            "meaning_preserved": true,
+            "context_safe": false
+          },
+          "ai_checks": {
+            "hook": null,
+            "standalone_clarity": null,
+            "payoff": null,
+            "caption": null,
+            "crop": null,
+            "visual_quality": null,
+            "audio_quality": null
+          },
+          "evidence": [
+            "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+          ],
+          "repair_instructions": [],
+          "delete_source": true,
+          "upload_allowed": false
+        },
+        "fingerprint": "04aeb6fed7c15a69c2d957e4b7bed3c9c33d056319bcdb62dd93ba9b1c08ac10",
+        "source_job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+        "source_clip_url": "/outputs/403b1cdef5dd4a669c5af49c40b207f3/menantu-super-kaya-nyamar-penjual-kaki-lima-tes-keluarga-istri-tak-duga-diremehk/clips/resume_cerita_5menit_lilang-sebaiknya-kamu-bangun-dari-mimpi-jangan-b.mp4",
+        "updated_at": "2026-11-13T00:30:18.784267+00:00"
+      }
+    ]
+  },
+  "youtube": [
+    {
+      "id": "2f546df2dfe545559f12fdd4fd1fc2eb",
+      "source_job_id": "85fde21850f548b4af607f99edca5db5",
+      "status": "completed",
+      "created_at": "2026-11-13T03:07:53.712380+00:00",
+      "updated_at": "2026-11-13T03:25:49.541760+00:00",
+      "video_url": "https://www.youtube.com/watch?v=2PRl4z8aSx4",
+      "publish_at": "2026-11-17T13:30:00+00:00",
+      "visibility": "public",
+      "upload_confirmed": true,
+      "error": null,
+      "logs": [
+        "Upload terkonfirmasi; browser bersama dipertahankan tanpa reload tambahan.",
+        "Tab upload YouTube ditutup.",
+        "File staging upload sementara dibersihkan.",
+        "Upload YouTube dan TikTok terverifikasi; file lokal akan dihapus otomatis dalam 30 detik.",
+        "File klip dan pendukungnya terhapus otomatis (12 item); job sumber ikut dibersihkan."
+      ]
+    }
+  ],
+  "tiktok": [
+    {
+      "id": "ab6ffbbd2fd248b09527f667f8d37ffb",
+      "source_job_id": "85fde21850f548b4af607f99edca5db5",
+      "status": "completed",
+      "created_at": "2026-11-13T03:07:18.110478+00:00",
+      "updated_at": "2026-11-13T03:15:07.116916+00:00",
+      "video_url": null,
+      "publish_at": null,
+      "visibility": "only_you",
+      "upload_confirmed": true,
+      "error": null,
+      "logs": [
+        "POST_API_ACCEPTED:https://www.tiktok.com/tiktok/web/project/post/v1/",
+        "POST_SUBMISSION_SETTLED:API TikTok menerima posting.",
+        "POST_CONFIRMED_BY_EXACT_ROW:7707489276685995285",
+        "UPLOAD_CONFIRMED:private",
+        "VIDEO_URL:https://www.tiktok.com/@titikbalikislami/video/7707489276685995285"
+      ]
+    },
+    {
+      "id": "970310922e1e4fb7835a05223b8bc260",
+      "source_job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+      "status": "completed",
+      "created_at": "2026-11-13T00:40:13.690652+00:00",
+      "updated_at": "2026-11-13T00:42:34.190789+00:00",
+      "video_url": null,
+      "publish_at": null,
+      "visibility": "only_you",
+      "upload_confirmed": true,
+      "error": null,
+      "logs": [
+        "POST_API_ACCEPTED:https://www.tiktok.com/tiktok/web/project/post/v1/",
+        "POST_SUBMISSION_SETTLED:API TikTok menerima posting.",
+        "POST_CONFIRMED_BY_EXACT_ROW:7707449979572374804",
+        "UPLOAD_CONFIRMED:private",
+        "VIDEO_URL:https://www.tiktok.com/@titikbalikislami/video/7707449979572374804"
+      ]
+    }
+  ]
+}
