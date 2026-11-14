@@ -1174,6 +1174,12 @@ export default function HomePage() {
     window.dispatchEvent(new Event("clipforge:open-results"));
   }, []);
 
+  useEffect(() => {
+    if (studioView !== "results" || job?.clips.length) return;
+    const latestResult = jobs.find(item => item.clips.length > 0);
+    if (latestResult) setJob(latestResult);
+  }, [studioView, job?.clips.length, jobs]);
+
   const handleDeleteAll = useCallback(() => {
     toast((item) => (
       <DeleteAllToast
@@ -1872,6 +1878,7 @@ export default function HomePage() {
       ) : null}
 
       <div hidden={studioView !== "results" && studioView !== "history"}>
+      {studioView === "results" && jobs.some(item => item.clips.length) ? <label className="studioResultPicker"><span>Hasil dari produksi</span><select aria-label="Pilih hasil produksi" value={job?.clips.length ? job.id : ""} onChange={event => {const selected = jobs.find(item => item.id === event.target.value);if (selected) handleSelectHistoryJob(selected);}}>{jobs.filter(item => item.clips.length).map(item => <option key={item.id} value={item.id}>{item.source_title || `Produksi ${item.id.slice(0,8)}`} · {item.clips.length} video</option>)}</select></label> : null}
       <OutputWorkspace activeView={studioView === "history" ? "history" : "results"}>
         <ResultsSection
           clips={job?.clips ?? []}

@@ -1,0 +1,445 @@
+{
+  "deleted": [
+    {
+      "platform": "jobs",
+      "id": "433a4778a83b477bb07d2cdcbb09f0e1",
+      "response": {
+        "status": "ok",
+        "removed_jobs": 1,
+        "removed_outputs": 0
+      }
+    },
+    {
+      "platform": "jobs",
+      "id": "91400f90b6974581878f24e1254d4e16",
+      "response": {
+        "status": "ok",
+        "removed_jobs": 1,
+        "removed_outputs": 0
+      }
+    },
+    {
+      "platform": "jobs",
+      "id": "2fa93b288bb04798a4244c9934046aa1",
+      "response": {
+        "status": "ok",
+        "removed_jobs": 1,
+        "removed_outputs": 0
+      }
+    },
+    {
+      "platform": "jobs",
+      "id": "43e3da4e6d314cd28916b55f430e378d",
+      "response": {
+        "status": "ok",
+        "removed_jobs": 1,
+        "removed_outputs": 0
+      }
+    },
+    {
+      "platform": "jobs",
+      "id": "e7bba938cf7a4260ae34d6db6c8e5c45",
+      "response": {
+        "status": "ok",
+        "removed_jobs": 1,
+        "removed_outputs": 0
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "2c2a74a9fb954c7cafefc4176c9a1fe4",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "2c2a74a9fb954c7cafefc4176c9a1fe4"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "c142089ba39a41beb351e653bbe2e63e",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "c142089ba39a41beb351e653bbe2e63e"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "e139c85321ba4c09bd61344243711902",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "e139c85321ba4c09bd61344243711902"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "6dfbe07d58954eceaa40da57674c05b1",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "6dfbe07d58954eceaa40da57674c05b1"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "a87a3f51008b4473a916a33da378b007",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "a87a3f51008b4473a916a33da378b007"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "0b046fe8882649ba82903edba262f000",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "0b046fe8882649ba82903edba262f000"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "eff332b486b349859e26a20afd544784",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "eff332b486b349859e26a20afd544784"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "c9aa51d8475e43e6aaef30c4072dbfb0",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "c9aa51d8475e43e6aaef30c4072dbfb0"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "ab000e595fc44eb7a875ab1dce1f1720",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "ab000e595fc44eb7a875ab1dce1f1720"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "a9816ad3f1e240d9bd5c4f2ddc95a2dd",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "a9816ad3f1e240d9bd5c4f2ddc95a2dd"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "6e9f0883897b4c42bb340d523f3ee789",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "6e9f0883897b4c42bb340d523f3ee789"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "ed062020072a461eb1b0a5ed67efa5db",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "ed062020072a461eb1b0a5ed67efa5db"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "5f2e681e6938476e9de5062a0cc8a17f",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "5f2e681e6938476e9de5062a0cc8a17f"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "bea7c55693804f77ac2a8bb3527cb7a6",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "bea7c55693804f77ac2a8bb3527cb7a6"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "74033a0a4c0b4d37aa68290d5e706a9a",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "74033a0a4c0b4d37aa68290d5e706a9a"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "c27990b092a9425f970c7781b9944773",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "c27990b092a9425f970c7781b9944773"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "4a726c04cbec45389a0d4f5b4c14b6da",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "4a726c04cbec45389a0d4f5b4c14b6da"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "6bf4c8aef9e34a639279a852c52a1753",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "6bf4c8aef9e34a639279a852c52a1753"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "d0d54477ffbb4bbea60f7ea97a15924f",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "d0d54477ffbb4bbea60f7ea97a15924f"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "19b33baa98454311ada68b49f1e213c3",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "19b33baa98454311ada68b49f1e213c3"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "39af676aebdf4ecebc9b653285fc09af",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "39af676aebdf4ecebc9b653285fc09af"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "5e1dc3ae3276483885a8f057cf91716e",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "5e1dc3ae3276483885a8f057cf91716e"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "f43ac6594b5847a4adee879ef1c9e78d",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "f43ac6594b5847a4adee879ef1c9e78d"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "a84524ea7a0e4dd3909a23e9714539e8",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "a84524ea7a0e4dd3909a23e9714539e8"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "5c6d2a57590948359cb73c0cce08443e",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "5c6d2a57590948359cb73c0cce08443e"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "b5c6d72483374cc7b5ce50afd2c8f095",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "b5c6d72483374cc7b5ce50afd2c8f095"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "070b97142e4043498755b99c9dac4362",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "070b97142e4043498755b99c9dac4362"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "2d4e891271d340cd968f9a3cd373ce94",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "2d4e891271d340cd968f9a3cd373ce94"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "b2ec2047e001461f98445ca9dd41aa84",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "b2ec2047e001461f98445ca9dd41aa84"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "768e94e141704148a39c45cf303dc129",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "768e94e141704148a39c45cf303dc129"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "c5d94ab9ba374540989a920a5838fad9",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "c5d94ab9ba374540989a920a5838fad9"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "e01b32d6cc4549f998d1976af904ae05",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "e01b32d6cc4549f998d1976af904ae05"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "853c3a11b5ed4a16a985c6862b20122c",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "853c3a11b5ed4a16a985c6862b20122c"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "5373dbb4681e49e3932afb647daed6ab",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "5373dbb4681e49e3932afb647daed6ab"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "32e84b1f866645a588f6d173eec99215",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "32e84b1f866645a588f6d173eec99215"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "99718800dc324cb18ae5a365c919aa83",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "99718800dc324cb18ae5a365c919aa83"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "6dd0c8eda60a4ae3802ca8730f2dfbe7",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "6dd0c8eda60a4ae3802ca8730f2dfbe7"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "d4f2e78fe1944acfbd4b1b91f7c1d124",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "d4f2e78fe1944acfbd4b1b91f7c1d124"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "2e07430808b84fc5840c8fc9c07328c2",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "2e07430808b84fc5840c8fc9c07328c2"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "6b0e5fad741649b6bb94dd6f911d036e",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "6b0e5fad741649b6bb94dd6f911d036e"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "a68f8b7bd2c644f2951732e472997605",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "a68f8b7bd2c644f2951732e472997605"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "1f5c876f566449b080370201eb3fa8ef",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "1f5c876f566449b080370201eb3fa8ef"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "aed034fe056642e98c19ce6c1e944efa",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "aed034fe056642e98c19ce6c1e944efa"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "12f493d0392b4d4eabe2f50b2436794a",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "12f493d0392b4d4eabe2f50b2436794a"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "92695cba8a33453e82fe5ce0f67637f0",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "92695cba8a33453e82fe5ce0f67637f0"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "35842b8309db4da69f6b18779d9c3c03",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "35842b8309db4da69f6b18779d9c3c03"
+      }
+    },
+    {
+      "platform": "youtube",
+      "id": "dde1a6c593b94753b7fd06f9c086b1c8",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "dde1a6c593b94753b7fd06f9c086b1c8"
+      }
+    }
+  ],
+  "skipped": [],
+  "tiktok_cleanup_pending_standard_deployment": 21,
+  "protected_identity_preserved": {
+    "youtube": true,
+    "tiktok": true
+  },
+  "remaining_counts": {
+    "jobs": {
+      "running": 1
+    },
+    "youtube": {
+      "completed": 607,
+      "failed": 63,
+      "cancelled": 2
+    },
+    "tiktok": {
+      "completed": 49,
+      "failed": 25
+    }
+  }
+}

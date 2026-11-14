@@ -15,7 +15,6 @@ import {
   ClipboardPaste,
   Clock3,
   Copy,
-  Focus,
   Film,
   GripVertical,
   Link2,
@@ -26,7 +25,6 @@ import {
   Scissors,
   ShieldCheck,
   Sparkles,
-  Subtitles,
   Trash2,
   WandSparkles,
 } from "lucide-react";
@@ -66,29 +64,6 @@ type QuickStartCardProps = {
   onConfirmSourceRightsChange: (value: boolean) => void;
   onStart: () => void;
 };
-
-const SHORT_STEPS = [
-  { icon: Focus, label: "Framing otomatis", detail: "Wajah aman di 9:16" },
-  { icon: Subtitles, label: "Caption dinamis", detail: "Nyaman dibaca di feed" },
-  { icon: Sparkles, label: "Polish retention", detail: "Hook, ritme, dan payoff" },
-];
-
-const LONG_STEPS = [
-  { icon: Sparkles, label: "Cold open", detail: "Momen terkuat masuk lebih awal" },
-  { icon: Film, label: "Story chapters", detail: "Alur rapi, tanpa filler" },
-  { icon: Focus, label: "YouTube packaging", detail: "Thumbnail dan judul selaras" },
-];
-
-const STORY_STEPS = [
-  { icon: BookOpen, label: "Naskah otomatis", detail: "Pembuka sampai klimaks" },
-  { icon: Film, label: "Scene sinematik", detail: "Tokoh, lokasi, dan gerak" },
-  { icon: Sparkles, label: "Video lengkap", detail: "Dubbing, subtitle, dan musik" },
-];
-const PRESENTER_STEPS = [
-  { icon: BookOpen, label: "Pahami artikel", detail: "Inti, alur, dan kesimpulan" },
-  { icon: Film, label: "Jelaskan lewat gambar", detail: "Objek dan hubungan bergerak" },
-  { icon: Sparkles, label: "Presentasi lengkap", detail: "Narasi, animasi, dan subtitle" },
-];
 
 const formatCompactNumber = (value?: number | null) => value === null || value === undefined
   ? "—"
@@ -309,7 +284,6 @@ export function QuickStartCard({
 
   const sourceReady = Boolean(sourceProbe?.title || videoDuration);
   const isLong = clipMode !== "short";
-  const polishSteps = isPresenter ? PRESENTER_STEPS : isStory ? STORY_STEPS : isLong ? LONG_STEPS : SHORT_STEPS;
 
   return (
     <section className={`clipperHero${isLong ? " isLong" : ""}${isWorking ? " isWorking" : ""}${storyboardPreview ? " hasStoryboard" : ""}`} aria-labelledby="quick-start-title">
@@ -623,7 +597,7 @@ export function QuickStartCard({
           <span><ShieldCheck size={16} /><b>{isStory ? "Saya punya hak atas cerita ini dan telah meninjau izin komersial provider AI." : "Saya punya hak/izin untuk audio dan visual sumber ini."}</b></span>
         </label> : (
           <div className="sourceNotice isSuccess" role="status">
-            <CheckCircle2 size={17} /><span><strong>{isPresenter ? "Presenter animasi siap." : "Render lokal siap."}</strong><small>{isPresenter ? "LLM yang dipilih menyusun objek dan penjelasan; ilustrasi serta animasi digambar lokal. Jika LLM tidak tersedia, perencana lokal memakai isi artikel." : "Visual dibuat dari kode; prompt ini tidak memakai footage, voice clone, atau ImageGen pihak ketiga."}</small></span>
+            <CheckCircle2 size={17} /><span><strong>Siap membuat video.</strong><small>{isPresenter ? "Isi artikel menjadi dasar narasi dan penjelasan visual. Tinjau hasil video sebelum dipublikasikan." : "Cerita menjadi dasar adegan dan narasi. Tinjau hasil video sebelum dipublikasikan."}</small></span>
           </div>
         )}
 

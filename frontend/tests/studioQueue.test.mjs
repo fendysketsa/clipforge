@@ -34,6 +34,11 @@ test('scheduled and private labels remain distinct and dates consistently use WI
   assert.match(queueDate('2026-11-14T01:00:00Z'),/08\.00 WIB/);
   assert.equal(queueDate('invalid'),'Waktu belum tersedia');
 });
+test('TikTok needs an exact post URL, not merely the account profile', () => {
+  const row={id:'tt',status:'completed',upload_confirmed:true,profile_url:'https://www.tiktok.com/@channel',updated_at:'2026-11-14T01:00:00Z'};
+  assert.equal(studioQueueItems([],[row])[0].state,'attention');
+  assert.equal(studioQueueItems([],[{...row,profile_url:'https://www.tiktok.com/@channel/video/1234567890123456789'}])[0].state,'verified');
+});
 test('deep links select the requested workspace and unknown hashes safely select creation', () => {
   for(const key of ['results','history','automation','settings']) assert.equal(studioViewFromHash('#'+key),key);
   assert.equal(studioViewFromHash('#quick-start-title'),'create');

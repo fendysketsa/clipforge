@@ -1,0 +1,8 @@
+{
+  "simulation_only": true,
+  "result": {
+    "removed": 21,
+    "skipped": 0
+  },
+  "protected_remote_records_unchanged": true
+}

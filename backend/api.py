@@ -13198,6 +13198,21 @@ def queue_tiktok_upload_jobs(items: list[TikTokUploadJob]) -> None:
 
 
 @app.on_event("startup")
+def apply_operator_failed_upload_cleanup() -> None:
+    from failed_upload_cleanup import apply_requested_cleanup
+    try:
+        with tiktok_uploads_lock:
+            result = apply_requested_cleanup(
+                TIKTOK_UPLOADS_PATH.parent / "failed_cleanup_requests.json",
+                tiktok_uploads, OUTPUTS_DIR, save_tiktok_uploads_unlocked,
+            )
+        if result["removed"] or result["skipped"]:
+            print(f"Operator failed-record cleanup: {result}", flush=True)
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"Operator failed-record cleanup deferred: {type(exc).__name__}", flush=True)
+
+
+@app.on_event("startup")
 def resume_queued_tiktok_uploads() -> None:
     with tiktok_uploads_lock:
         has_queued = any(item.status == "queued" for item in tiktok_uploads.values())

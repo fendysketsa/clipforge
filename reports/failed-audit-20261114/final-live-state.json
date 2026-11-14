@@ -1,0 +1,17 @@
+{
+  "jobs": {
+    "completed": 1
+  },
+  "youtube": {
+    "running": 1,
+    "completed": 607,
+    "failed": 54
+  },
+  "tiktok": {
+    "completed": 49,
+    "failed": 25
+  },
+  "health": {
+    "status": "ok"
+  }
+}

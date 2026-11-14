@@ -98,7 +98,7 @@ body.studioApp { margin: 0; min-height: 100vh; background: var(--bg); color: var
 .studioApp .formatChoice > button small { display: block; color: #7c8d9b; font: 400 10px/1.4 var(--font-sans); margin-top: 2px; }
 .studioApp .formatChoice > button > svg:last-child { position: absolute; top: 13px; right: 10px; width: 13px; height: 13px; }
 .studioApp .formatChoice > button.active { border-color: #608c78; color: var(--primary); background: #1b2d27; }
-.studioApp .sourceUrlField > span, .studioApp .storyScriptField > span { font-size: 12px; font-weight: 550; color: #cbd5de; }
+.studioApp .sourceUrlField > span, .studioApp .storyInputField > span { font-size: 12px; font-weight: 550; color: #cbd5de; }
 .studioApp .sourceUrlInput { display: flex; gap: 10px; align-items: center; min-height: 53px; padding: 5px 7px 5px 14px; border: 1px solid #34414e; border-radius: 9px; background: #10151c; }
 .studioApp .sourceUrlInput > svg { color: #788c98; width: 18px; }
 .studioApp .sourceUrlInput > input { min-width: 0; flex: 1; width: 100%; min-height: 39px; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: 13px; box-shadow: none; }
@@ -115,7 +115,7 @@ body.studioApp { margin: 0; min-height: 100vh; background: var(--bg); color: var
 .studioApp .createShortButton:disabled small { color: #698073; }
 .studioApp .sourceNotice, .studioApp .sourceQuickCheck { border-radius: 9px; font-size: 12px; }
 .studioApp .sourceNotice small, .studioApp .sourceDetected small { font-size: 11px; }
-.studioApp .storyScriptField textarea { min-height: 190px; padding: 14px; font-size: 13px; line-height: 1.7; border-radius: 8px; background: var(--input-bg); }
+.studioApp .storyInputField textarea { min-height: 190px; padding: 14px; font: 400 13px/1.7 var(--font-sans); border-radius: 8px; background: var(--input-bg); }
 .studioApp .storyComposerActions { border-radius: 9px; padding: 14px; border-color: var(--border); background: #10171c; }
 .studioApp .storyComposerActions button, .studioApp .storyboardRenderBar > button { background: var(--primary); color: #153125; border-color: var(--primary); border-radius: 8px; min-height: 42px; font-size: 12px; }
 .studioApp .storyComposerActions strong, .studioApp .storyComposerActions b { font-size: 12px; }
@@ -151,6 +151,12 @@ body.studioApp { margin: 0; min-height: 100vh; background: var(--bg); color: var
 .studioApp .clipStatusActions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 5px; }
 .studioApp .compactLogs summary { min-height: 32px; font-size: 11px; }
 .studioApp .shortPolish > summary { padding: 18px; gap: 10px; border-radius: 0; background: transparent; }
+.studioApp .shortPolishSummary > span:nth-child(2) { min-width: 0; }
+.studioApp .shortPolishSummary > span:nth-child(2) small { color: #8da09b; font: 500 8px/1.5 var(--font-sans); letter-spacing: .08em; }
+.studioApp .shortPolishSummary > span:nth-child(2) strong { color: #dce5eb; font: 550 13px/1.5 var(--font-sans); }
+.studioApp .shortPolishSummary > span:nth-child(2) em { color: #90a1ab; font: 400 10px/1.7 var(--font-sans); }
+.studioApp .shortPolishSnapshot { max-width: 122px; padding: 8px; background: #141f25; border-color: var(--border); }
+.studioApp .shortPolishSnapshot b, .studioApp .shortPolishSnapshot small { font-family: var(--font-sans); color: #a2bab0; }
 .studioApp .shortPolishIcon { width: 32px; height: 32px; border: 1px solid #3b4843; border-radius: 8px; background: #233129; color: #a9c5b4; box-shadow: none; }
 .studioApp .shortPolishTitle > span { color: #748896; font: 500 8px/1.5 var(--font-sans); letter-spacing: .06em; }
 .studioApp .shortPolishTitle > strong { font-size: 13px; font-weight: 550; }
@@ -167,7 +173,10 @@ body.studioApp { margin: 0; min-height: 100vh; background: var(--bg); color: var
 
 .studioApp .outputWorkspace { margin-top: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; overflow: visible; }
 .studioApp .outputWorkspacePane { padding: 0; }
+.studioResultPicker { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 0 0 24px; color: #91a3af; font-size: 12px; }
+.studioResultPicker select { min-width: 0; max-width: 100%; flex: 1 1 260px; min-height: 43px; padding: 9px 12px; font-size: 12px; }
 .studioApp .sectionHeader { align-items: center; gap: 14px; padding: 0; margin: 0 0 22px; }
+.studioApp .sectionHeader::after, .studioApp .clipProcessSpotlight::before, .studioApp .clipProcessSpotlight::after { display: none; }
 .studioApp .sectionTitle h2 { font-size: 18px; font-weight: 550; letter-spacing: -.45px; }
 .studioApp .sectionTitle p { font-size: 12px; line-height: 1.6; color: #8fa0ad; }
 .studioApp .sectionEyebrow { display: none; }
@@ -183,6 +192,9 @@ body.studioApp { margin: 0; min-height: 100vh; background: var(--bg); color: var
 .studioApp .clipMedia { border-radius: 0; min-height: 0; background: #080d12; }
 .studioApp .clipMedia video { max-height: 390px; background: #080d12; }
 .studioApp .clipBody { padding: 20px; }
+.studioApp .clipInfo { padding: 20px; background: var(--panel); }
+.studioApp .clipInfo h3 { font: 550 16px/1.6 var(--font-sans); color: var(--text-primary); }
+.studioApp .clipInfo :is(p,li,label) { font-family: var(--font-sans); font-size: 12px; line-height: 1.7; }
 .studioApp .clipBody h3 { font-size: 16px; line-height: 1.5; font-weight: 550; }
 .studioApp .clipCardFooter { padding: 0; background: none; border-top-color: var(--border); }
 .studioApp .clipCardFooter button { min-height: 37px; padding: 8px 10px; border-radius: 7px; font-size: 11px; box-shadow: none; }
@@ -294,18 +306,48 @@ body.studioApp { margin: 0; min-height: 100vh; background: var(--bg); color: var
 .studioApp .sourceArchiveHero { margin: 0 0 25px; padding: 0; border: 0; background: none; box-shadow: none; }
 .studioApp .sourceArchiveHeroCopy h2 { margin: 9px 0; font-size: 30px; color: #e9eff3; font-weight: 550; letter-spacing: -1px; }
 .studioApp .sourceArchiveHeroCopy p { max-width: none; font-size: 13px; color: #91a3b0; }
+.studioApp .sourceArchiveHero::after, .studioApp .sourceArchiveHero::before, .studioApp .sourceArchiveStats article::after { display: none; }
 .studioApp .sourceLogEyebrow { color: #799086; font: 550 9px/1.5 var(--font-sans); letter-spacing: .1em; }
 .studioApp .sourceArchiveStats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 0; margin-bottom: 25px; overflow: hidden; border: 1px solid var(--border); border-radius: 11px; background: var(--panel); }
 .studioApp .sourceArchiveStats > article { padding: 19px; border: 0; border-right: 1px solid var(--border); border-radius: 0; background: none; box-shadow: none; }
 .studioApp .sourceArchiveStats > article:last-child { border-right: 0; }
-.studioApp .sourceArchiveStats article > span, .studioApp .sourceArchiveStats article > small { font-size: 11px; color: #8ea2ae; }
+.studioApp .sourceArchiveStats article > span, .studioApp .sourceArchiveStats article > small { font: 400 11px/1.6 var(--font-sans); color: #8ea2ae; text-transform: none; letter-spacing: 0; }
 .studioApp .sourceArchiveStats article > strong { color: #e6edf1; font: 550 26px/1.5 var(--font-sans); }
 .studioApp .sourceArchiveShell { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); box-shadow: none; overflow: hidden; }
 .studioApp .archiveSidebar { border-color: var(--border); background: #121b22; }
 .studioApp .archiveSidebar button { color: #9aadb8; border-color: transparent; background: none; font-size: 12px; }
 .studioApp .archiveSidebar button.active { color: var(--primary); border-color: #3f594b; background: #1d3027; }
+.studioApp .archiveSidebar button.active { box-shadow: none; }
+.studioApp .archiveSidebar button b { font-family: var(--font-sans); color: #9ebdaf; background: #24392f; }
+.studioApp .archiveYearNode { max-width: 100%; }
 .studioApp .archiveSidebarTitle, .studioApp .archiveYearGroup > h3 { color: #9fb2bd; font-size: 12px; }
 .studioApp .sourceArchiveToolbar input, .studioApp .sourceArchiveToolbar select { min-height: 39px; padding: 8px; color: #c7d6df; background: #111820; font-size: 12px; border-color: var(--border); }
+.studioApp .sourceArchiveToolbar { padding: 20px; gap: 15px; background: #141d25; border-color: var(--border); }
+.studioApp .sourceArchiveToolbar .sourceLogSearch { padding: 0 10px; background: #10171e; border-color: #36434f; }
+.studioApp .sourceLogSearch input { border: 0; padding: 8px; background: none; font: 400 12px/1.5 var(--font-sans); }
+.studioApp .archiveCurrentFolder :is(small,strong), .studioApp .sourceLogFilters button { font-family: var(--font-sans); font-size: 11px; letter-spacing: 0; text-transform: none; }
+.studioApp .sourceLogFilters button { padding: 8px 10px; min-height: 36px; }
+.studioApp .sourceLogFilters button.active { color: var(--primary); background: #21372d; border-color: #3d584b; }
+.studioApp .archiveDataBar { padding: 12px 20px; min-height: 46px; flex-wrap: wrap; background: #10171d; color: #91a2af; border-color: var(--border); font: 400 11px/1.5 var(--font-sans); text-transform: none; letter-spacing: 0; }
+.studioApp .archivePageSize select { min-height: 30px; font: 400 11px/1.5 var(--font-sans); background-color: var(--panel); color: var(--text-primary); border-color: #36434f; }
+.studioApp .archiveQueryStatus :is(svg,strong) { color: #aecdbb; }
+.studioApp .archiveResults { padding: 20px; gap: 18px; }
+.studioApp .archiveYearGroup > header :is(h3,span), .studioApp .archiveMonthHeader :is(h4,span,code) { font-family: var(--font-sans); text-transform: none; letter-spacing: 0; }
+.studioApp .archiveMonthHeader { min-height: 64px; padding: 12px 15px; background: #1b252e; border-color: var(--border); }
+.studioApp .archiveMonthHeader h4 { font-size: 13px; color: #d4e2e7; }
+.studioApp .archiveMonthHeader div span { font-size: 11px; color: #90a7ae; }
+.studioApp .sourceArchiveCard { padding: 19px 15px; gap: 14px; border-color: var(--border); }
+.studioApp .sourceArchiveCard:hover { background: #18232c; }
+.studioApp .sourceArchiveCardTitle h3 { font: 500 14px/1.65 var(--font-sans); color: #e0e9ee; }
+.studioApp .sourceArchiveCardTitle p, .studioApp .sourceLogDate { font: 400 11px/1.7 var(--font-sans); color: #8ea3b0; }
+.studioApp .sourceArchiveCardMeta span { font: 400 10px/1.6 var(--font-sans); color: #94a9b4; background: #18252d; border-color: #2e4248; }
+.studioApp .sourceArchiveCardActions :is(a,button) { min-height: 32px; font: 400 10px/1.5 var(--font-sans); color: #acc5bc; background: #1c2a2d; border-color: #32483f; }
+.studioApp .sourceLogModeBadge, .studioApp .sourceLogOutputs { font-family: var(--font-sans); font-size: 11px; }
+.studioApp .sourceLogOutputs summary { font: 400 11px/1.6 var(--font-sans); padding: 12px 0 0; color: #8fa8b1; border-color: var(--border); }
+.studioApp .archivePagination { background: #111920; border-color: var(--border); font: 400 11px/1.5 var(--font-sans); }
+.studioApp .archivePaginationButtons { background: none; border-color: var(--border); }
+.studioApp .archivePaginationButtons button { font-family: var(--font-sans); color: #9eb7ad; }
+.studioApp .archivePaginationButtons button.active { color: var(--primary); background: #22382e; border-color: #446452; box-shadow: none; }
 .studioApp .archiveMonthGroup { border-color: var(--border); border-radius: 9px; background: #111a22; }
 .studioApp .sourceLogItem, .studioApp .sourceArchiveItem { border-color: var(--border); background: #141e27; }
 .studioApp .sourceLogItem strong, .studioApp .sourceArchiveItem strong { font-size: 13px; line-height: 1.6; font-weight: 500; }
@@ -373,6 +415,8 @@ body.studioApp { margin: 0; min-height: 100vh; background: var(--bg); color: var
   .studioApp .sourceRights { font-size: 10px; }
   .studioApp .sectionHeader { flex-direction: column; align-items: flex-start; }
   .studioApp .resultsActions, .studioApp .historyActions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+  .studioApp .resultsActions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+  .studioApp .resultsActions > .selectAllClips { grid-column: 1 / -1; }
   .studioApp .uiButton { font-size: 10px; }
   .studioApp .cronActivity { padding: 18px; gap: 18px; }
   .studioApp .cronActivityMain { width: 100%; gap: 9px; }
@@ -395,6 +439,21 @@ body.studioApp { margin: 0; min-height: 100vh; background: var(--bg); color: var
   .studioApp .sourceArchiveStats > article:nth-child(n+3) { border-bottom: 0; }
   .studioApp .sourceArchiveStats article > span, .studioApp .sourceArchiveStats article > small { font-size: 10px; }
   .studioApp .sourceArchiveStats article > strong { font-size: 23px; }
+  .studioApp .archiveSidebar { flex-wrap: wrap; gap: 8px; padding: 12px; }
+  .studioApp .archiveSidebarTitle { display: none; }
+  .studioApp .archiveTree { flex-basis: 100%; overflow: visible; }
+  .studioApp .archiveYearNode, .studioApp .archiveYearNode > div { flex-wrap: wrap; min-width: 0; }
+  .studioApp .archiveYearNode > div { gap: 4px; padding: 0; }
+  .studioApp .archiveYearNode > div button { min-width: 0; padding: 8px; font-size: 10px; }
+  .studioApp .archiveCurrentFolder { display: none; }
+  .studioApp .sourceArchiveToolbar { padding: 14px; }
+  .studioApp .archiveResults { padding: 12px; }
+  .studioApp .sourceArchiveCard { padding: 16px 12px; }
+  .studioApp .sourceArchiveCardBody { display: flex; flex-direction: column; gap: 10px; }
+  .studioApp .sourceArchiveCardTitle h3 { font-size: 13px; }
+  .studioApp .sourceArchiveCardActions { justify-content: flex-start; }
+  .studioApp .archiveMonthHeader code { display: none; }
+  .studioApp .shortPolishSnapshot { display: none; }
 }
 @media (max-width: 600px) {
   .studioApp .outputWorkspacePane .jobList { grid-template-columns: 1fr; }

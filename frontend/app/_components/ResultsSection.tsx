@@ -1220,7 +1220,8 @@ export function ResultsSection({
       ) : (
         <div className="emptyState">
           <Video className="emptyStateIcon" size={32} />
-          <p>Klip vertikal 9:16 yang selesai diproses akan muncul di sini.</p>
+          <p>Hasil video yang selesai diproses akan muncul di sini.</p>
+          <a className="uiButton" href="/#quick-start-title">Buat video pertama</a>
         </div>
       )}
     </section>

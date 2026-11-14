@@ -1,0 +1,95 @@
+{
+  "deleted": [
+    {
+      "id": "dad8b241f8534b82959c0ae9cd74f58a",
+      "video_id": "2K-syvSr6R4",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "dad8b241f8534b82959c0ae9cd74f58a"
+      }
+    },
+    {
+      "id": "00ac6bbb0a864c14b834c94ec6bc0055",
+      "video_id": "FjGZqDI8x0w",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "00ac6bbb0a864c14b834c94ec6bc0055"
+      }
+    },
+    {
+      "id": "f3cb9a0a5bde45c9b7eb972515e6ca90",
+      "video_id": "yT3HeaTbijg",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "f3cb9a0a5bde45c9b7eb972515e6ca90"
+      }
+    },
+    {
+      "id": "a49c5e374bad4f1db0da7b36bb1c2cce",
+      "video_id": "R-602W-qXNQ",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "a49c5e374bad4f1db0da7b36bb1c2cce"
+      }
+    },
+    {
+      "id": "c3491accb5a84921abc14e246ebf5671",
+      "video_id": "wGJD-V4ae_0",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "c3491accb5a84921abc14e246ebf5671"
+      }
+    },
+    {
+      "id": "75abb5d572cf49e080d7b53269a66c55",
+      "video_id": "HlVgyd7uiOo",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "75abb5d572cf49e080d7b53269a66c55"
+      }
+    },
+    {
+      "id": "c9f68f45743e4e3ea22d7c564ac1365f",
+      "video_id": "Kf71mbKl1b4",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "c9f68f45743e4e3ea22d7c564ac1365f"
+      }
+    },
+    {
+      "id": "c29be934220e4965b31d41d8fdaaa9e2",
+      "video_id": "rfbqkjiyuc4",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "c29be934220e4965b31d41d8fdaaa9e2"
+      }
+    },
+    {
+      "id": "7290ceafd2f242428a5f9b7bfde862a2",
+      "video_id": "rtshLgsJ6T8",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "7290ceafd2f242428a5f9b7bfde862a2"
+      }
+    },
+    {
+      "id": "fb5e586bed964feb88ed6cb796fd7421",
+      "video_id": "WJufuNo0HrE",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "fb5e586bed964feb88ed6cb796fd7421"
+      }
+    },
+    {
+      "id": "6b2c6262913142c38f190777578aa4fb",
+      "video_id": "6H2Ku6n9t5E",
+      "response": {
+        "status": "ok",
+        "removed_upload_id": "6b2c6262913142c38f190777578aa4fb"
+      }
+    }
+  ],
+  "skipped": [],
+  "remote_videos_deleted_by_this_action": 0,
+  "identity_and_proof_backup": "backend/data/failed-cleanup-audit/deleted-remote-records-20261114.json"
+}

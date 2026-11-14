@@ -41,7 +41,7 @@ const PAGE_SIZE_OPTIONS: { value: PageSize; label: string }[] = [
   { value: "20", label: "20" },
   { value: "50", label: "50" },
   { value: "100", label: "100" },
-  { value: "all", label: "All" },
+  { value: "all", label: "Semua" },
 ];
 
 const MONTH_FORMATTER = new Intl.DateTimeFormat("id-ID", { month: "long" });
@@ -313,13 +313,13 @@ export default function SourceHistoryPage() {
           <div className="archiveDataBar" id="archive-list-start">
             <span className="archiveQueryStatus">
               <Database size={13} />
-              Query result <strong>{filteredItems.length}</strong>
+              <strong>{filteredItems.length}</strong> sumber
             </span>
             <span className="archiveRangeStatus">
-              ROW {rangeStart}–{rangeEnd} / {filteredItems.length}
+              {rangeStart}–{rangeEnd} dari {filteredItems.length}
             </span>
             <label className="archivePageSize">
-              <span>Rows</span>
+              <span>Per halaman</span>
               <select value={pageSize} onChange={(event) => setPageSize(event.target.value as PageSize)}>
                 {PAGE_SIZE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>

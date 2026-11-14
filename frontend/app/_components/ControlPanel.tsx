@@ -218,9 +218,9 @@ export function ControlPanel({
       <summary className="shortPolishSummary">
         <span className="shortPolishIcon"><WandSparkles size={19} /></span>
         <span>
-          <small>{presentationMode ? "ARTICLE PRESENTER" : isStory ? "STORY VIDEO DIRECTOR" : isLong ? "POLISH LONG VIDEO" : "POLISH SHORT"}</small>
+          <small>PENGATURAN VIDEO</small>
           <strong>{presentationMode ? "Artikel → presentasi animasi" : isStory ? "Cerita → video lengkap" : isLong ? "Struktur & watch time" : "Gaya edit"}</strong>
-          <em>{isStory ? "Hypit Script, visual Remotion, dubbing adaptif, subtitle, musik, dan QC otomatis." : isLong ? "Susun cerita, chapter, dan packaging YouTube." : "Default sudah siap. Buka kalau ingin mengubah karakter hasil."}</em>
+          <em>{isStory ? "Atur format, durasi, narasi, dan tampilan video." : isLong ? "Atur durasi, alur cerita, dan kualitas video." : "Atur durasi, caption, dan karakter hasil."}</em>
         </span>
         <span className="shortPolishSnapshot">
           <b>{presentationMode ? "Durasi otomatis · maks. 5 menit" : isStory ? `Film AI · ${targetMinutes} menit` : isLong ? `Story Arc · ${targetMinutes} menit` : editProfileCopy[editProfile].title}</b>
@@ -235,7 +235,7 @@ export function ControlPanel({
             <span><Sparkles size={18} /></span>
             <div>
               <strong>{presentationMode ? "Article Presenter aktif" : isStory ? "Story Video Director aktif" : "Long-form Director aktif"}</strong>
-              <small>{isStory ? "Premis menjadi Script Surface Hypit; Remotion menyusun scene, kamera, caption, lalu TTS adaptif mengisi suara." : "Cold open, story arc, chapter cards, cinematic grading, thumbnail, dan audit watch-time diterapkan otomatis."}</small>
+              <small>{isStory ? "Susun adegan dari premis, lalu lengkapi dengan visual, narasi, subtitle, dan musik." : "Pembuka, alur cerita, penanda bab, warna, dan thumbnail disiapkan otomatis."}</small>
             </div>
             <b><Check size={14} /> ON</b>
           </div>

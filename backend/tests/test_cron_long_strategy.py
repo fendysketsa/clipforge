@@ -22,6 +22,17 @@ def test_verified_long_demand_is_not_a_retention_prediction():
     assert not profile["future_views_guaranteed"]
 
 
+def test_download_metadata_keeps_long_demand_and_live_evidence():
+    from clipper import sanitize_metadata
+    metadata = sanitize_metadata({"id": "example", "duration": 1200,
+        "view_count": 5000, "is_live": False, "live_status": "not_live"})
+    assert metadata["view_count"] == 5000
+    assert strategy.source_profile(metadata)["eligible"]
+    live = sanitize_metadata({"duration": 1200, "view_count": 5000, "is_live": True})
+    assert not strategy.source_profile(live)["eligible"]
+    assert not strategy.source_profile(sanitize_metadata({"duration": 1200}))["eligible"]
+
+
 @pytest.fixture
 def story():
     texts = ["Mengapa kucing ini selalu bersembunyi di dapur?",

@@ -1,0 +1,31 @@
+{
+  "checks": [
+    "Removed manual YouTube metrics panel",
+    "Native navigation changes the visible workspace",
+    "History pagination limits cards to twelve",
+    "History status filters and empty search results work",
+    "Source form persists across navigation",
+    "Generator form fits a 320px viewport",
+    "Long and generator formats preserve their forms",
+    "Results select a completed production automatically",
+    "Unreviewed results keep upload disabled",
+    "Context repair holds remain enforced",
+    "History columns 1440",
+    "Result fits viewport 1440",
+    "History columns 1280",
+    "Result fits viewport 1280",
+    "History columns 390",
+    "Result fits viewport 390",
+    "History columns 320",
+    "Result fits viewport 320",
+    "Ambiguous uploads appear for verification without a retry button",
+    "Technical diagnostics start collapsed",
+    "Connection diagnostics expand on request",
+    "Keyboard focus remains visible",
+    "No UI runtime errors",
+    "No write requests during verification"
+  ],
+  "errors": [],
+  "overflows": [],
+  "unexpected_mutations": []
+}

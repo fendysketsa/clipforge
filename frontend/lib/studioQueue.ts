@@ -10,14 +10,15 @@ export function studioQueueItems(youtube: YouTubeUploadJob[], tiktok: TikTokUplo
   const items: StudioQueueItem[] = [];
   const seen = new Set<string>();
   for (const row of [...youtube].sort((a,b) => Date.parse(b.updated_at)-Date.parse(a.updated_at))) {
-    if (row.dry_run || (row.status === "cancelled" && !row.video_url && !row.file_selection_started)) continue;
+    const transferred = row.file_selection_started || row.logs?.some(line => line.startsWith("Video dipilih:") || line.startsWith("Menyerahkan file ke YouTube Studio:") || line.startsWith("REMOTE_UPLOAD_CHECKPOINT"));
+    if (row.dry_run || (row.status === "cancelled" && !row.video_url && !transferred)) continue;
     const videoId = row.video_url?.match(/[?&]v=([A-Za-z0-9_-]{11})(?:&|$)/)?.[1];
     const identity = videoId || row.id;
     if (seen.has(identity)) continue;
     seen.add(identity);
     const verified = row.status === "completed" && row.upload_confirmed && Boolean(videoId);
     const state = row.status === "running" || row.status === "queued" ? row.status
-      : verified ? "verified" : row.video_url || row.file_selection_started ? "attention" : "failed";
+      : verified ? "verified" : row.video_url || transferred ? "attention" : "failed";
     items.push({id:`youtube-${row.id}`,platform:"YouTube",title:row.title || row.clip_name,updatedAt:row.updated_at,state,
       label:state === "verified" ? "Upload terverifikasi" : state === "attention" ? "Perlu verifikasi" : state === "failed" ? "Perlu ditangani" : state === "running" ? "Sedang diproses" : "Menunggu giliran",
       privacy:row.publish_at && Date.parse(row.publish_at) > Date.now() ? "Terjadwal" : row.visibility === "private" ? "Private" : row.visibility === "unlisted" ? "Tidak publik" : row.visibility === "public" ? "Publik" : "Privasi belum tersedia",
@@ -26,7 +27,8 @@ export function studioQueueItems(youtube: YouTubeUploadJob[], tiktok: TikTokUplo
   }
   for (const row of tiktok) {
     if (row.dry_run) continue;
-    const verified = row.status === "completed" && row.upload_confirmed && Boolean(row.profile_url);
+    const exactPost = /^https:\/\/www\.tiktok\.com\/@[\w.]+\/video\/\d{10,25}(?:[?#].*)?$/.test(row.profile_url || "");
+    const verified = row.status === "completed" && row.upload_confirmed && exactPost;
     const uncertain = row.submission_started || row.submission_accepted || row.profile_url
       || row.logs?.some(line => line.startsWith("POST_SUBMIT_INTENT:") || line.startsWith("POST_API_ACCEPTED:"));
     if (row.status === "cancelled" && !uncertain) continue;
