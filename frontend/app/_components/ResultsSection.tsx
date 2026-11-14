@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  BarChart3,
   CheckCircle2,
   ChevronDown,
   Clipboard,
@@ -64,11 +63,6 @@ type ResultsSectionProps = {
   onSetupYouTubeOneTimeLogin: () => void;
   onStartYouTubeLogin: () => void;
   onStartTikTokLogin: () => void;
-  onRefreshYouTubePerformance: (upload: YouTubeUploadJob) => Promise<void>;
-  onSaveYouTubeFeedMetrics: (
-    upload: YouTubeUploadJob,
-    metrics: { shown_in_feed?: number; stayed_to_watch_percentage?: number },
-  ) => Promise<void>;
   onUploadAllToYouTube: () => void;
   onUploadAllToTikTok: () => void;
   onUploadClipToYouTube: (clip: ClipFile) => void;
@@ -348,8 +342,6 @@ export function ResultsSection({
   onSetupYouTubeOneTimeLogin,
   onStartYouTubeLogin,
   onStartTikTokLogin,
-  onRefreshYouTubePerformance,
-  onSaveYouTubeFeedMetrics,
   onUploadAllToYouTube,
   onUploadAllToTikTok,
   onUploadClipToYouTube,
@@ -373,12 +365,6 @@ export function ResultsSection({
     const timer = window.setInterval(() => { void refresh(); }, 10_000);
     return () => { disposed = true; window.clearInterval(timer); };
   }, [hasLongOutput]);
-  const [refreshingPerformanceId, setRefreshingPerformanceId] = useState<string | null>(null);
-  const [savingFeedMetricsId, setSavingFeedMetricsId] = useState<string | null>(null);
-  const [feedMetricDrafts, setFeedMetricDrafts] = useState<Record<string, {
-    shownInFeed: string;
-    stayedToWatch: string;
-  }>>({});
   const selectedCount = selectedClipUrls.length;
   const allClipsSelected = clips.length > 0 && selectedCount === clips.length;
   const usesChromeDebugging = /remote debugging|cdp/i.test(youtubeStatusMessage);
@@ -386,43 +372,6 @@ export function ResultsSection({
   const hasCleanupCountdown = youtubeUploads.some(
     (upload) => Boolean(upload.clip_delete_after && !upload.clip_deleted_at),
   );
-  const performanceUploads = youtubeUploads
-    .filter((upload) => upload.status === "completed" && Boolean(upload.video_url))
-    .slice(0, 8);
-
-  const refreshPerformance = async (upload: YouTubeUploadJob) => {
-    setRefreshingPerformanceId(upload.id);
-    try {
-      await onRefreshYouTubePerformance(upload);
-    } finally {
-      setRefreshingPerformanceId(null);
-    }
-  };
-
-  const saveFeedMetrics = async (upload: YouTubeUploadJob) => {
-    const latest = upload.performance_snapshots.at(-1);
-    const draft = feedMetricDrafts[upload.id];
-    const shownRaw = draft?.shownInFeed ?? latest?.shown_in_feed?.toString() ?? "";
-    const stayedRaw = draft?.stayedToWatch ?? latest?.stayed_to_watch_percentage?.toString() ?? "";
-    const shown = shownRaw.trim() === "" ? undefined : Math.max(0, Math.round(Number(shownRaw)));
-    const stayed = stayedRaw.trim() === ""
-      ? undefined
-      : Math.max(0, Math.min(100, Number(stayedRaw)));
-    if (
-      (shown === undefined || !Number.isFinite(shown))
-      && (stayed === undefined || !Number.isFinite(stayed))
-    ) return;
-    setSavingFeedMetricsId(upload.id);
-    try {
-      await onSaveYouTubeFeedMetrics(upload, {
-        shown_in_feed: shown !== undefined && Number.isFinite(shown) ? shown : undefined,
-        stayed_to_watch_percentage: stayed !== undefined && Number.isFinite(stayed) ? stayed : undefined,
-      });
-    } finally {
-      setSavingFeedMetricsId(null);
-    }
-  };
-
   useEffect(() => {
     if (!hasCleanupCountdown) return;
     setUploadStatusNow(Date.now());
@@ -519,229 +468,6 @@ export function ResultsSection({
           ) : null}
         </div>
       </div>
-
-      {clips.length > 0 ? (
-        <details className="youtubeSetupPanel tiktokSetupPanel">
-          <summary>
-            <span className="youtubeSetupIcon"><Settings2 size={17} /></span>
-            <span className="youtubeSetupCopy">
-              <strong>TikTok @{tiktokTargetHandle} · Only you</strong>
-              <small>{tiktokStatusMessage}</small>
-            </span>
-            <ChevronDown className="detailsChevron" size={18} />
-          </summary>
-          <div className="youtubeSetupActions">
-            <button type="button" onClick={onStartTikTokLogin} className="uiButton uiButton--tiktok" disabled={isTikTokLoginActive}>
-              <ExternalLink size={16} />
-              <span>{isTikTokLoginActive ? "Menunggu login..." : "Login TikTok sekali"}</span>
-            </button>
-            <button
-              type="button"
-              onClick={onCheckTikTokSession}
-              className="uiButton uiButton--tiktok"
-              disabled={isTikTokLoginActive}
-            >
-              <RefreshCw size={16} />
-              <span>{isTikTokLoginActive ? "Selesaikan login..." : "Cek sesi TikTok"}</span>
-            </button>
-            <a className="uiButton uiButton--secondary" href={`https://www.tiktok.com/@${tiktokTargetHandle}`} target="_blank" rel="noreferrer">
-              <ExternalLink size={16} />
-              <span>Buka profil</span>
-            </a>
-          </div>
-        </details>
-      ) : null}
-
-      {clips.length > 0 && (usesChromeDebugging || !youtubeEnabled) ? (
-        <details className="youtubeSetupPanel">
-          <summary>
-            <span className="youtubeSetupIcon">
-              <Settings2 size={17} />
-            </span>
-            <span className="youtubeSetupCopy">
-              <strong>Pengaturan koneksi YouTube</strong>
-              <small>{youtubeStatusMessage}</small>
-            </span>
-            <ChevronDown className="detailsChevron" size={18} />
-          </summary>
-          <div className="youtubeSetupActions">
-            <button
-              type="button"
-              onClick={onSetupYouTubeOneTimeLogin}
-              className="uiButton uiButton--secondary"
-              title="Ambil cookies/session sekali lalu upload berikutnya memakai storage-state"
-            >
-              <RefreshCw size={16} />
-              <span>Login Sekali</span>
-            </button>
-            {usesChromeDebugging ? (
-              <>
-                <button
-                  type="button"
-                  onClick={onCaptureYouTubeSession}
-                  className="uiButton uiButton--secondary"
-                  disabled={isYouTubeLoginActive}
-                >
-                  <RefreshCw size={16} />
-                  <span>CDP Opsional</span>
-                </button>
-                <button type="button" onClick={onEnableNoCdpMode} className="uiButton uiButton--secondary">
-                  <Settings2 size={16} />
-                  <span>Gunakan tanpa CDP</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={onImportYouTubeCdpCookies}
-                  className="uiButton uiButton--secondary"
-                >
-                  <Download size={16} />
-                  <span>Ambil Cookies</span>
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={onStartYouTubeLogin}
-                  className="uiButton uiButton--secondary"
-                  disabled={isYouTubeLoginActive}
-                >
-                  <ExternalLink size={16} />
-                  <span>Login YouTube</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={onCaptureYouTubeSession}
-                  className="uiButton uiButton--secondary"
-                >
-                  <RefreshCw size={16} />
-                  <span>Sinkronkan Session</span>
-                </button>
-              </>
-            )}
-          </div>
-        </details>
-      ) : null}
-
-      {performanceUploads.length > 0 ? (
-        <details className="youtubePerformancePanel">
-          <summary>
-            <span className="youtubeSetupIcon"><BarChart3 size={17} /></span>
-            <span className="youtubeSetupCopy">
-              <strong>Loop belajar YouTube</strong>
-              <small>Bandingkan view, retention, dan subscriber per seri—bukan tebakan skor FYP.</small>
-            </span>
-            <ChevronDown className="detailsChevron" size={18} />
-          </summary>
-          <div className="youtubePerformanceList">
-            {performanceUploads.map((upload) => {
-              const latest = upload.performance_snapshots.at(-1);
-              const conversionViews = latest?.engaged_views ?? latest?.views ?? 0;
-              const conversion = latest?.subscribers_gained !== null
-                && latest?.subscribers_gained !== undefined
-                && conversionViews > 0
-                ? (latest.subscribers_gained * 1000) / conversionViews
-                : null;
-              const engagedRate = latest?.engaged_views !== null
-                && latest?.engaged_views !== undefined
-                && (latest?.views ?? 0) > 0
-                ? (latest.engaged_views * 100) / latest.views
-                : null;
-              return (
-                <article className="youtubePerformanceItem" key={upload.id}>
-                  <div className="youtubePerformanceCopy">
-                    <strong>{upload.title}</strong>
-                    <small>
-                      {upload.growth_series || "Seri belum ditentukan"} · target {upload.growth_target_views.toLocaleString("id-ID")} view / {upload.growth_target_subscribers} sub
-                    </small>
-                    {upload.render_experiment_variant ? (
-                      <small>
-                        Cohort {upload.render_experiment_variant.replaceAll("_", " ")}
-                        {upload.render_qc_passed === true
-                          ? " · QC lolos"
-                          : upload.render_qc_passed === false
-                            ? " · QC perlu review"
-                            : " · QC belum tersedia"}
-                      </small>
-                    ) : null}
-                    {upload.performance_diagnosis?.[0] ? <p>{upload.performance_diagnosis[0]}</p> : null}
-                  </div>
-                  <div className="youtubePerformanceMetrics">
-                    <span>View <b>{latest ? latest.views.toLocaleString("id-ID") : "—"}</b></span>
-                    <span>Engaged <b>{latest?.engaged_views !== null && latest?.engaged_views !== undefined ? latest.engaged_views.toLocaleString("id-ID") : "—"}</b></span>
-                    <span title="Engaged views dibagi public views; public views menghitung start/replay sejak 31 Maret 2025">Eng/View <b>{engagedRate !== null ? `${engagedRate.toFixed(1)}%` : "—"}</b></span>
-                    <span>Feed <b>{latest?.shown_in_feed !== null && latest?.shown_in_feed !== undefined ? latest.shown_in_feed.toLocaleString("id-ID") : "—"}</b></span>
-                    <span>Stayed <b>{latest?.stayed_to_watch_percentage !== null && latest?.stayed_to_watch_percentage !== undefined ? `${latest.stayed_to_watch_percentage.toFixed(1)}%` : "—"}</b></span>
-                    <span>Retention <b>{latest?.average_view_percentage !== null && latest?.average_view_percentage !== undefined ? `${latest.average_view_percentage.toFixed(1)}%` : "—"}</b></span>
-                    <span title={latest?.engaged_views !== null && latest?.engaged_views !== undefined ? "Subscriber per 1.000 engaged views" : "Subscriber per 1.000 public views"}>Sub/1K <b>{conversion !== null ? conversion.toFixed(2) : "—"}</b></span>
-                  </div>
-                  <div className="youtubeFeedMetricEditor">
-                    <label>
-                      <span>Shown in feed</span>
-                      <input
-                        min="0"
-                        inputMode="numeric"
-                        type="number"
-                        placeholder="0"
-                        value={feedMetricDrafts[upload.id]?.shownInFeed ?? latest?.shown_in_feed?.toString() ?? ""}
-                        onChange={(event) => setFeedMetricDrafts((current) => ({
-                          ...current,
-                          [upload.id]: {
-                            shownInFeed: event.target.value,
-                            stayedToWatch: current[upload.id]?.stayedToWatch ?? latest?.stayed_to_watch_percentage?.toString() ?? "",
-                          },
-                        }))}
-                      />
-                    </label>
-                    <label>
-                      <span>Stayed to watch %</span>
-                      <input
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        inputMode="decimal"
-                        type="number"
-                        placeholder="0–100"
-                        value={feedMetricDrafts[upload.id]?.stayedToWatch ?? latest?.stayed_to_watch_percentage?.toString() ?? ""}
-                        onChange={(event) => setFeedMetricDrafts((current) => ({
-                          ...current,
-                          [upload.id]: {
-                            shownInFeed: current[upload.id]?.shownInFeed ?? latest?.shown_in_feed?.toString() ?? "",
-                            stayedToWatch: event.target.value,
-                          },
-                        }))}
-                      />
-                    </label>
-                    <button
-                      className="uiButton uiButton--secondary"
-                      disabled={savingFeedMetricsId !== null}
-                      onClick={() => { void saveFeedMetrics(upload); }}
-                      type="button"
-                    >
-                      <span>{savingFeedMetricsId === upload.id ? "Menyimpan..." : "Simpan metrik Studio"}</span>
-                    </button>
-                  </div>
-                  <div className="youtubePerformanceActions">
-                    <button
-                      className="uiButton uiButton--secondary"
-                      disabled={refreshingPerformanceId !== null}
-                      onClick={() => { void refreshPerformance(upload); }}
-                      type="button"
-                    >
-                      <RefreshCw className={refreshingPerformanceId === upload.id ? "spin" : ""} size={15} />
-                      <span>{refreshingPerformanceId === upload.id ? "Mengambil..." : "Perbarui"}</span>
-                    </button>
-                    <a href={upload.video_url || "#"} target="_blank" rel="noreferrer">
-                      <ExternalLink size={15} />
-                      <span>Studio/video</span>
-                    </a>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </details>
-      ) : null}
 
       {clips.length ? (
         <div className="clipGrid">

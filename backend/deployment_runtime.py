@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import ast
 import hashlib
 import inspect
 import json
@@ -54,7 +53,10 @@ def write_json(path: Path, payload: dict) -> None:
 
 def build_manifest(root: Path) -> dict:
     for path in root.glob('*.py'):
-        ast.parse(path.read_bytes(), filename=str(path))
+        # AST parsing accepts errors such as duplicate keyword arguments.
+        # Compile without executing so an invalid image fails before Compose
+        # stops the running backend or starts any persisted workers.
+        compile(path.read_bytes(), str(path), 'exec', dont_inherit=True)
     files = fingerprint(root)
     if 'api.py' not in files or 'telegram_bot.py' not in files:
         raise RuntimeError('Backend or telegram-bot source missing from build')
@@ -99,6 +101,21 @@ def backend_contract(base: str) -> dict:
         raise RuntimeError('Backend is not healthy')
     config = get_json(base + '/api/tiktok/config')
     schedule = get_json(base + '/api/automation/viral-cc/schedule')
+    if schedule.get('activity_version') != 1 or not schedule.get('activity', {}).get('state'):
+        raise RuntimeError('Cron activity reporting is stale')
+    if schedule.get('daily_plan_version') != 1:
+        raise RuntimeError('Daily cron production accounting is stale')
+    if (schedule.get('short_schedule_policy_version') != 1
+            or not 1 <= schedule.get('short_schedule_daily_limit', 0) <= 5
+            or schedule.get('short_schedule_timezone') != 'Asia/Jakarta'):
+        raise RuntimeError('Five-Short daily scheduling policy is stale')
+    plan = schedule.get('daily_plan') or {}
+    if os.environ.get('AUTO_VIRAL_DAILY_PLAN_ENABLED', '').lower() == 'true' and (
+            not plan.get('enabled') or plan.get('timezone') != 'Asia/Jakarta'
+            or plan.get('total_target') != sum(int(os.environ.get(key, default)) for key, default in (
+                ('AUTO_VIRAL_DAILY_SCHEDULED_SHORT_TARGET', '17'),
+                ('AUTO_VIRAL_DAILY_PRIVATE_SHORT_TARGET', '4'), ('AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET', '2')))):
+        raise RuntimeError('Daily cron plan differs from Compose settings')
     expected = {'duplicate_guard_version': 2, 'cron_draft_policy': 'discard'}
     if any(config.get(key) != value for key, value in expected.items()):
         raise RuntimeError('TikTok duplicate or cron draft guard is stale')

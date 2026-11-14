@@ -1,0 +1,48 @@
+{
+  "checked_at": "2026-11-14T02:03:02.966124+00:00",
+  "backend_health": {
+    "status": "ok"
+  },
+  "validation": {
+    "backend_tests_passed": 168,
+    "frontend_tests_passed": 19,
+    "total_tests_passed": 187,
+    "typescript": "passed",
+    "production_build": "passed",
+    "frontend_build_readiness": "passed",
+    "build_id": "GL_djBZGPmLUKEIj6Wa79"
+  },
+  "source_configuration": {
+    "AUTO_VIRAL_DAILY_UPLOAD_LIMIT": "23",
+    "AUTO_VIRAL_DAILY_PLAN_ENABLED": "true",
+    "AUTO_VIRAL_DAILY_SCHEDULED_SHORT_TARGET": "17",
+    "AUTO_VIRAL_DAILY_PRIVATE_SHORT_TARGET": "4",
+    "AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET": "2",
+    "YOUTUBE_PUBLIC_DAILY_LIMIT": "19",
+    "YOUTUBE_PUBLIC_MIN_GAP_HOURS": "1",
+    "YOUTUBE_SCHEDULE_BACKLOG_LIMIT": "57"
+  },
+  "source_hashes": {
+    "backend/api.py": "364239a6ec1fa9b3c4953d24844e28e4b03fa3be22b1e2b591b7289a22f9b7a4",
+    "backend/daily_cron_plan.py": "31f0eb1fe4ebf553f7049d5fc7321a7c6fa49db0d5d53112af4d36da9e920292",
+    "backend/cron_activity.py": "2b4791206526072e96690aee4489a87dd2e535c5e71fa3cef31f922fb2baf3cd",
+    "backend/deployment_runtime.py": "6ce5f7ae13b5de6d1370dc09b47b6c965912f8cc4ae71ee0d14c03b50b6af699",
+    "docker-compose.yml": "e10d3f9e2ab480c98208245c275fb40cc6996ad301499f02802d475c29749a31",
+    "frontend/app/_components/CronActivity.tsx": "bea468199d316b1cc01fa29916c52039a1755c829f6f1a3cee12f87a58d86fc0",
+    "frontend/lib/cronActivity.ts": "937057c3c0adce85fe687c0f81abd52ad30fbe54b5f842fb10d04c4d7fac3cf0"
+  },
+  "observed_runtime": {
+    "enabled": true,
+    "scheduler_running": true,
+    "daily_plan_version": null,
+    "daily_plan": null,
+    "active_run_id": null,
+    "next_run_at": "2026-11-14T02:16:00+00:00"
+  },
+  "deployment": {
+    "command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+    "attempted": true,
+    "activated": false,
+    "blocker": "sudo requires an interactive password; Compose did not run"
+  }
+}

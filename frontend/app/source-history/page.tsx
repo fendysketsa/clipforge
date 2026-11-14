@@ -257,21 +257,17 @@ export default function SourceHistoryPage() {
 
       <section className="sourceArchiveHero">
         <div className="sourceArchiveHeroCopy">
-          <span className="sourceLogEyebrow"><Terminal size={15} /> SOURCE INDEX / ANTI DUPLIKAT</span>
-          <h2>Log Sumber <span>// Short & Long</span></h2>
-          <p>Cek video yang pernah dipakai, format hasilnya, dan lokasi file tanpa mengulang sumber secara tidak sengaja.</p>
+          <span className="sourceLogEyebrow"><Terminal size={15} /> ARSIP PRODUKSI</span>
+          <h2>Arsip sumber</h2>
+          <p>Temukan sumber yang pernah diolah, hasil video, dan riwayat penggunaannya.</p>
         </div>
-        <div className="archivePathPreview" aria-label="Lokasi folder penyimpanan">
-          <HardDrive size={18} />
-          <span><small>Struktur penyimpanan</small><code>source_usage / tahun / bulan</code></span>
-          <CheckCircle2 size={17} />
-        </div>
+
       </section>
 
       <section className="sourceArchiveStats" aria-label="Ringkasan arsip sumber">
         <article><span><Layers3 size={17} /> Proses sukses</span><strong>{activeItems.length}</strong><small>Short + Long Highlight</small></article>
         <article><span><Youtube size={17} /> Sumber unik</span><strong>{data.unique_sources}</strong><small>Deteksi duplikat aktif</small></article>
-        <article><span><FileVideo2 size={17} /> File dihasilkan</span><strong>{counts.outputs}</strong><small>Siap ditinjau</small></article>
+        <article><span><FileVideo2 size={17} /> File dihasilkan</span><strong>{counts.outputs}</strong><small>Riwayat hasil render</small></article>
         <article><span><CalendarDays size={17} /> Folder bulan</span><strong>{folders.length}</strong><small>{folderYears.length} tahun arsip</small></article>
       </section>
 

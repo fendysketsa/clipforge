@@ -1,0 +1,417 @@
+/* ClipForge Studio: one layout system for creation, review and operations. */
+:root {
+  color-scheme: dark;
+  --font-sans: "Inter", "Segoe UI", Arial, sans-serif;
+  --bg: #0e1117;
+  --bg-soft: #12171e;
+  --panel: #151b23;
+  --panel-strong: #1b232d;
+  --input-bg: #10151c;
+  --primary: #a9e8ce;
+  --primary-hover: #c3f1de;
+  --accent: #a9e8ce;
+  --text-primary: #edf1f5;
+  --text-secondary: #97a4b3;
+  --border: #29323e;
+  --border-strong: #42564f;
+  --success: #97dfb8;
+  --warning: #e9c382;
+  --danger: #eb929c;
+  --shadow-sm: 0 4px 18px #00000012;
+  --shadow-md: 0 16px 48px #00000025;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { scroll-padding-top: 90px; }
+body.studioApp { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text-primary); font: 14px/1.55 var(--font-sans); letter-spacing: -0.012em; }
+.studioApp button, .studioApp input, .studioApp select, .studioApp textarea { font-family: inherit; }
+.studioApp button, .studioApp a { -webkit-tap-highlight-color: transparent; }
+.studioApp button { cursor: pointer; }
+.studioApp button:disabled { cursor: not-allowed; opacity: .45; }
+.studioApp a { color: inherit; text-decoration: none; }
+.studioApp svg { flex-shrink: 0; }
+.studioApp :is(button,a,input,select,textarea,summary):focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; box-shadow: none; }
+.studioApp :is(input,select,textarea) { color: var(--text-primary); background: var(--input-bg); border: 1px solid var(--border); border-radius: 8px; }
+.studioApp input::placeholder, .studioApp textarea::placeholder { color: #718092; }
+.studioApp .shell { width: auto; max-width: 1710px; min-height: 100vh; margin: 0 auto 0 208px; padding: 103px 32px 48px; }
+
+.studioTopbar { position: fixed; z-index: 50; inset: 0 0 auto; height: 69px; display: flex; align-items: center; gap: 24px; padding: 0 28px 0 20px; background: #12171ef5; border-bottom: 1px solid var(--border); backdrop-filter: blur(16px); }
+.studioBrand { display: flex; flex: 0 0 188px; align-items: center; gap: 10px; font-size: 19px; font-weight: 650; letter-spacing: -.7px; }
+.studioBrandMark { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid #597968; border-radius: 10px; color: var(--primary); background: #1d302b; }
+.studioBrand > span:last-child { display: flex; align-items: baseline; gap: 7px; }
+.studioBrand small { color: #849489; font-size: 9px; letter-spacing: .1em; font-weight: 600; }
+.studioTopbarContext { display: flex; gap: 12px; color: var(--text-secondary); font-size: 12px; }
+.studioTopbarContext > span { color: #48515b; }
+.studioTopbarActions { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.studioApp .studioCronToggle, .studioApp .studioSync { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: transparent; box-shadow: none; color: var(--text-secondary); font-size: 12px; font-weight: 500; }
+.studioApp .studioCronToggle.isOn { color: var(--primary); border-color: #304a40; background: #182720; }
+.studioApp .studioSync:hover { background: var(--panel-strong); }
+.studioSidebar { position: fixed; z-index: 40; inset: 69px auto 0 0; display: flex; flex-direction: column; width: 208px; padding: 28px 14px 18px; background: #12171e; border-right: 1px solid var(--border); }
+.studioNavCaption { margin: 0 14px 15px; font-size: 9px; color: #697889; font-weight: 600; letter-spacing: .16em; }
+.studioSidebar nav { display: flex; flex-direction: column; gap: 5px; }
+.studioSidebar nav a { position: relative; display: flex; align-items: center; gap: 12px; min-height: 43px; padding: 9px 13px; border: 1px solid transparent; border-radius: 8px; color: #97a4b3; font-size: 13px; font-weight: 500; transition: color .16s, background .16s; }
+.studioSidebar nav a:hover { background: #1a222b; color: #e2e9ed; }
+.studioSidebar nav a.isActive { color: var(--primary); border-color: #2b443c; background: #1c2b27; }
+.studioSidebar nav a > i { width: 5px; height: 5px; border-radius: 50%; margin-left: auto; background: currentColor; }
+.studioSidebarFooter { display: flex; align-items: center; gap: 10px; margin-top: auto; padding: 18px 7px 0; border-top: 1px solid var(--border); }
+.studioWorkspaceAvatar { display: grid; width: 30px; height: 30px; place-items: center; border: 1px solid #35414d; border-radius: 8px; background: #202b34; color: #abb9c4; font-size: 10px; font-weight: 650; }
+.studioSidebarFooter > div { min-width: 0; display: flex; flex-direction: column; }
+.studioSidebarFooter strong { font-size: 10px; font-weight: 550; }
+.studioSidebarFooter div span { color: #7b8999; font-size: 9px; }
+.studioSidebarFooter > a { margin-left: auto; color: #748492; }
+
+.studioPageHeading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 28px; }
+.studioPageHeading > div > span { color: #738293; font-size: 9px; font-weight: 600; letter-spacing: .13em; }
+.studioPageHeading h1 { margin: 8px 0 7px; font-size: clamp(25px,2.15vw,34px); font-weight: 580; letter-spacing: -1.2px; line-height: 1.25; }
+.studioPageHeading p { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+.studioNewVideo { display: inline-flex; align-items: center; justify-content: center; gap: 9px; flex-shrink: 0; min-height: 40px; padding: 0 15px; border-radius: 8px; background: var(--primary); color: #132b21 !important; font-size: 12px; font-weight: 650; }
+.studioSummary { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); margin-bottom: 28px; border: 1px solid var(--border); border-radius: 12px; background: #131920; overflow: hidden; }
+.studioSummary > a { display: flex; min-width: 0; flex-direction: column; gap: 8px; padding: 18px 20px; border-right: 1px solid var(--border); transition: background .16s; }
+.studioSummary > a:last-child { border-right: 0; }
+.studioSummary > a:hover { background: #1b232b; }
+.studioSummary > a > span { display: flex; align-items: center; gap: 7px; font-size: 11px; color: #9aa7b4; }
+.studioSummary > a > strong { font-size: 27px; line-height: 1.3; font-weight: 550; letter-spacing: -.8px; font-variant-numeric: tabular-nums; }
+.studioSummary strong small { margin-left: 7px; font-size: 12px; color: #82909f; font-weight: 400; letter-spacing: 0; }
+.studioSummary > a > span:last-child { justify-content: space-between; color: #718293; font-size: 10px; }
+.studioCreateColumns { display: grid; grid-template-columns: minmax(0,1fr) minmax(295px,.48fr); align-items: start; gap: 24px; }
+.studioCreateMain, .studioCreateAside { min-width: 0; }
+.studioCreateAside { display: grid; gap: 20px; }
+
+.studioApp .clipperHero { display: block; min-height: 0; padding: 26px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); box-shadow: none; overflow: visible; }
+.studioApp .clipperHero::before, .studioApp .clipperHero::after { display: none; }
+.studioApp .clipperHeroCopy { display: block; text-align: left; margin-bottom: 24px; }
+.studioApp .clipperKicker { display: inline-flex; gap: 7px; align-items: center; min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; color: #96b6a7; font: 550 9px/1.5 var(--font-sans); letter-spacing: .1em; }
+.studioApp .clipperHeroCopy h2, .studioApp .clipperHero.isWorking .clipperHeroCopy h2 { margin: 12px 0 8px; max-width: none; font-size: 24px; line-height: 1.3; letter-spacing: -.8px; font-weight: 550; color: var(--text-primary); }
+.studioApp .clipperHeroCopy > p { max-width: 580px; margin: 0; font-size: 12px; line-height: 1.7; color: var(--text-secondary); }
+.studioApp .sourceComposer { width: 100%; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.studioApp .sourceComposerTop { padding-bottom: 16px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
+.studioApp .sourceComposerTop > span { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 550; color: #d3dce3; }
+.studioApp .sourceComposerTop > b { padding: 4px 7px; border: 1px solid var(--border); background: #10151c; border-radius: 5px; color: #97a8b4; font: 500 10px/1.4 var(--font-sans); }
+.studioApp .formatChoice { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; padding: 0; margin-bottom: 24px; border: 0; background: none; box-shadow: none; }
+.studioApp .formatChoice > button { position: relative; display: flex; min-width: 0; min-height: 77px; align-items: flex-start; justify-content: flex-start; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid #303b48; border-radius: 9px; color: #8e9caa; background: #121820; box-shadow: none; text-align: left; }
+.studioApp .formatChoice > button > span { display: flex; width: auto; height: auto; padding: 0; border: 0; background: none; }
+.studioApp .formatChoice > button > b { font-size: 11px; line-height: 1.5; font-weight: 550; }
+.studioApp .formatChoice > button small { display: block; color: #7c8d9b; font: 400 10px/1.4 var(--font-sans); margin-top: 2px; }
+.studioApp .formatChoice > button > svg:last-child { position: absolute; top: 13px; right: 10px; width: 13px; height: 13px; }
+.studioApp .formatChoice > button.active { border-color: #608c78; color: var(--primary); background: #1b2d27; }
+.studioApp .sourceUrlField > span, .studioApp .storyScriptField > span { font-size: 12px; font-weight: 550; color: #cbd5de; }
+.studioApp .sourceUrlInput { display: flex; gap: 10px; align-items: center; min-height: 53px; padding: 5px 7px 5px 14px; border: 1px solid #34414e; border-radius: 9px; background: #10151c; }
+.studioApp .sourceUrlInput > svg { color: #788c98; width: 18px; }
+.studioApp .sourceUrlInput > input { min-width: 0; flex: 1; width: 100%; min-height: 39px; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: 13px; box-shadow: none; }
+.studioApp .sourceUrlInput > button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 35px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; background: #1b252e; color: #b8c6ce; font-size: 11px; }
+.studioApp .sourceUrlField > small { margin-top: 8px; font: 400 10px/1.6 var(--font-sans); color: #748695; }
+.studioApp .sourceRights { display: flex; align-items: flex-start; gap: 8px; padding: 15px 0; color: #9baeb6; font-size: 11px; line-height: 1.6; }
+.studioApp .sourceRights input { margin: 3px 0 0; accent-color: var(--primary); }
+.studioApp .sourceActionGrid { display: block; margin-top: 5px; }
+.studioApp .createShortButton { display: flex; gap: 12px; align-items: center; width: 100%; min-height: 55px; padding: 12px 15px; border: 1px solid #a9e8ce; border-radius: 9px; background: var(--primary); box-shadow: none; color: #153125; }
+.studioApp .createShortButton b { font-size: 12px; font-weight: 650; }
+.studioApp .createShortButton small { font-size: 10px; color: #365a49; }
+.studioApp .createShortButton > svg:last-child { margin-left: auto; }
+.studioApp .createShortButton:disabled { background: #25322e; border-color: #37483f; color: #6e867b; opacity: .7; }
+.studioApp .createShortButton:disabled small { color: #698073; }
+.studioApp .sourceNotice, .studioApp .sourceQuickCheck { border-radius: 9px; font-size: 12px; }
+.studioApp .sourceNotice small, .studioApp .sourceDetected small { font-size: 11px; }
+.studioApp .storyScriptField textarea { min-height: 190px; padding: 14px; font-size: 13px; line-height: 1.7; border-radius: 8px; background: var(--input-bg); }
+.studioApp .storyComposerActions { border-radius: 9px; padding: 14px; border-color: var(--border); background: #10171c; }
+.studioApp .storyComposerActions button, .studioApp .storyboardRenderBar > button { background: var(--primary); color: #153125; border-color: var(--primary); border-radius: 8px; min-height: 42px; font-size: 12px; }
+.studioApp .storyComposerActions strong, .studioApp .storyComposerActions b { font-size: 12px; }
+.studioApp .storyComposerActions small { font-size: 11px; }
+
+.studioApp .panel, .studioApp .clipStatus, .studioApp .shortPolish { min-width: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); box-shadow: none; overflow: hidden; }
+.studioApp .clipStatus { padding: 0; min-height: 0; }
+.studioApp .clipStatusHeader { padding: 17px 19px; gap: 10px; border-bottom: 1px solid var(--border); background: none; }
+.studioApp .clipStatusIcon { width: 32px; height: 32px; border-radius: 8px; border: 1px solid #35483e; background: #1d2e27; color: var(--primary); box-shadow: none; }
+.studioApp .clipStatusHeader small { font: 500 8px/1.5 var(--font-sans); color: #8796a4; letter-spacing: .09em; }
+.studioApp .clipStatusHeader strong { font-size: 13px; font-weight: 550; color: #dce5eb; }
+.studioApp .clipStatusHeader > b { font: 550 13px/1.5 var(--font-sans); color: var(--primary); }
+.studioApp .clipStatusEmpty { display: flex; min-height: 165px; padding: 22px; gap: 14px; align-items: center; }
+.studioApp .emptyShortFrame { display: grid; flex: 0 0 43px; width: 43px; height: 54px; place-items: center; border: 1px dashed #42505b; border-radius: 10px; background: #19212a; color: #78938b; transform: none; box-shadow: none; }
+.studioApp .emptyShortFrame::before, .studioApp .emptyShortFrame::after { display: none; }
+.studioApp .clipStatusEmpty strong { font-size: 12px; font-weight: 500; }
+.studioApp .clipStatusEmpty p { margin-top: 7px; color: #8e9eab; font-size: 11px; line-height: 1.7; }
+.studioApp .clipStatusBody { padding: 18px; }
+.studioApp .clipProgressTrack { height: 5px; border: 0; background: #28372f; box-shadow: none; }
+.studioApp .clipProgressTrack > span { background: var(--primary); box-shadow: none; }
+.studioApp .clipProgressTrack > span::after, .studioApp .clipProgressTrack::before, .studioApp .clipProgressTrack::after { display: none; }
+.studioApp .clipStageList { display: flex; justify-content: space-between; gap: 5px; margin-top: 14px; padding: 0; }
+.studioApp .clipStageList li { flex-direction: column; gap: 5px; color: #748694; font-size: 9px; }
+.studioApp .clipStageList li i { background: #19232c; color: inherit; border-color: var(--border); box-shadow: none; }
+.studioApp .clipStageList li.isComplete, .studioApp .clipStageList li.isActive { color: var(--primary); }
+.studioApp .clipProcessSpotlight { display: block; padding: 16px 0; margin-top: 8px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.studioApp .clipProcessNarrative { display: grid; justify-items: start; gap: 8px; text-align: left; }
+.studioApp .clipProcessNarrative > strong { font: 500 13px/1.6 var(--font-sans); color: #dbe4e9; white-space: normal; overflow-wrap: anywhere; }
+.studioApp .clipProcessNarrative > p { margin: 0; color: #8b9ba8; font-size: 11px; line-height: 1.65; }
+.studioApp .clipProcessLive { color: #8eb6a3; font: 550 8px/1.5 var(--font-sans); letter-spacing: .06em; }
+.studioApp .clipProcessLive > i { background: var(--primary); box-shadow: none; animation: none; }
+.studioApp .clipProcessNarrative time, .studioApp .clipProcessNarrative > div > span { font: 500 10px/1.5 var(--font-sans); color: #94a5af; }
+.studioApp .clipStatusActions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 5px; }
+.studioApp .compactLogs summary { min-height: 32px; font-size: 11px; }
+.studioApp .shortPolish > summary { padding: 18px; gap: 10px; border-radius: 0; background: transparent; }
+.studioApp .shortPolishIcon { width: 32px; height: 32px; border: 1px solid #3b4843; border-radius: 8px; background: #233129; color: #a9c5b4; box-shadow: none; }
+.studioApp .shortPolishTitle > span { color: #748896; font: 500 8px/1.5 var(--font-sans); letter-spacing: .06em; }
+.studioApp .shortPolishTitle > strong { font-size: 13px; font-weight: 550; }
+.studioApp .shortPolishTitle > small, .studioApp .shortPolishState { font-size: 10px; color: #8799a5; background: none; border: 0; }
+.studioApp .shortPolishBody { padding: 18px; border-top: 1px solid var(--border); }
+.studioApp .polishSection { margin-bottom: 18px; }
+.studioApp .polishSection h3, .studioApp .polishSection label { font-size: 12px; }
+.studioApp .polishAdvanced summary { font-size: 11px; min-height: 38px; }
+.studioApp .polishAdvanced summary small { display: none; }
+.studioApp .shortPolishFooter { display: flex; gap: 8px; align-items: flex-start; border-color: var(--border); color: #8da09d; background: transparent; font-size: 10px; line-height: 1.65; }
+.studioApp .advancedFields { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.studioApp .shortToggleGrid { grid-template-columns: 1fr; }
+.studioApp .advancedFields input, .studioApp .advancedFields select, .studioApp .shortTargetGrid select, .studioApp .shortTargetGrid input { min-height: 40px; padding: 8px; font-size: 12px; }
+
+.studioApp .outputWorkspace { margin-top: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; overflow: visible; }
+.studioApp .outputWorkspacePane { padding: 0; }
+.studioApp .sectionHeader { align-items: center; gap: 14px; padding: 0; margin: 0 0 22px; }
+.studioApp .sectionTitle h2 { font-size: 18px; font-weight: 550; letter-spacing: -.45px; }
+.studioApp .sectionTitle p { font-size: 12px; line-height: 1.6; color: #8fa0ad; }
+.studioApp .sectionEyebrow { display: none; }
+.studioApp .resultsActions, .studioApp .historyActions { gap: 8px; }
+.studioApp .uiButton { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 37px; padding: 8px 12px; border: 1px solid #35424f; border-radius: 7px; color: #b5c3cd; background: #1b242e; box-shadow: none; font: 500 11px/1.5 var(--font-sans); }
+.studioApp .uiButton:hover:not(:disabled) { background: #25313b; border-color: #52635f; transform: none; }
+.studioApp .uiButton--primary { color: #173527; background: var(--primary); border-color: var(--primary); }
+.studioApp .uiButton--danger, .studioApp .uiButton--ghostDanger { color: #d49198; background: transparent; border-color: #49323b; }
+.studioApp .sectionBadge { padding: 5px 8px; border: 1px solid var(--border); color: #a4b2be; background: transparent; font: 500 10px/1.4 var(--font-sans); }
+.studioApp .clipGrid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 22px; }
+.studioApp .clipCard { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); box-shadow: none; }
+.studioApp .clipCard:hover { border-color: #45544f; transform: none; box-shadow: none; }
+.studioApp .clipMedia { border-radius: 0; min-height: 0; background: #080d12; }
+.studioApp .clipMedia video { max-height: 390px; background: #080d12; }
+.studioApp .clipBody { padding: 20px; }
+.studioApp .clipBody h3 { font-size: 16px; line-height: 1.5; font-weight: 550; }
+.studioApp .clipCardFooter { padding: 0; background: none; border-top-color: var(--border); }
+.studioApp .clipCardFooter button { min-height: 37px; padding: 8px 10px; border-radius: 7px; font-size: 11px; box-shadow: none; }
+.studioApp .clipBody > p, .studioApp .clipDescription { color: #94a4b1; font-size: 12px; line-height: 1.7; }
+.studioApp .clipReviewCheck { font-size: 12px; line-height: 1.7; }
+.studioApp .automaticQcPanel, .studioApp .clipMonetizationPanel, .studioApp .clipEditorialPanel { border-color: var(--border); border-radius: 8px; background: #111820; }
+.studioApp .youtubeUploadError, .studioApp .tiktokUploadError { background: #291f25; border-color: #5d3943; color: #e6b9bf; }
+.studioApp .emptyState { display: flex; min-height: 260px; flex-direction: column; gap: 12px; align-items: center; justify-content: center; padding: 32px; border: 1px dashed #34424d; border-radius: 12px; background: #131920; text-align: center; }
+.studioApp .emptyStateIcon { color: #7c9b8c; }
+.studioApp .emptyState p { max-width: 440px; color: #92a2af; font-size: 13px; }
+.studioApp .history .sectionTitle { display: none; }
+.studioApp .history .sectionHeader { justify-content: flex-end; }
+.studioApp .historyActions { width: 100%; justify-content: flex-start; }
+.studioHistoryToolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 22px; }
+.studioHistoryToolbar .studioQueueFilters { margin: 0; border: 0; padding: 0; }
+.studioApp .historyLiveCount, .studioApp .historyReadyCount { font-size: 11px; color: #a2b4bd; }
+.studioApp .outputWorkspacePane .jobList { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 18px; }
+.studioApp .jobRow { min-width: 0; border: 1px solid var(--border); border-radius: 11px; background: var(--panel); box-shadow: none; overflow: hidden; }
+.studioApp .jobRow:hover { transform: none; border-color: #51645a; box-shadow: 0 6px 20px #00000020; }
+.studioApp .jobRowMain { display: block; width: 100%; min-width: 0; padding: 0; color: inherit; background: transparent; border: 0; border-radius: 0; text-align: left; }
+.studioApp .jobCardPreview { width: 100%; height: 145px; min-height: 0; background: #19222b; border-bottom: 1px solid #2c3740; }
+.studioApp .jobCardPreview::before { opacity: .2; }
+.studioApp .jobCardPreviewFallback { gap: 9px; color: #728c82; background: #17232a; }
+.studioApp .jobCardPreviewFallback > span { color: #9dadb8; font: 450 11px/1.4 var(--font-sans); letter-spacing: 0; }
+.studioApp .jobCardBody { padding: 16px; }
+.studioApp .jobCardBody h3 { color: #e2e9ee; font-size: 13px; line-height: 1.6; font-weight: 500; -webkit-line-clamp: 3; min-height: 0; }
+.studioApp .jobRowTop { gap: 6px; margin-bottom: 9px; }
+.studioApp .jobRow-status { font: 500 10px/1.4 var(--font-sans); }
+.studioApp .jobClipCount { color: #8c9daa; font-size: 9px; }
+.studioApp .jobFormatBadge { border-radius: 5px; font: 550 8px/1.4 var(--font-sans); background: #0f1c24e8; border-color: #354a49; }
+.studioApp .jobPlatformQueue { border-color: #2a3a44; background: #111820; border-radius: 7px; }
+.studioApp .jobPlatformQueue span, .studioApp .jobPlatformQueue b, .studioApp .jobPlatformQueue small { font-family: var(--font-sans); font-size: 10px; }
+.studioApp .jobCardError { font-size: 11px; line-height: 1.6; }
+.studioApp .jobRowMeta { color: #8f9fa9; font: 400 10px/1.6 var(--font-sans); }
+.studioApp .jobRowActions { border-color: var(--border); background: transparent; }
+.studioApp .jobRowActions button { min-height: 32px; color: #9fadb7; border-radius: 6px; font-size: 10px; }
+.studioApp .jobDirectorRecovery { background: #1c2d27; border-color: #3a5145; color: #badbc7; }
+
+.studioAutomation { display: grid; gap: 24px; }
+.studioApp .cronActivity { --cron-accent: #9dafbd; margin: 0; padding: 24px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; gap: 26px; }
+.studioApp .cronActivity--active { --cron-accent: #a9e8ce; }
+.studioApp .cronActivity--warning { --cron-accent: #e9c382; }
+.studioApp .cronActivityMain { flex-basis: 65%; }
+.studioApp .cronActivityHeading > span { color: #8596a6; font-size: 9px; }
+.studioApp .cronActivityHeading > strong { font-size: 15px; font-weight: 550; }
+.studioApp .cronActivityCopy p { color: #9baeb7; font-size: 12px; line-height: 1.7; }
+.studioApp .cronActivityCopy .cronActivityChecked { font-size: 10px; color: #7e929e; }
+.studioApp .cronActivityMeta { flex-basis: 30%; padding-left: 24px; border-color: var(--border); }
+.studioApp .cronActivityMeta span { font-size: 10px; color: #8195a3; }
+.studioApp .cronActivityMeta strong { font-size: 12px; color: #bdcbd1; }
+.studioApp .cronDailyPlan { margin-top: 17px; padding-top: 17px; border-color: var(--border); }
+.studioApp .cronDailyPlanHeading { font-size: 12px; }
+.studioApp .cronDailyLanes { gap: 20px; margin-top: 18px; }
+.studioApp .cronDailyLane > div { font-size: 12px; }
+.studioApp .cronDailyLane > span, .studioApp .cronDailyLane > small { font-size: 10px; line-height: 1.9; color: #8ea4ae; }
+.studioApp .cronDailyLane b { color: var(--primary); font-weight: 550; }
+.studioApp .cronDailyLane progress::-webkit-progress-value { background: var(--primary); }
+.studioApp .cronDailyLane progress::-moz-progress-bar { background: var(--primary); }
+.studioApp .cronActivityDetails summary { font-size: 11px; color: #a7b5bb; }
+
+.connectionGrid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 24px; align-items: start; }
+.connectionCard { min-width: 0; padding: 27px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.connectionCard > header { display: flex; align-items: center; gap: 14px; }
+.connectionLogo { display: grid; width: 48px; height: 48px; place-items: center; border: 1px solid #3c454e; border-radius: 13px; font-size: 29px; background: #20262e; }
+.connectionLogo.isYoutube { color: #f2a7a7; background: #322328; border-color: #5e363c; }
+.connectionCard h2 { margin: 0; font-size: 20px; font-weight: 550; letter-spacing: -.4px; }
+.connectionCard header p { margin: 4px 0 0; color: #90a1ac; font-size: 12px; }
+.connectionState { display: inline-flex; gap: 6px; align-items: center; margin-top: 25px; color: #dfbd83; font-size: 11px; }
+.connectionState.isReady { color: #97c8b0; }
+.connectionCard > p { max-width: 470px; margin: 12px 0 24px; color: #92a3b0; font-size: 13px; line-height: 1.75; }
+.connectionActions { display: flex; flex-wrap: wrap; gap: 9px; }
+.connectionAdvanced { margin-top: 26px; padding-top: 17px; border-top: 1px solid var(--border); }
+.connectionAdvanced summary { display: flex; align-items: center; gap: 8px; width: fit-content; min-height: 28px; list-style: none; cursor: pointer; color: #8ea1ad; font-size: 11px; }
+.connectionAdvanced summary::-webkit-details-marker { display: none; }
+.connectionAdvanced p { margin: 14px 0; font-size: 11px; line-height: 1.8; color: #9aabb6; overflow-wrap: anywhere; }
+.connectionAdvanced button { min-height: 34px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px; background: #1b242c; color: #a5b6be; font-size: 11px; }
+
+.studioQueue { min-width: 0; padding: 25px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.studioQueueHeader { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 15px; }
+.studioQueueHeader h2 { margin: 0; font-size: 17px; font-weight: 550; letter-spacing: -.3px; }
+.studioQueueHeader p { margin: 5px 0 0; color: #8e9fab; font-size: 12px; }
+.studioSearch { display: flex; min-width: 180px; max-width: 100%; align-items: center; gap: 9px; padding: 0 12px; border: 1px solid #35414c; border-radius: 8px; background: #111820; color: #8b9da9; }
+.studioSearch input { width: 100%; min-width: 0; min-height: 40px; padding: 0; color: inherit; font-size: 12px; border: 0; background: transparent; }
+.studioQueueFilters { display: flex; flex-wrap: wrap; gap: 6px; padding: 22px 0 16px; border-bottom: 1px solid var(--border); }
+.studioQueueFilters > button { display: inline-flex; align-items: center; gap: 9px; min-height: 35px; padding: 7px 11px; border: 1px solid transparent; border-radius: 7px; color: #8fa2af; background: transparent; font-size: 11px; }
+.studioQueueFilters > button.isActive { color: #cfddd7; background: #22332b; border-color: #384f42; }
+.studioQueueFilters span { padding: 1px 5px; border-radius: 4px; color: #9eb6a7; background: #111d18; font-size: 10px; }
+.studioQueueRow { display: flex; gap: 15px; align-items: center; padding: 18px 0; border-bottom: 1px solid #26303a; }
+.studioQueueRow:last-child { border-bottom: 0; }
+.studioPlatformMark { display: grid; width: 34px; height: 34px; flex: 0 0 34px; place-items: center; border: 1px solid #38434b; border-radius: 9px; color: #c5cdd5; background: #202830; font-size: 13px; font-weight: 650; }
+.studioPlatformMark.isYouTube { color: #e3a2a6; border-color: #52353d; background: #2c2229; }
+.studioQueueCopy { min-width: 0; flex: 1; }
+.studioQueueCopy > strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 12px; font-weight: 500; line-height: 1.6; overflow-wrap: anywhere; }
+.studioQueueCopy > span { display: block; margin-top: 5px; color: #8095a3; font-size: 10px; }
+.studioQueueCopy summary { width: fit-content; margin-top: 5px; cursor: pointer; color: #92afa0; font-size: 10px; }
+.studioQueueCopy details p { max-width: 650px; padding: 10px 0; color: #b6a1a5; font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.studioQueueState { display: inline-flex; gap: 6px; align-items: center; color: #9faeb9; font-size: 10px; }
+.studioQueueRow.is-verified .studioQueueState { color: #94c4a9; }
+.studioQueueRow.is-attention .studioQueueState, .studioQueueRow.is-failed .studioQueueState { color: #dfb582; }
+.studioQueueRow.is-running .studioQueueState { color: #a9e8ce; }
+.studioQueueRow > a { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid #35414d; border-radius: 7px; color: #91a4b0; }
+.studioQueueEmpty { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; min-height: 220px; padding: 28px 16px; text-align: center; color: #809d90; }
+.studioQueueEmpty strong { color: #c7d5dc; font-size: 13px; font-weight: 500; }
+.studioQueueEmpty p { max-width: 390px; margin: 0; font-size: 12px; line-height: 1.7; color: #849ba8; }
+.studioPagination { display: flex; align-items: center; justify-content: space-between; padding-top: 18px; border-top: 1px solid var(--border); color: #8da1ae; font-size: 11px; }
+.studioPagination > div { display: flex; gap: 7px; }
+.studioPagination button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--border); border-radius: 7px; background: #1a242d; color: #a5b4bd; }
+
+.studioApp .sourceArchiveHero { margin: 0 0 25px; padding: 0; border: 0; background: none; box-shadow: none; }
+.studioApp .sourceArchiveHeroCopy h2 { margin: 9px 0; font-size: 30px; color: #e9eff3; font-weight: 550; letter-spacing: -1px; }
+.studioApp .sourceArchiveHeroCopy p { max-width: none; font-size: 13px; color: #91a3b0; }
+.studioApp .sourceLogEyebrow { color: #799086; font: 550 9px/1.5 var(--font-sans); letter-spacing: .1em; }
+.studioApp .sourceArchiveStats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 0; margin-bottom: 25px; overflow: hidden; border: 1px solid var(--border); border-radius: 11px; background: var(--panel); }
+.studioApp .sourceArchiveStats > article { padding: 19px; border: 0; border-right: 1px solid var(--border); border-radius: 0; background: none; box-shadow: none; }
+.studioApp .sourceArchiveStats > article:last-child { border-right: 0; }
+.studioApp .sourceArchiveStats article > span, .studioApp .sourceArchiveStats article > small { font-size: 11px; color: #8ea2ae; }
+.studioApp .sourceArchiveStats article > strong { color: #e6edf1; font: 550 26px/1.5 var(--font-sans); }
+.studioApp .sourceArchiveShell { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); box-shadow: none; overflow: hidden; }
+.studioApp .archiveSidebar { border-color: var(--border); background: #121b22; }
+.studioApp .archiveSidebar button { color: #9aadb8; border-color: transparent; background: none; font-size: 12px; }
+.studioApp .archiveSidebar button.active { color: var(--primary); border-color: #3f594b; background: #1d3027; }
+.studioApp .archiveSidebarTitle, .studioApp .archiveYearGroup > h3 { color: #9fb2bd; font-size: 12px; }
+.studioApp .sourceArchiveToolbar input, .studioApp .sourceArchiveToolbar select { min-height: 39px; padding: 8px; color: #c7d6df; background: #111820; font-size: 12px; border-color: var(--border); }
+.studioApp .archiveMonthGroup { border-color: var(--border); border-radius: 9px; background: #111a22; }
+.studioApp .sourceLogItem, .studioApp .sourceArchiveItem { border-color: var(--border); background: #141e27; }
+.studioApp .sourceLogItem strong, .studioApp .sourceArchiveItem strong { font-size: 13px; line-height: 1.6; font-weight: 500; }
+.studioApp .sourceLogItem p, .studioApp .sourceArchiveItem p { font-size: 12px; }
+
+@media (min-width: 1920px) { .studioApp .shell { margin-left: max(208px,calc((100vw - 1510px)/2)); } }
+@media (max-width: 1279px) {
+  .studioApp .shell { padding: 96px 24px 40px; }
+  .studioApp .outputWorkspacePane .jobList { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .studioCreateColumns { grid-template-columns: minmax(0,1fr) 295px; gap: 18px; }
+  .studioSummary > a { padding: 16px 14px; }
+  .studioSummary > a > span { font-size: 10px; }
+  .studioApp .clipperHero { padding: 22px; }
+}
+@media (max-width: 1080px) {
+  .studioTopbarContext { display: none; }
+  .studioCreateColumns { grid-template-columns: 1fr; }
+  .studioCreateAside { grid-template-columns: repeat(2,minmax(0,1fr)); align-items: start; }
+  .studioApp .outputWorkspacePane .jobList { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .studioApp .clipGrid { grid-template-columns: 1fr; }
+  .connectionGrid { grid-template-columns: 1fr; }
+  .studioApp .cronActivity { flex-direction: column; }
+  .studioApp .cronActivityMeta { flex-basis: auto; flex-direction: row; flex-wrap: wrap; width: 100%; padding: 17px 0 0; border-left: 0; border-top: 1px solid var(--border); gap: 16px; }
+  .studioApp .cronActivityMeta > div { flex: 1 1 180px; }
+}
+@media (max-width: 760px) {
+  .studioApp .shell { margin: 0; padding: 92px 18px 110px; }
+  .studioTopbar { height: 65px; gap: 10px; padding: 0 18px; }
+  .studioBrand { flex: 0 1 auto; font-size: 17px; }
+  .studioBrand > span:last-child { gap: 5px; }
+  .studioBrand small { font-size: 8px; }
+  .studioTopbarActions { gap: 7px; }
+  .studioApp .studioSync { width: 33px; padding: 0; }
+  .studioApp .studioSync > span { display: none; }
+  .studioApp .studioCronToggle { min-height: 33px; padding: 0 8px; font-size: 10px; gap: 5px; }
+  .studioSidebar { inset: auto 0 0; width: auto; padding: 5px 7px max(7px,env(safe-area-inset-bottom)); border-right: 0; border-top: 1px solid #33403f; background: #151e25f5; backdrop-filter: blur(16px); }
+  .studioNavCaption, .studioSidebarFooter { display: none; }
+  .studioSidebar nav { flex-direction: row; gap: 2px; justify-content: space-around; }
+  .studioSidebar nav a { display: flex; flex: 1; flex-direction: column; justify-content: center; gap: 5px; min-width: 0; min-height: 51px; padding: 6px 2px; border: 0; border-radius: 7px; font-size: 9px; line-height: 1.3; white-space: nowrap; }
+  .studioSidebar nav a > i { display: none; }
+  .studioSidebar nav a svg { width: 18px; height: 18px; }
+  .studioPageHeading { gap: 12px; align-items: flex-start; margin-bottom: 22px; }
+  .studioPageHeading h1 { font-size: 27px; letter-spacing: -.9px; }
+  .studioPageHeading p { font-size: 12px; }
+  .studioPageHeading > div > span { font-size: 8px; }
+  .studioNewVideo { min-height: 35px; padding: 7px 9px; font-size: 10px; }
+  .studioNewVideo > svg:last-child { display: none; }
+  .studioSummary { grid-template-columns: repeat(2,minmax(0,1fr)); margin-bottom: 22px; }
+  .studioSummary > a { padding: 15px; border-bottom: 1px solid var(--border); }
+  .studioSummary > a:nth-child(2) { border-right: 0; }
+  .studioSummary > a:nth-child(n+3) { border-bottom: 0; }
+  .studioSummary > a > span { font-size: 10px; }
+  .studioSummary > a > strong { font-size: 25px; }
+  .studioCreateAside { grid-template-columns: 1fr; }
+  .studioApp .clipperHero { padding: 21px; }
+  .studioApp .clipperHeroCopy h2, .studioApp .clipperHero.isWorking .clipperHeroCopy h2 { font-size: 22px; }
+  .studioApp .sourceComposerTop > b { display: none; }
+  .studioApp .formatChoice { gap: 7px; }
+  .studioApp .formatChoice > button { padding: 10px 8px; }
+  .studioApp .formatChoice > button > b { font-size: 10px; }
+  .studioApp .formatChoice > button small { font-size: 9px; }
+  .studioApp .sourceUrlInput { padding-left: 10px; }
+  .studioApp .sourceUrlInput > input { font-size: 12px; }
+  .studioApp .sourceUrlInput > button span { display: none; }
+  .studioApp .sourceRights { font-size: 10px; }
+  .studioApp .sectionHeader { flex-direction: column; align-items: flex-start; }
+  .studioApp .resultsActions, .studioApp .historyActions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+  .studioApp .uiButton { font-size: 10px; }
+  .studioApp .cronActivity { padding: 18px; gap: 18px; }
+  .studioApp .cronActivityMain { width: 100%; gap: 9px; }
+  .studioApp .cronActivityHeading { gap: 5px 10px; }
+  .studioApp .cronActivityHeading > strong { font-size: 14px; }
+  .studioApp .cronDailyLanes { flex-direction: column; gap: 18px; }
+  .studioApp .cronDailyPlanHeading { font-size: 11px; }
+  .studioApp .cronActivityMeta { flex-direction: column; }
+  .studioApp .cronActivityMeta > div { flex: 0 0 auto; }
+  .studioQueue { padding: 18px; }
+  .studioSearch { width: 100%; }
+  .studioQueueRow { align-items: flex-start; flex-wrap: wrap; gap: 10px; padding: 17px 0; }
+  .studioQueueCopy { flex-basis: calc(100% - 53px); }
+  .studioQueueState { margin-left: 44px; flex: 1; }
+  .studioQueueRow > a { margin-top: -4px; }
+  .connectionCard { padding: 22px; }
+  .studioApp .sourceArchiveStats { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .studioApp .sourceArchiveStats > article { padding: 15px; border-bottom: 1px solid var(--border); }
+  .studioApp .sourceArchiveStats > article:nth-child(2) { border-right: 0; }
+  .studioApp .sourceArchiveStats > article:nth-child(n+3) { border-bottom: 0; }
+  .studioApp .sourceArchiveStats article > span, .studioApp .sourceArchiveStats article > small { font-size: 10px; }
+  .studioApp .sourceArchiveStats article > strong { font-size: 23px; }
+}
+@media (max-width: 600px) {
+  .studioApp .outputWorkspacePane .jobList { grid-template-columns: 1fr; }
+  .studioApp .jobCardPreview { height: 180px; }
+}
+@media (max-width: 359px) {
+  .studioApp .shell { padding-inline: 13px; }
+  .studioTopbar { padding-inline: 12px; }
+  .studioBrand small { display: none; }
+  .studioBrandMark { width: 30px; height: 30px; }
+  .studioApp .studioCronToggle { padding: 0 6px; font-size: 9px; }
+  .studioSidebar nav a { font-size: 8px; }
+  .studioApp .clipperHero { padding: 17px; }
+  .studioSummary > a { padding: 13px; }
+  .studioSummary > a > span { font-size: 9px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .studioApp *, .studioApp *::before, .studioApp *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}

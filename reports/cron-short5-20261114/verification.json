@@ -1,0 +1,100 @@
+{
+  "checked_at": "2026-11-14T02:23:32.367972+00:00",
+  "evidence_scope": "local API upload records; no remote metadata changed",
+  "policy": {
+    "short_per_publication_date": 5,
+    "timezone": "Asia/Jakarta",
+    "short_slots": [
+      "07:00",
+      "10:00",
+      "13:00",
+      "16:00",
+      "19:00"
+    ],
+    "production_targets": {
+      "scheduled_short": 17,
+      "private_short": 4,
+      "long": 2
+    }
+  },
+  "validation": {
+    "backend_tests_passed": 194,
+    "frontend_tests_passed": 19,
+    "total_tests_passed": 213,
+    "production_build": "passed",
+    "typescript": "passed",
+    "frontend_readiness": "passed",
+    "build_id": "VZoG7y0DQ5EZ_nqc-qB5d"
+  },
+  "runtime": {
+    "backend_health": {
+      "status": "ok"
+    },
+    "short_schedule_policy_version": null,
+    "active_jobs": 1,
+    "short_reservations_by_wib_date": {
+      "2026-11-15": 2,
+      "2026-11-14": 6
+    }
+  },
+  "future_short_audit": {
+    "records": [
+      {
+        "id": "c31b13caf04543518ad39a88b15ade90",
+        "video_url": "https://www.youtube.com/watch?v=o6Z1tn2hGH4",
+        "sha256": "33fbe9430c823dec21a737ae95bc82b8151889037ffc5e232654d0842f0e658d",
+        "source_url": "https://www.youtube.com/watch?v=7no4MduA4hs",
+        "publish_at": "2026-11-15T02:15:00+00:00"
+      },
+      {
+        "id": "491b168a8856417394abb9324c037314",
+        "video_url": "https://www.youtube.com/watch?v=9VOVZYRe0xA",
+        "sha256": "4c2c3dd2ba9a06c710851026d5ff6d1fe2d60f6a395519b38cb8803aaf0c53b3",
+        "source_url": "https://www.youtube.com/watch?v=KSoxmvwkcuY",
+        "publish_at": "2026-11-15T00:00:00+00:00"
+      },
+      {
+        "id": "06ea489761bb43088dba5f2eb04df72f",
+        "video_url": "https://www.youtube.com/watch?v=aS-LUNjTQDM",
+        "sha256": "15958448d909667fdaafc4061859451280a519131326bc1b7944f7115d86bdfc",
+        "source_url": "https://www.youtube.com/watch?v=LxW9LbzkvCE",
+        "publish_at": "2026-11-14T11:15:00+00:00"
+      },
+      {
+        "id": "fe342e26a1bb4ae289293447af4783c2",
+        "video_url": "https://www.youtube.com/watch?v=jQ8sAnfWzEA",
+        "sha256": "49f29ffde50a3407d1b1b9349b3140315d5f8c60bf79579f1e0b8315638b708f",
+        "source_url": "https://www.youtube.com/watch?v=TXSEO8RDy8c",
+        "publish_at": "2026-11-14T09:00:00+00:00"
+      },
+      {
+        "id": "74c3c8c6c59a4beaa3cbe8a257264a76",
+        "video_url": "https://www.youtube.com/watch?v=D_s82uSTEWY",
+        "sha256": "aeef517797b12f947176a87c840b604835b0ee470674d5b58cec5a8dcd85ac69",
+        "source_url": "https://www.youtube.com/watch?v=dehO9QA4p7A",
+        "publish_at": "2026-11-14T06:45:00+00:00"
+      },
+      {
+        "id": "4c5505f6ae764c3698e68cd59607c2d6",
+        "video_url": "https://www.youtube.com/watch?v=0hP8FUX9SI8",
+        "sha256": "6cd78602283a132fbd4da3e539d8a7c1cbb3c32a8d4587254975f39e4bb34d2a",
+        "source_url": "https://www.youtube.com/watch?v=nx3l07-qHj0",
+        "publish_at": "2026-11-14T04:30:00+00:00"
+      }
+    ],
+    "duplicate_remote_ids": [],
+    "duplicate_file_hashes": [],
+    "duplicate_source_urls": []
+  },
+  "deployment": {
+    "activated": false,
+    "command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+    "blocker": "sudo requires a password; an active render was preserved"
+  },
+  "source_hashes": {
+    "backend/api.py": "bb3e86adefd6b794bb38b010496f85868350cb0aff34df052aba8d998ed23062",
+    "backend/deployment_runtime.py": "97dcf4e3e5c3e0c1fa7a4a8d88ea52b1fe8776de59a8c9e4727bb358cd551311",
+    "docker-compose.yml": "5c1b2d88e6d4d8bf0c4996c22907ad8a70890ca082c2ffc3a1d9cc94944c298e",
+    "frontend/app/_components/CronActivity.tsx": "9ef32de14d707fe3a8dc5c47d02febaf4a04d2b6198e583e6fbd4514acc4510f"
+  }
+}

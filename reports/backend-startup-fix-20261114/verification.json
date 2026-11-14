@@ -1,0 +1,33 @@
+{
+  "checked_at": "2026-11-14T02:40:57.251508+00:00",
+  "root_cause": "SyntaxError: keyword argument repeated: top in scheduled_auto_viral_request",
+  "reproduction": {
+    "before_fix_exit_code": 1,
+    "after_fix_exit_code": 0,
+    "environment": "backend environment from standard Compose config with isolated copies of persisted records",
+    "import": "passed",
+    "contract": {
+      "activity_version": 1,
+      "daily_plan_version": 1,
+      "short_schedule_daily_limit": 5,
+      "total_target": 23
+    }
+  },
+  "validation": {
+    "compiled_backend_modules": 42,
+    "focused_regression_tests_passed": 151,
+    "invalid_duplicate_keyword_rejected_during_build": true,
+    "compile_guard_executes_application_code": false
+  },
+  "deployment": {
+    "activated": false,
+    "command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+    "attempted": true,
+    "blocker": "sudo requires an interactive password"
+  },
+  "source_hashes": {
+    "backend/api.py": "b1ace7d6c54a510b02a2e7babb838f26b49646be320c0568c6fa5a1771a3b559",
+    "backend/deployment_runtime.py": "e6bfd41e55cdd98fa4756a4fad5116ef8629b1aa83aa5c1ef1099c690cad5324",
+    "backend/Dockerfile": "0775762ae240f25d53f357f141a33b10e734ba0520554f37d5b58639f9259f16"
+  }
+}

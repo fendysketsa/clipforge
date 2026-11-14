@@ -1,5 +1,10 @@
 "use client";
 
+import { CronActivity } from "./_components/CronActivity";
+import { ConnectionsPanel } from "./_components/ConnectionsPanel";
+import { UploadQueuePanel } from "./_components/UploadQueuePanel";
+import { STUDIO_VIEWS, studioViewFromHash, type StudioView } from "../lib/workspaceNavigation";
+import { ArrowRight, Clapperboard, Film, UploadCloud, Activity } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
@@ -34,8 +39,6 @@ import {
   getYouTubeUploads,
   importYouTubeCdpCookies,
   probeUrlSource,
-  refreshYouTubeUploadPerformance,
-  updateYouTubeUploadPerformance,
   setupYouTubeOneTimeLogin,
   setAutoViralScheduleEnabled,
   startYouTubeLogin,
@@ -208,11 +211,33 @@ export default function HomePage() {
   const [activeJob, setActiveJob] = useState<ClipJob | null>(null);
   const [job, setJob] = useState<ClipJob | null>(null);
   const [jobs, setJobs] = useState<ClipJob[]>([]);
+  const [studioView, setStudioView] = useState<StudioView>("create");
+  useEffect(() => {
+    const syncView = () => {
+      setStudioView(studioViewFromHash(window.location.hash));
+      window.scrollTo({ top: 0, behavior: "instant" });
+    };
+    const openResults = () => {
+      window.history.replaceState(null, "", "#results");
+      syncView();
+    };
+    syncView();
+    window.addEventListener("hashchange", syncView);
+    window.addEventListener("popstate", syncView);
+    window.addEventListener("clipforge:open-results", openResults);
+    return () => {
+      window.removeEventListener("hashchange", syncView);
+      window.removeEventListener("popstate", syncView);
+      window.removeEventListener("clipforge:open-results", openResults);
+    };
+  }, []);
   const [youtubeConfig, setYoutubeConfig] = useState<YouTubeConfig | null>(null);
   const [youtubeUploads, setYoutubeUploads] = useState<YouTubeUploadJob[]>([]);
   const [tiktokConfig, setTiktokConfig] = useState<TikTokConfig | null>(null);
   const [tiktokUploads, setTiktokUploads] = useState<TikTokUploadJob[]>([]);
   const [cronSchedule, setCronSchedule] = useState<AutoViralScheduleStatus | null>(null);
+  const [cronReceivedAt, setCronReceivedAt] = useState<number | null>(null);
+  const [cronRefreshFailed, setCronRefreshFailed] = useState(false);
   const [isTogglingCron, setIsTogglingCron] = useState(false);
   const [isYouTubeLoginActive, setIsYouTubeLoginActive] = useState(false);
   const [isTikTokLoginActive, setIsTikTokLoginActive] = useState(false);
@@ -392,9 +417,16 @@ export default function HomePage() {
   }, []);
 
   const loadCronSchedule = useCallback(async () => {
-    const schedule = await getAutoViralSchedule();
-    setCronSchedule(schedule);
-    return schedule;
+    try {
+      const schedule = await getAutoViralSchedule();
+      setCronSchedule(schedule);
+      setCronReceivedAt(Date.now());
+      setCronRefreshFailed(false);
+      return schedule;
+    } catch (error) {
+      setCronRefreshFailed(true);
+      throw error;
+    }
   }, []);
 
   const handleSyncData = useCallback(async () => {
@@ -1560,55 +1592,6 @@ export default function HomePage() {
     youtubeConfig?.upload_all_above_fyp_target,
   ]);
 
-  const handleRefreshYouTubePerformance = useCallback(async (upload: YouTubeUploadJob) => {
-    try {
-      const updated = await toast.promise(refreshYouTubeUploadPerformance(upload.id), {
-        loading: "Mengambil view, retention, dan subscriber dari YouTube...",
-        success: "Performa YouTube diperbarui.",
-        error: (refreshError) => refreshError instanceof Error
-          ? refreshError.message
-          : "Gagal memperbarui performa YouTube",
-      });
-      setYoutubeUploads((current) => current.map((item) => item.id === updated.id ? updated : item));
-    } catch {
-      // toast.promise already displayed the backend error.
-    }
-  }, []);
-
-  const handleSaveYouTubeFeedMetrics = useCallback(async (
-    upload: YouTubeUploadJob,
-    metrics: { shown_in_feed?: number; stayed_to_watch_percentage?: number },
-  ) => {
-    const latest = upload.performance_snapshots.at(-1);
-    try {
-      const updated = await toast.promise(
-        updateYouTubeUploadPerformance(upload.id, {
-          views: latest?.views ?? 0,
-          engaged_views: latest?.engaged_views,
-          average_view_duration: latest?.average_view_duration,
-          average_view_percentage: latest?.average_view_percentage,
-          likes: latest?.likes,
-          comments: latest?.comments,
-          shares: latest?.shares,
-          subscribers_gained: latest?.subscribers_gained,
-          subscribers_lost: latest?.subscribers_lost,
-          shown_in_feed: metrics.shown_in_feed,
-          stayed_to_watch_percentage: metrics.stayed_to_watch_percentage,
-        }),
-        {
-          loading: "Menyimpan Shown in feed dan Stayed to watch...",
-          success: "Metrik Shorts Studio tersimpan.",
-          error: (saveError) => saveError instanceof Error
-            ? saveError.message
-            : "Gagal menyimpan metrik Shorts Studio",
-        },
-      );
-      setYoutubeUploads((current) => current.map((item) => item.id === updated.id ? updated : item));
-    } catch {
-      // toast.promise already displayed the backend error.
-    }
-  }, []);
-
   const handleStartYouTubeLogin = useCallback(async () => {
     if (usesChromeDebugging()) {
       try {
@@ -1741,6 +1724,8 @@ export default function HomePage() {
     try {
       const nextSchedule = await setAutoViralScheduleEnabled(nextEnabled);
       setCronSchedule(nextSchedule);
+      setCronReceivedAt(Date.now());
+      setCronRefreshFailed(false);
       toast.success(
         nextEnabled
           ? "Cron aktif. Scheduler akan menjalankan siklus berikutnya sesuai jadwal."
@@ -1759,6 +1744,7 @@ export default function HomePage() {
         job={activityJob}
       />
       <Topbar
+        activeView={studioView}
         isRefreshing={isRefreshingData}
         onRefresh={handleSyncData}
         cronSchedule={cronSchedule}
@@ -1766,6 +1752,34 @@ export default function HomePage() {
         onToggleCron={handleToggleCron}
       />
 
+      <header className="studioPageHeading">
+        <div><span>RUANG PRODUKSI ANDA</span><h1>{STUDIO_VIEWS[studioView].title}</h1><p>{STUDIO_VIEWS[studioView].description}</p></div>
+        {studioView !== "create" ? <a className="studioNewVideo" href="/#quick-start-title"><Clapperboard size={16} /> Buat video <ArrowRight size={15} /></a> : null}
+      </header>
+
+      {studioView === "create" ? <section className="studioSummary" aria-label="Ringkasan workspace">
+        <a href="/#history"><span><Activity size={16} /> Sedang diproses</span><strong>{jobs.filter(item => item.status === "running" || item.status === "queued").length}<small>proses</small></strong><span>Lihat aktivitas produksi <ArrowRight size={13} /></span></a>
+        <a href="/#results"><span><Film size={16} /> Hasil tersedia</span><strong>{jobs.reduce((sum,item)=>sum+item.clips.length,0)}<small>video</small></strong><span>Siap untuk ditinjau <ArrowRight size={13} /></span></a>
+        <a href="/#automation"><span><UploadCloud size={16} /> Antrean upload</span><strong>{[...youtubeUploads,...tiktokUploads].filter(item=>item.status === "queued" || item.status === "running").length}<small>upload</small></strong><span>YouTube & TikTok <ArrowRight size={13} /></span></a>
+        <a href="/#automation"><span><Clapperboard size={16} /> Target cron hari ini</span><strong>{cronSchedule?.daily_plan?.total_uploaded ?? "—"}<small>/ {cronSchedule?.daily_plan?.total_target ?? 23}</small></strong><span>{cronSchedule?.enabled ? "Otomasi aktif" : cronSchedule ? "Otomasi dijeda" : "Membaca status"} <ArrowRight size={13} /></span></a>
+      </section> : null}
+
+      {studioView === "automation" ? <div className="studioAutomation">
+        <CronActivity schedule={cronSchedule} receivedAt={cronReceivedAt} refreshFailed={cronRefreshFailed} />
+        <UploadQueuePanel youtube={youtubeUploads} tiktok={tiktokUploads} />
+      </div> : null}
+
+      {studioView === "settings" ? <ConnectionsPanel
+        youtubeEnabled={Boolean(youtubeConfig?.enabled)} tiktokEnabled={Boolean(tiktokConfig?.enabled)}
+        youtubeMessage={youtubeConfig?.auth_status_message || ""} tiktokMessage={tiktokConfig?.auth_status_message || ""}
+        tiktokHandle={tiktokConfig?.target_handle || ""} youtubeBusy={isYouTubeLoginActive} tiktokBusy={isTikTokLoginActive}
+        onYouTubeLogin={handleSetupYouTubeOneTimeLogin} onTikTokLogin={handleStartTikTokLogin} onTikTokCheck={handleCheckTikTokSession}
+        onCapture={handleCaptureYouTubeSession} onImport={handleImportYouTubeCdpCookies} onNoCdp={handleEnableNoCdpMode}
+      /> : null}
+
+
+      <div className="studioCreateColumns" hidden={studioView !== "create"}>
+        <div className="studioCreateMain">
       <QuickStartCard
         url={url}
         storyText={storyText}
@@ -1798,7 +1812,13 @@ export default function HomePage() {
         onStart={() => { void handleStartJob(); }}
       />
 
-      <section className={`workspace studioGrid${isBusy ? " isProcessing" : ""}`} id="workspace">
+        </div>
+        <aside className="studioCreateAside">
+        <StatusPanel
+          job={activityJob}
+          latestLogs={latestLogs}
+          onCancelJob={handleCancelJob}
+        />
         <ControlPanel
           storyAspectRatio={isHypitQuickPrompt(prepareStoryInput(storyText, storyFormat)) ? "9:16" : storyAspectRatio}
           clipMode={clipMode}
@@ -1840,24 +1860,19 @@ export default function HomePage() {
           onCaptionColorChange={setCaptionColor}
           onAiEnabledChange={handleAiEnabledChange}
         />
-        <StatusPanel
-          job={activityJob}
-          latestLogs={latestLogs}
-          onCancelJob={handleCancelJob}
-        />
-      </section>
+        </aside>
+      </div>
 
-      {job?.request.review_only && job.candidates.length ? (
+
+      {studioView === "create" && job?.request.review_only && job.candidates.length ? (
         <ViralAnalysisResults
           candidates={job.candidates}
           sourceTitle={job.source_title}
         />
       ) : null}
 
-      <OutputWorkspace
-        resultCount={job?.clips.length ?? 0}
-        historyCount={jobs.filter((item) => ["short", "highlight_5m", "long_animate"].includes(item.request.clip_mode)).length}
-      >
+      <div hidden={studioView !== "results" && studioView !== "history"}>
+      <OutputWorkspace activeView={studioView === "history" ? "history" : "results"}>
         <ResultsSection
           clips={job?.clips ?? []}
           jobs={jobs}
@@ -1888,8 +1903,6 @@ export default function HomePage() {
           onStartYouTubeLogin={handleStartYouTubeLogin}
           onCheckTikTokSession={handleCheckTikTokSession}
           onStartTikTokLogin={handleStartTikTokLogin}
-          onRefreshYouTubePerformance={handleRefreshYouTubePerformance}
-          onSaveYouTubeFeedMetrics={handleSaveYouTubeFeedMetrics}
           onUploadAllToYouTube={handleUploadAllToYouTube}
           onUploadAllToTikTok={handleUploadAllToTikTok}
           onUploadClipToYouTube={handleUploadClipToYouTube}
@@ -1912,6 +1925,7 @@ export default function HomePage() {
           onToggleJobSelection={handleToggleHistoryJobSelection}
         />
       </OutputWorkspace>
+      </div>
     </main>
   );
 }

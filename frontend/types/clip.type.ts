@@ -497,6 +497,8 @@ export type YouTubeConfig = {
 };
 
 export type YouTubeUploadJob = {
+  publish_at?: string | null;
+  file_selection_started?: boolean;
   id: string;
   source_job_id: string;
   clip_url: string;
@@ -807,6 +809,53 @@ export type AutoViralRun = {
 };
 
 export type AutoViralScheduleStatus = {
+  short_schedule_policy_version?: number;
+  short_schedule_daily_limit?: number;
+  short_schedule_timezone?: string;
+  daily_plan_version?: number;
+  daily_plan?: {
+    enabled: boolean;
+    day: string;
+    timezone: string;
+    total_target: number;
+    total_uploaded: number;
+    total_used: number;
+    long_production_enabled?: boolean;
+    long_rejected_today?: number;
+    lanes: Record<"scheduled_short" | "private_short" | "long", {
+      label: string; target: number; uploaded: number; active: number;
+      ready: number; held: number; used: number; remaining: number;
+    }>;
+  };
+  activity_version?: number;
+  reported_at?: string;
+  activity?: {
+    state: string;
+    label: string;
+    detail: string;
+    progress_percent: number | null;
+    stage?: string | null;
+    updated_at?: string | null;
+    source_title?: string | null;
+  };
+  scheduler_health?: {
+    last_tick_at: string | null;
+    last_checked_at: string | null;
+    phase: string;
+    last_error: string | null;
+    long_production_status?: string;
+  };
+  capacity?: {
+    enabled: boolean;
+    daily_mode?: boolean;
+    scheduled_count: number;
+    scheduled_limit: number;
+    private_count: number;
+    private_limit: number;
+  };
+  upload_queue?: Record<"youtube" | "tiktok", { queued: number; running: number }>;
+  last_run_status?: string | null;
+  last_run_message?: string | null;
   enabled: boolean;
   interval_hours: number;
   run_on_startup: boolean;

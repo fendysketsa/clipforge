@@ -3,8 +3,8 @@ import { AudioNoticeToaster } from "./_components/AudioNoticeToaster";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Fendy Clipper",
-  description: "Turn long videos into ready-to-post clips",
+  title: "ClipForge Studio",
+  description: "Ruang produksi video, review hasil, dan otomasi channel.",
   icons: {
     icon: "/favicon.svg",
   },
@@ -17,7 +17,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="id">
-      <body>
+      <body className="studioApp">
         {children}
         <AudioNoticeToaster />
       </body>

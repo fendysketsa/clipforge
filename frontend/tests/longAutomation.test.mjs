@@ -70,6 +70,14 @@ test('a provider refusal explains application QC without calling it a YouTube tr
  assert.doesNotMatch(result.reason,/YouTube menolak|koneksi/);
 });
 
+test('the daily Long plan uses the backend attempt cap after replacing rejected sources',()=>{
+ const state=snapshot();state.daily_target=2;state.daily_attempt_limit=6;
+ state.attempts=Array.from({length:4},(_,i)=>({day,job_id:`failed-${i}`,status:'completed'}));
+ assert.match(longAutomationForClip(url,state,[],day).next,/mencari Long pengganti/);
+ state.attempts.push({day,job_id:'fifth'},{day,job_id:'sixth'});
+ assert.match(longAutomationForClip(url,state,[],day).next,/Batas percobaan/);
+});
+
 test('confirmed replacement stays visible after artifact cleanup without approving the old source',()=>{
  const state=snapshot();state.attempts[1]={day,job_id:'new',status:'completed',confirmed_upload_id:'record',confirmed_video_url:'https://www.youtube.com/watch?v=2PRl4z8aSx4'};
  const result=longAutomationForClip(url,state,[],day);

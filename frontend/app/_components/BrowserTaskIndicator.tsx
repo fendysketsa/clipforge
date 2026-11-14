@@ -7,7 +7,7 @@ type BrowserTaskIndicatorProps = {
   job: ClipJob | null;
 };
 
-const DEFAULT_TITLE = "Fendy Clipper";
+const DEFAULT_TITLE = "ClipForge Studio";
 const DEFAULT_ICON = "/favicon.svg";
 const FRAME_DURATION_MS = 240;
 const BACKGROUND_UPDATE_MS = 1_000;

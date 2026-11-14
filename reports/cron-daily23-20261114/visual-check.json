@@ -1,0 +1,68 @@
+{
+  "preview": true,
+  "production_activated": false,
+  "automatic_poll_transition": true,
+  "page_errors": [],
+  "checks": [
+    {
+      "name": "daily-plan",
+      "width": 1440,
+      "metrics": {
+        "right": 1414,
+        "clientWidth": 1384,
+        "scrollWidth": 1384,
+        "direction": "row"
+      }
+    },
+    {
+      "name": "daily-plan",
+      "width": 1280,
+      "metrics": {
+        "right": 1254,
+        "clientWidth": 1224,
+        "scrollWidth": 1224,
+        "direction": "row"
+      }
+    },
+    {
+      "name": "daily-plan",
+      "width": 390,
+      "metrics": {
+        "right": 378,
+        "clientWidth": 362,
+        "scrollWidth": 362,
+        "direction": "column"
+      }
+    },
+    {
+      "name": "daily-plan",
+      "width": 320,
+      "metrics": {
+        "right": 308,
+        "clientWidth": 292,
+        "scrollWidth": 292,
+        "direction": "column"
+      }
+    },
+    {
+      "name": "running",
+      "width": 1440,
+      "metrics": {
+        "right": 1414,
+        "clientWidth": 1384,
+        "scrollWidth": 1384,
+        "direction": "row"
+      }
+    },
+    {
+      "name": "offline",
+      "width": 390,
+      "metrics": {
+        "right": 378,
+        "clientWidth": 362,
+        "scrollWidth": 362,
+        "direction": "column"
+      }
+    }
+  ]
+}

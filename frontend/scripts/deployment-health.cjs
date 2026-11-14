@@ -5,7 +5,9 @@ const crypto = require('node:crypto');
 const root = path.resolve(__dirname, '..');
 const digest = data => crypto.createHash('sha256').update(data).digest('hex');
 const requiredJS = ['jobDirectorRecovery', 'history-four-columns', 'jobPlatformQueue', '/reconcile',
-  'dijadwalkan ulang otomatis', 'pengaturan privasi tertunda', 'Hasil posting perlu diperiksa'];
+  'dijadwalkan ulang otomatis', 'pengaturan privasi tertunda', 'Hasil posting perlu diperiksa',
+  'cronActivityHeading', 'Detail pemeriksaan', 'cronDailyLanes',
+  'studioSidebar', 'studioQueueRow', 'connectionCard'];
 const grid = /\.outputWorkspacePane\s+\.jobList\s*\{[^}]*grid-template-columns\s*:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/;
 function walk(dir) {
   if (!fs.existsSync(dir)) return [];
@@ -25,7 +27,7 @@ function build() {
   const files = walk(path.join(root,dist,'static'));
   const js = files.filter(file=>file.endsWith('.js')).map(file=>fs.readFileSync(file,'utf8')).join('\n');
   const css = files.filter(file=>file.endsWith('.css')).map(file=>fs.readFileSync(file,'utf8')).join('\n');
-  if (!requiredJS.every(text=>js.includes(text)) || !grid.test(css)) throw Error('Built UI lacks current cards/upload recovery');
+  if (!requiredJS.every(text=>js.includes(text)) || !grid.test(css) || js.includes('Loop belajar YouTube')) throw Error('Built UI lacks current studio navigation/cards/upload recovery');
   const sources = sourceFingerprint(root);
   const manifest = {schema:1, dist, build_id:fs.readFileSync(path.join(root,dist,'BUILD_ID'),'utf8').trim(),
     release_id:digest(JSON.stringify(sources)),sources,

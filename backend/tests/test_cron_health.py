@@ -33,6 +33,28 @@ def test_full_capacity_is_not_reported_as_missing_permission(schedule_state):
     status = api.auto_viral_schedule_status()
     assert "penuh" in status.message
     assert "izin" not in status.message
+    assert status.activity["state"] == "capacity_wait"
+    assert status.activity["progress_percent"] is None
+    assert status.activity_version == 1
+
+
+def test_stopped_worker_is_visible_even_when_capacity_is_full(schedule_state, monkeypatch):
+    monkeypatch.setattr(api, "auto_viral_scheduler_running", False)
+    status = api.auto_viral_schedule_status()
+    assert status.activity["state"] == "worker_unavailable"
+    assert "worker" in status.message
+
+
+def test_activity_counts_use_real_capacity_and_tiktok_has_no_title(schedule_state, monkeypatch):
+    monkeypatch.setattr(api, "youtube_scheduled_backlog_count", lambda: 11)
+    monkeypatch.setattr(api, "youtube_cron_private_buffer_count", lambda: 5)
+    monkeypatch.setattr(api, "tiktok_uploads", {"u": SimpleNamespace(
+        status="running", clip_name="clip.mp4", updated_at=api.now_iso(), dry_run=False)})
+    status = api.auto_viral_schedule_status()
+    assert status.capacity["scheduled_count"] == 11
+    assert status.capacity["private_count"] == 5
+    assert status.upload_queue["tiktok"] == {"running": 1, "queued": 0}
+    assert status.activity["state"] == "uploading"
 
 
 def test_schedule_reports_actual_recovery_tick_even_while_new_production_waits_for_capacity(schedule_state,monkeypatch):
@@ -112,6 +134,10 @@ def test_scheduler_recovers_from_transient_tick_failure(monkeypatch, failing_ste
     assert waits[0] == 30.0
     assert len(waits) == 2
     assert api.auto_viral_scheduler_running is False
+    assert api.auto_viral_scheduler_health["last_tick_at"] is not None
+    assert api.auto_viral_scheduler_health["last_checked_at"] is not None
+    assert api.auto_viral_scheduler_health["last_error"] is None
+    assert api.auto_viral_scheduler_health["phase"] == "stopped"
 
 
 @pytest.mark.parametrize("blocking", [False, True, None])

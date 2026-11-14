@@ -34,16 +34,16 @@ def record(index, **updates):
     return api.YouTubeUploadJob(**values)
 
 
-def test_seven_slots_then_next_day_shared_by_shorts_and_long():
+def test_five_short_slots_then_next_day():
     now = datetime(2099, 1, 1, 21, tzinfo=timezone.utc)
     reserved = set()
     slots = []
     for index in range(15):
-        slot = api.youtube_next_publish_slot(long_form=index == 6, reserved=reserved, now=now)
+        slot = api.youtube_next_publish_slot(long_form=False, reserved=reserved, now=now)
         reserved.add(slot)
         slots.append(slot)
     dates = Counter(slot.astimezone(ZoneInfo("Asia/Jakarta")).date() for slot in slots)
-    assert sorted(dates.values()) == [1, 7, 7]
+    assert sorted(dates.values()) == [5, 5, 5]
     assert all(b - a >= timedelta(hours=2.25) for a, b in zip(slots, slots[1:]))
 
 
@@ -96,16 +96,17 @@ def test_full_buffers_wake_after_next_release_instead_of_waiting_a_day(monkeypat
     assert api.auto_viral_daily_mix_incomplete(now) is False
 
 
-def test_reconcile_preserves_ids_and_reserves_at_most_seven_per_day(monkeypatch):
+def test_reconcile_preserves_ids_and_reserves_at_most_five_shorts_per_day(monkeypatch):
     now = datetime.now(timezone.utc)
     uploads = [record(index, visibility="public", publish_at=(now + timedelta(days=2, minutes=index)).isoformat()) for index in range(11)]
     monkeypatch.setattr(api, "youtube_uploads", {u.id: u for u in uploads})
     monkeypatch.setattr(api, "scheduled_auto_viral_job_ids", lambda: {u.source_job_id for u in uploads})
     monkeypatch.setattr(api, "queue_youtube_upload_jobs", lambda _uploads: None)
     changed = api.reconcile_youtube_cron_schedules()
-    assert {u.id for u in changed} == {u.id for u in uploads}
-    times = sorted(api.parsed_datetime(u.publish_at) for u in changed)
-    assert max(Counter(t.astimezone(ZoneInfo("Asia/Jakarta")).date() for t in times).values()) <= 7
+    assert {u.id for u in changed} == {u.id for u in uploads[1:]}
+    assert api.youtube_uploads[uploads[0].id].publish_at == uploads[0].publish_at
+    times = sorted(api.parsed_datetime(u.publish_at) for u in api.youtube_uploads.values())
+    assert max(Counter(t.astimezone(ZoneInfo("Asia/Jakarta")).date() for t in times).values()) <= 5
     assert all(b - a >= timedelta(hours=2.25) for a, b in zip(times, times[1:]))
 
 

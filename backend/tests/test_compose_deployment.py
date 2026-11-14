@@ -53,6 +53,22 @@ def test_invalid_python_fails_during_build_before_recreation(project):
     with pytest.raises(SyntaxError):deploy.build_manifest(project)
 
 
+def test_duplicate_keyword_is_rejected_during_image_build_before_recreation(project):
+    import ast
+    source='value = dict(top=1, top=2)\n'
+    ast.parse(source)  # This was insufficient to validate the previous image.
+    (project/'api.py').write_text(source)
+    with pytest.raises(SyntaxError,match='keyword argument repeated'):
+        deploy.build_manifest(project)
+
+
+def test_compile_validation_does_not_execute_modules_or_touch_checkpoints(project):
+    marker=project/'checkpoint.json'
+    (project/'api.py').write_text(f'from pathlib import Path\nPath({str(marker)!r}).write_text("changed")\n')
+    deploy.build_manifest(project)
+    assert not marker.exists()
+
+
 def test_changed_channel_logo_cannot_pass_image_verification(project):
     branding = project / 'assets' / 'branding'
     branding.mkdir(parents=True)
@@ -106,7 +122,7 @@ def test_bot_preparation_requires_verified_frontend(project,tmp_path,monkeypatch
 
 def test_backend_contract_does_not_resume_disabled_cron(monkeypatch):
     payloads={'/api/health':{'status':'ok'},'/api/tiktok/config':{'duplicate_guard_version':2,'cron_draft_policy':'discard'},
-      '/api/automation/viral-cc/schedule':{'cron_director_effects_policy_version':4,'cron_source_process_limit':2,'enabled':False,'scheduler_running':False},
+      '/api/automation/viral-cc/schedule':{'short_schedule_policy_version':1,'short_schedule_daily_limit':5,'short_schedule_timezone':'Asia/Jakarta','daily_plan_version':1,'activity_version':1,'activity':{'state':'disabled'},'cron_director_effects_policy_version':4,'cron_source_process_limit':2,'enabled':False,'scheduler_running':False},
       '/api/automation/viral-cc/long-strategy':{'version':2,'semantic_story_review_required':True,'themes':[
           {'key':key,'manual_review_required':key=='domestic_politics'} for key in
           ('mystery_story','legend_folklore','domestic_politics','food_healthy_review','food_taste_review')]}}
@@ -151,7 +167,7 @@ for(const name of ['package.json','package-lock.json','next.config.ts','tsconfig
 for(const dir of ['app','public','.next/static'])fs.mkdirSync(dir,{recursive:true});
 fs.writeFileSync('app/page.tsx','original source');
 fs.writeFileSync('.next/BUILD_ID','build-a');
-const js='jobDirectorRecovery history-four-columns jobPlatformQueue /reconcile dijadwalkan ulang otomatis pengaturan privasi tertunda Hasil posting perlu diperiksa';
+const js='jobDirectorRecovery history-four-columns jobPlatformQueue /reconcile dijadwalkan ulang otomatis pengaturan privasi tertunda Hasil posting perlu diperiksa cronActivityHeading Detail pemeriksaan cronDailyLanes studioSidebar studioQueueRow connectionCard';
 const css='.outputWorkspacePane .jobList{grid-template-columns:repeat(4,minmax(0,1fr))}';
 fs.writeFileSync('.next/static/app.js',js);fs.writeFileSync('.next/static/app.css',css);
 const deploy=require('./scripts/deployment-health.cjs');

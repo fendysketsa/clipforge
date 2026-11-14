@@ -1,0 +1,74 @@
+{
+  "preview": true,
+  "production_activated": false,
+  "automatic_poll_transition": true,
+  "page_errors": [],
+  "checks": [
+    {
+      "name": "capacity",
+      "width": 1440,
+      "metrics": {
+        "width": 1388,
+        "scrollWidth": 1384,
+        "clientWidth": 1384,
+        "right": 1414,
+        "viewport": 1440
+      }
+    },
+    {
+      "name": "running",
+      "width": 1280,
+      "metrics": {
+        "width": 1228,
+        "scrollWidth": 1224,
+        "clientWidth": 1224,
+        "right": 1254,
+        "viewport": 1280
+      }
+    },
+    {
+      "name": "running",
+      "width": 390,
+      "metrics": {
+        "width": 366,
+        "scrollWidth": 362,
+        "clientWidth": 362,
+        "right": 378,
+        "viewport": 390
+      }
+    },
+    {
+      "name": "offline",
+      "width": 390,
+      "metrics": {
+        "width": 366,
+        "scrollWidth": 362,
+        "clientWidth": 362,
+        "right": 378,
+        "viewport": 390
+      }
+    },
+    {
+      "name": "offline",
+      "width": 320,
+      "metrics": {
+        "width": 296,
+        "scrollWidth": 292,
+        "clientWidth": 292,
+        "right": 308,
+        "viewport": 320
+      }
+    },
+    {
+      "name": "disabled",
+      "width": 390,
+      "metrics": {
+        "width": 366,
+        "scrollWidth": 362,
+        "clientWidth": 362,
+        "right": 378,
+        "viewport": 390
+      }
+    }
+  ]
+}

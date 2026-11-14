@@ -3,6 +3,7 @@ import type { ClipJob } from "../types/clip.type";
 export type LongProductionSnapshot = {
   enabled?: boolean;
   daily_target?: number;
+  daily_attempt_limit?: number;
   auto_qc_private_upload?: boolean;
   attempts?: { day: string; job_id?: string; status?: string; qc_decision?: string;
     confirmed_upload_id?: string; confirmed_video_url?: string }[];
@@ -62,7 +63,7 @@ export function longAutomationForClip(url: string, snapshot: LongProductionSnaps
       : "Worker cron melanjutkan antrean YouTube Private otomatis.";
   } else if (decision === "DROP_SOURCE") {
     const attemptsToday = snapshot.attempts?.filter(row => row.day === day).length ?? 0;
-    next = attemptsToday >= (snapshot.daily_target ?? 1) + 2
+    next = attemptsToday >= (snapshot.daily_attempt_limit ?? (snapshot.daily_target ?? 1) + 2)
       ? "Batas percobaan Long hari ini tercapai; sumber baru mengikuti jadwal berikutnya."
       : "Cron mencari Long pengganti dari sumber lain.";
   }

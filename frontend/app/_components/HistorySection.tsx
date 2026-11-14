@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type CSSProperties } from "react";
-import { ArrowUpRight, CalendarClock, CheckCheck, Clock3, Film, History, Link2, Music2, MonitorPlay, Smartphone, StopCircle, Trash2, Youtube } from "lucide-react";
+import { ArrowUpRight, CalendarClock, CheckCheck, ChevronLeft, ChevronRight, Clock3, Film, History, Link2, Music2, MonitorPlay, Search, Smartphone, StopCircle, Trash2, Youtube } from "lucide-react";
 import { API_BASE } from "../../lib/apiClient";
 import { statusCopy, statusIcon } from "../../lib/constants";
 import { formatDuration, jobElapsedSeconds } from "../../lib/utils";
@@ -186,6 +186,9 @@ export function HistorySection({
   const hasActiveJobs = jobs.some((item) => item.status === "queued" || item.status === "running");
   const [intake, setIntake] = useState<AutomaticIntake | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [page, setPage] = useState(0);
   const failedJobs = jobs.filter((item) => item.status === "failed" || item.status === "cancelled");
   const processJobs = jobs.filter(
     (item) => item.status === "queued" || item.status === "running" || item.status === "failed" || item.status === "cancelled",
@@ -214,6 +217,14 @@ export function HistorySection({
   };
 
   const sourceUrl = (job: ClipJob) => job.source_url || job.request.url;
+  const filteredJobs = jobs.filter(item => {
+    const match = filter === "all" || (filter === "active" ? ["running", "queued"].includes(item.status)
+      : filter === "failed" ? ["failed", "cancelled"].includes(item.status) : item.status === filter);
+    return match && `${sourceLabel(item)} ${item.source_uploader || ""}`.toLowerCase().includes(query.toLowerCase());
+  });
+  const pages = Math.max(1, Math.ceil(filteredJobs.length / 12));
+  const currentPage = Math.min(page, pages - 1);
+  const visibleJobs = filteredJobs.slice(currentPage * 12, currentPage * 12 + 12);
 
   useEffect(() => {
     if (!hasActiveJobs) return;
@@ -287,8 +298,14 @@ export function HistorySection({
         </div>
       </div>
 
+      <div className="studioHistoryToolbar">
+        <div className="studioQueueFilters" role="group" aria-label="Filter riwayat produksi">
+          {[{key:"all",label:"Semua"},{key:"active",label:"Diproses"},{key:"completed",label:"Selesai"},{key:"failed",label:"Perlu perhatian"}].map(item => <button type="button" key={item.key} aria-pressed={filter === item.key} className={filter === item.key ? "isActive" : ""} onClick={() => {setFilter(item.key);setPage(0);}}>{item.label}</button>)}
+        </div>
+        <label className="studioSearch"><Search size={16} /><input aria-label="Cari riwayat produksi" placeholder="Cari judul atau sumber…" value={query} onChange={event => {setQuery(event.target.value);setPage(0);}} /></label>
+      </div>
       <div className="jobList" data-layout="history-four-columns">
-        {jobs.map((item) => {
+        {visibleJobs.map((item) => {
           const Icon = statusIcon[item.status];
           const count = item.clips.length ? `${item.clips.length} klip` : `${item.candidates.length} kandidat`;
           const canSelectForDelete = item.status !== "queued" && item.status !== "running";
@@ -478,13 +495,14 @@ export function HistorySection({
           );
         })}
       </div>
-      {!jobs.length ? (
+      {!filteredJobs.length ? (
         <div className="emptyState historyEmptyState">
           <History className="emptyStateIcon" size={30} />
-          <p>Belum ada riwayat proses.</p>
-          <p className="emptyStateHint">Job yang Anda jalankan akan tersimpan dan tampil di bagian ini.</p>
+          <p>{jobs.length ? "Tidak ada riwayat yang cocok." : "Belum ada riwayat proses."}</p>
+          <p className="emptyStateHint">{jobs.length ? "Ubah pencarian atau pilih filter lain." : "Video yang Anda buat akan tersimpan dan tampil di sini."}</p>
         </div>
       ) : null}
+      {filteredJobs.length > 12 ? <footer className="studioPagination"><span>{currentPage * 12 + 1}–{Math.min((currentPage + 1) * 12, filteredJobs.length)} dari {filteredJobs.length} proses</span><div><button type="button" aria-label="Halaman riwayat sebelumnya" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}><ChevronLeft size={16} /></button><button type="button" aria-label="Halaman riwayat berikutnya" disabled={currentPage === pages - 1} onClick={() => setPage(currentPage + 1)}><ChevronRight size={16} /></button></div></footer> : null}
     </section>
   );
 }

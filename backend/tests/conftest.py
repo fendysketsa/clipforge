@@ -9,9 +9,13 @@ def isolate_runtime_state_files(monkeypatch, tmp_path):
     api = sys.modules.get("api")
     if api is not None:
         monkeypatch.setenv('TIKTOK_AUTOMATIC_RETRY_ENABLED','false')
+        monkeypatch.setenv('AUTO_VIRAL_DAILY_PLAN_ENABLED', 'false')
         for name in ("jobs", "youtube_uploads", "tiktok_uploads", "auto_viral_runs", "source_usage_history"):
             monkeypatch.setattr(api, name, {})
         monkeypatch.setattr(api,'processed_source_history',set())
+        monkeypatch.setattr(api, 'auto_viral_scheduler_health', {
+            'last_tick_at': None, 'last_checked_at': None, 'phase': 'starting', 'last_error': None,
+        })
         monkeypatch.setattr(api,'SOURCE_USAGE_ARCHIVE_DIR_OVERRIDE','')
         monkeypatch.setattr(api, "auto_viral_schedule_enabled_override", None)
         monkeypatch.setattr(api, 'auto_viral_upload_recovery_status', {

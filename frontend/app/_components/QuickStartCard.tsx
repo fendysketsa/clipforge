@@ -314,27 +314,18 @@ export function QuickStartCard({
   return (
     <section className={`clipperHero${isLong ? " isLong" : ""}${isWorking ? " isWorking" : ""}${storyboardPreview ? " hasStoryboard" : ""}`} aria-labelledby="quick-start-title">
       <div className="clipperHeroCopy">
-        <span className="clipperKicker">{isStory ? <BookOpen size={14} /> : isLong ? <Film size={14} /> : <Scissors size={14} />} AI PRODUCTION ENGINE</span>
+        <span className="clipperKicker">{isStory ? <BookOpen size={14} /> : isLong ? <Film size={14} /> : <Scissors size={14} />} MULAI BERKARYA</span>
         <h2 id="quick-start-title">
-          {isPresenter ? "Cukup tempel artikel." : isStory ? "Satu ide cerita masuk." : "Satu video masuk."}<br />
-          <em>{isPresenter ? "Jadi presentasi animasi." : isStory ? "Video lengkap siap direview." : isLong ? "Cerita utuh siap ditonton." : "Short terbaik siap tayang."}</em>
+          {isPresenter ? "Artikel menjadi video." : isStory ? "Ceritakan ide Anda." : isLong ? "Susun cerita yang utuh." : "Temukan momen terbaik."}
         </h2>
         <p>
-          {isPresenter ? "Sistem memahami artikel, menyusun penjelasan seperti presenter, lalu menggambar objek dan menganimasikan hubungan sesuai kalimat. Narasi dan subtitle dirakit otomatis, maksimal lima menit." : isStory
-            ? "Tempel premis atau alur cerita. Hypit menyusun naskah semantik, Remotion merakit visual dan animasi, lalu ClipForge mengisi dubbing, subtitle, musik, dan QC otomatis."
+          {isPresenter ? "Tempel artikel untuk menyusun penjelasan visual, narasi, dan subtitle." : isStory
+            ? "Mulai dari premis, susun adegan, lalu buat video dengan visual dan narasi."
             : isLong
             ? "AI memilih chapter terbaik, menyusun alur, lalu menyiapkan video panjang yang rapi dan siap direview."
             : "AI menemukan momen terbaik lalu merapikan framing, caption, ritme, dan audio secara otomatis."}
         </p>
 
-        <div className="clipperPromise">
-          {polishSteps.map(({ icon: Icon, label, detail }) => (
-            <span key={label}>
-              <i><Icon size={16} /></i>
-              <b>{label}<small>{detail}</small></b>
-            </span>
-          ))}
-        </div>
       </div>
 
       <div className="sourceComposer">
@@ -346,12 +337,12 @@ export function QuickStartCard({
         <div className="formatChoice" role="group" aria-label="Pilih jenis hasil video">
           <button className={!isLong ? "active" : ""} type="button" disabled={isSubmitting || isGeneratingStoryboard} onClick={() => onClipModeChange("short")}>
             <span><Scissors size={17} /></span>
-            <b>Viral Short<small>Retention feed · 9:16</small></b>
+            <b>Short<small>Video pendek · 9:16</small></b>
             {!isLong ? <CheckCircle2 size={16} /> : null}
           </button>
           <button className={clipMode === "highlight_5m" ? "active" : ""} type="button" disabled={isSubmitting || isGeneratingStoryboard} onClick={() => onClipModeChange("highlight_5m")}>
             <span><Film size={17} /></span>
-            <b>Long Highlight<small>Watch time · 16:9</small></b>
+            <b>Long Highlight<small>Cerita utuh · 16:9</small></b>
             {clipMode === "highlight_5m" ? <CheckCircle2 size={16} /> : null}
           </button>
           <button className={isStory ? "active" : ""} type="button" disabled={isSubmitting || isGeneratingStoryboard} onClick={() => onClipModeChange("long_animate")}>

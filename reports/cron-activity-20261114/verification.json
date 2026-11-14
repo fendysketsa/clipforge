@@ -1,0 +1,36 @@
+{
+  "checked_at": "2026-11-14T01:14:42.107564+00:00",
+  "backend_health": {
+    "status": "ok"
+  },
+  "runtime": {
+    "enabled": true,
+    "scheduler_running": true,
+    "active_run_id": null,
+    "last_started_at": "2026-11-14T00:00:24.725195+00:00",
+    "last_finished_at": "2026-11-14T00:16:39.302177+00:00",
+    "next_run_at": "2026-11-14T02:16:00+00:00",
+    "activity_version": null,
+    "message": "Antrean jadwal dan cadangan Private penuh; cron menunggu kapasitas setelah publikasi berikutnya. News Hot: 3/3 slot harian WIB; playlist News, review sebelum upload."
+  },
+  "capacity": {
+    "scheduled_backlog_count": 11,
+    "scheduled_backlog_limit": 11,
+    "cron_private_buffer_count": 5,
+    "cron_private_buffer_limit": 5
+  },
+  "validation": {
+    "backend_tests_passed": 76,
+    "frontend_tests_passed": 6,
+    "typescript": "passed",
+    "production_build": "passed",
+    "build_readiness_markers": "passed",
+    "preview_build_id": "xw6AT_24NGXmBAJeUMKPv"
+  },
+  "deployment": {
+    "command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+    "attempted": true,
+    "activated": false,
+    "blocker": "sudo requires an interactive password; command exited before Compose ran"
+  }
+}

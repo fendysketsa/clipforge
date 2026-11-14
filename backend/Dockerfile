@@ -78,7 +78,8 @@ RUN cd /app/remotion \
 
 RUN chmod 0755 /app/docker-entrypoint.sh \
     && mkdir -p outputs uploads data \
-    && python /app/deployment_runtime.py build
+    && python /app/deployment_runtime.py build \
+    && python -c "import api; print('Backend import verified before container recreation')"
 
 EXPOSE 8010
 

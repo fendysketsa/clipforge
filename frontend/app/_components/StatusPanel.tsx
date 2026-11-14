@@ -92,21 +92,21 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
   const activeStageMessage = STAGE_MESSAGES[activeStage.key];
 
   return (
-    <section className={`panel clipStatus clipStatus--${job?.status ?? "idle"}`} aria-live="polite">
+    <section className={`panel clipStatus clipStatus--${job?.status ?? "idle"}`} id="active-process" aria-live="polite">
       <header className="clipStatusHeader">
         <span className="clipStatusIcon">
           <StatusIcon className={job?.status === "running" ? "spin" : ""} size={19} />
         </span>
         <span>
-          <small>PROSES CLIPPER</small>
+          <small>PRODUKSI SAAT INI</small>
           <strong>{statusLabel(job)}</strong>
         </span>
-        {job ? <b>{progress}%</b> : <b className="isReady">READY</b>}
+        {job ? <b>{progress}%</b> : null}
       </header>
 
       {!job ? (
         <div className="clipStatusEmpty">
-          <div className="emptyShortFrame"><Scissors size={24} /><i /></div>
+          <div className="emptyShortFrame"><Scissors size={24} /></div>
           <div><strong>Belum ada proses aktif</strong><p>Tempel sumber atau jalan cerita di atas. Progres produksi akan tampil ringkas di sini.</p></div>
         </div>
       ) : (
@@ -129,15 +129,6 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
           </ol>
 
           <div className="clipProcessSpotlight">
-            <div className="clipProcessVisual" aria-hidden="true">
-              <span className="clipProcessPhone">
-                <i />
-                <i />
-                <b><Sparkles size={17} /></b>
-              </span>
-              <i className="clipProcessOrbit orbitOne" />
-              <i className="clipProcessOrbit orbitTwo" />
-            </div>
             <div className="clipProcessNarrative">
               <span className="clipProcessLive"><i /> {currentTaskLabel(job)}</span>
               <strong>{job.progress_detail || job.source_title || "Menyiapkan pipeline…"}</strong>
@@ -152,6 +143,7 @@ export function StatusPanel({ job, latestLogs, onCancelJob }: StatusPanelProps) 
           {job.error ? <div className="clipStatusError"><XCircle size={15} /> {job.error}</div> : null}
 
           <div className="clipStatusActions">
+            {job.status === "completed" ? <a className="uiButton uiButton--primary" href="/#results">Lihat hasil video</a> : null}
             <details className="compactLogs">
               <summary><span><Terminal size={14} /> Detail proses</span><ChevronDown size={14} /></summary>
               <div>

@@ -1,0 +1,44 @@
+{
+  "note": "Read-only recount using new code; deployment not yet verified.",
+  "plan": {
+    "version": 1,
+    "enabled": true,
+    "day": "2026-11-14",
+    "timezone": "Asia/Jakarta",
+    "total_target": 23,
+    "total_used": 4,
+    "total_uploaded": 4,
+    "lanes": {
+      "scheduled_short": {
+        "label": "Short terjadwal",
+        "target": 17,
+        "uploaded": 1,
+        "active": 0,
+        "ready": 0,
+        "held": 0,
+        "used": 1,
+        "remaining": 16
+      },
+      "private_short": {
+        "label": "Short Private",
+        "target": 4,
+        "uploaded": 3,
+        "active": 0,
+        "ready": 0,
+        "held": 0,
+        "used": 3,
+        "remaining": 1
+      },
+      "long": {
+        "label": "Long clip",
+        "target": 2,
+        "uploaded": 0,
+        "active": 0,
+        "ready": 0,
+        "held": 0,
+        "used": 0,
+        "remaining": 2
+      }
+    }
+  }
+}

@@ -583,7 +583,9 @@ export const getAutoViralCampaigns = async () => {
 };
 
 export const getAutoViralSchedule = async () => {
-  const response = await fetch(`${CLIENT_API_BASE}/api/automation/viral-cc/schedule`, { cache: "no-store" });
+  const response = await fetch(`${CLIENT_API_BASE}/api/automation/viral-cc/schedule`, {
+    cache: "no-store", signal: AbortSignal.timeout(10_000),
+  });
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, "Failed to load auto viral schedule"));
   }

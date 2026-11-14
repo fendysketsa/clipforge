@@ -60,6 +60,22 @@ def test_long_queues_even_with_full_short_buffers_and_zero_upload_quota(setup_lo
     assert len(api.long_production_state()['attempts']) == 1
 
 
+def test_daily_plan_does_not_count_previous_day_repairs_towards_today_two_longs(setup_long, monkeypatch):
+    from datetime import timedelta
+    short, _, _ = setup_long
+    monkeypatch.setenv('AUTO_VIRAL_DAILY_PLAN_ENABLED','true')
+    monkeypatch.setenv('AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET','2')
+    yesterday=(datetime.now(api.ZoneInfo('Asia/Jakarta'))-timedelta(days=1)).date().isoformat()
+    for index in range(2):
+        other=short.model_copy(deep=True,update={'id':f'old-long-{index}'})
+        other.request.clip_mode='highlight_5m'
+        other.request.cron_daily_lane='long'
+        other.request.cron_production_day=yesterday
+        other.request.url=f'https://www.youtube.com/watch?v=oldLong{index:04d}'
+        api.jobs[other.id]=other
+    assert api.queue_review_long_once()['status']=='queued'
+
+
 def test_cron_skips_popular_short_sources_without_spending_render_attempts(setup_long):
     _, run, started = setup_long
     run.processed[0]['source'].update(duration=45, views=1000000)

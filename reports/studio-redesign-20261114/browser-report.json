@@ -1,0 +1,174 @@
+{
+  "screens": [
+    {
+      "view": "create",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "grid": "repeat(4, minmax(0px, 1fr))",
+      "overflow": []
+    },
+    {
+      "view": "history",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "grid": "278.5px 278.5px 278.5px 278.5px",
+      "overflow": []
+    },
+    {
+      "view": "results",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "grid": "repeat(4, minmax(0px, 1fr))",
+      "overflow": []
+    },
+    {
+      "view": "automation",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "grid": "repeat(4, minmax(0px, 1fr))",
+      "overflow": []
+    },
+    {
+      "view": "settings",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "grid": "repeat(4, minmax(0px, 1fr))",
+      "overflow": []
+    },
+    {
+      "view": "archive",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "grid": null,
+      "overflow": []
+    },
+    {
+      "view": "create",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "grid": "repeat(4, minmax(0px, 1fr))",
+      "overflow": []
+    },
+    {
+      "view": "history",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "grid": "238.5px 238.5px 238.5px 238.5px",
+      "overflow": []
+    },
+    {
+      "view": "results",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "grid": "repeat(4, minmax(0px, 1fr))",
+      "overflow": []
+    },
+    {
+      "view": "automation",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "grid": "repeat(4, minmax(0px, 1fr))",
+      "overflow": []
+    },
+    {
+      "view": "settings",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "grid": "repeat(4, minmax(0px, 1fr))",
+      "overflow": []
+    },
+    {
+      "view": "archive",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "grid": null,
+      "overflow": []
+    },
+    {
+      "view": "create",
+      "width": 390,
+      "scrollWidth": 390,
+      "grid": "1fr",
+      "overflow": []
+    },
+    {
+      "view": "history",
+      "width": 390,
+      "scrollWidth": 390,
+      "grid": "354px",
+      "overflow": []
+    },
+    {
+      "view": "results",
+      "width": 390,
+      "scrollWidth": 390,
+      "grid": "1fr",
+      "overflow": []
+    },
+    {
+      "view": "automation",
+      "width": 390,
+      "scrollWidth": 390,
+      "grid": "1fr",
+      "overflow": []
+    },
+    {
+      "view": "settings",
+      "width": 390,
+      "scrollWidth": 390,
+      "grid": "1fr",
+      "overflow": []
+    },
+    {
+      "view": "archive",
+      "width": 390,
+      "scrollWidth": 390,
+      "grid": null,
+      "overflow": []
+    },
+    {
+      "view": "create",
+      "width": 320,
+      "scrollWidth": 320,
+      "grid": "1fr",
+      "overflow": []
+    },
+    {
+      "view": "history",
+      "width": 320,
+      "scrollWidth": 320,
+      "grid": "294px",
+      "overflow": []
+    },
+    {
+      "view": "results",
+      "width": 320,
+      "scrollWidth": 320,
+      "grid": "1fr",
+      "overflow": []
+    },
+    {
+      "view": "automation",
+      "width": 320,
+      "scrollWidth": 320,
+      "grid": "1fr",
+      "overflow": []
+    },
+    {
+      "view": "settings",
+      "width": 320,
+      "scrollWidth": 320,
+      "grid": "1fr",
+      "overflow": []
+    },
+    {
+      "view": "archive",
+      "width": 320,
+      "scrollWidth": 320,
+      "grid": null,
+      "overflow": []
+    }
+  ],
+  "errors": [],
+  "checks": []
+}
