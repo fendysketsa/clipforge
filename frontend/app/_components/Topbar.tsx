@@ -3,6 +3,7 @@
 import { Activity, ArrowUpRight, Clock3, Film, FolderArchive, Loader2, Plus, Power, RefreshCw, Settings2, Sparkles } from "lucide-react";
 import type { AutoViralScheduleStatus } from "../../types/clip.type";
 import type { StudioView } from "../../lib/workspaceNavigation";
+import { ThemeSwitch } from "./ThemeSwitch";
 
 type TopbarProps = {
   isRefreshing?: boolean; onRefresh?: () => void;
@@ -31,6 +32,7 @@ export function Topbar({ isRefreshing = false, onRefresh, activePage = "workspac
       </a>
       <span className="studioTopbarContext">Ruang produksi <span>/</span> {navigation.find(item => item.key === selected)?.label}</span>
       <div className="studioTopbarActions">
+        <ThemeSwitch />
         {onToggleCron ? <button type="button" className={`studioCronToggle${cronSchedule?.enabled ? " isOn" : ""}`}
           onClick={onToggleCron} disabled={isTogglingCron || !cronSchedule}
           aria-pressed={Boolean(cronSchedule?.enabled)} title={cronSchedule?.message || "Membaca status cron"}>

@@ -9,9 +9,9 @@ const toastOptions = {
   style: {
     border: "1px solid var(--border)",
     borderRadius: "12px",
-    background: "rgba(4, 18, 14, 0.96)",
+    background: "var(--panel)",
     boxShadow: "var(--shadow-md)",
-    color: "#ECFDF5",
+    color: "var(--text-primary)",
     fontSize: "14px",
     fontWeight: 700,
     lineHeight: 1.45,
@@ -20,32 +20,32 @@ const toastOptions = {
   },
   success: {
     iconTheme: {
-      primary: "#4ADE80",
-      secondary: "#03130E",
+      primary: "var(--success)",
+      secondary: "var(--panel)",
     },
     style: {
-      borderColor: "rgba(74, 222, 128, 0.38)",
-      color: "#ECFDF5",
+      borderColor: "var(--success-border)",
+      color: "var(--text-primary)",
     },
   },
   error: {
     iconTheme: {
-      primary: "#FB7185",
-      secondary: "#03130E",
+      primary: "var(--danger)",
+      secondary: "var(--panel)",
     },
     style: {
-      borderColor: "rgba(251, 113, 133, 0.42)",
-      color: "#FFE4E6",
+      borderColor: "var(--danger-border)",
+      color: "var(--text-primary)",
     },
   },
   loading: {
     iconTheme: {
-      primary: "#5EEAD4",
-      secondary: "#03130E",
+      primary: "var(--primary)",
+      secondary: "var(--panel)",
     },
     style: {
-      borderColor: "rgba(94, 234, 212, 0.35)",
-      color: "#CCFBF1",
+      borderColor: "var(--border-strong)",
+      color: "var(--text-primary)",
     },
   },
 };

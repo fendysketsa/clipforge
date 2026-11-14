@@ -1,0 +1,62 @@
+[
+  {
+    "theme": "light",
+    "view": "create",
+    "issues": []
+  },
+  {
+    "theme": "light",
+    "view": "generator",
+    "issues": []
+  },
+  {
+    "theme": "light",
+    "view": "results",
+    "issues": []
+  },
+  {
+    "theme": "light",
+    "view": "automation",
+    "issues": []
+  },
+  {
+    "theme": "light",
+    "view": "settings",
+    "issues": []
+  },
+  {
+    "theme": "light",
+    "view": "archive",
+    "issues": []
+  },
+  {
+    "theme": "dark",
+    "view": "create",
+    "issues": []
+  },
+  {
+    "theme": "dark",
+    "view": "generator",
+    "issues": []
+  },
+  {
+    "theme": "dark",
+    "view": "results",
+    "issues": []
+  },
+  {
+    "theme": "dark",
+    "view": "automation",
+    "issues": []
+  },
+  {
+    "theme": "dark",
+    "view": "settings",
+    "issues": []
+  },
+  {
+    "theme": "dark",
+    "view": "archive",
+    "issues": []
+  }
+]

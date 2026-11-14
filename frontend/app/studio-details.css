@@ -1,0 +1,161 @@
+/* Compact controls and detailed editors share the studio palette in both themes. */
+.studioApp .studioThemeToggle { display: grid; place-items: center; flex: 0 0 36px; width: 36px; height: 36px; padding: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text-secondary); transition: color .18s, background .18s, transform .18s; }
+.studioApp .studioThemeToggle:hover { color: var(--primary); background: var(--success-soft); transform: rotate(-8deg); }
+.studioApp .studioTopbarActions { flex-shrink: 0; }
+.studioApp :is(.studioNewVideo,.uiButton,.connectionAdvanced button,.studioQueueFilters button,.formatChoice > button) { transition: background .18s, border-color .18s, color .18s, box-shadow .18s; }
+.studioApp :is(.uiButton,.studioNewVideo):active:not(:disabled) { transform: translateY(1px); }
+html[data-theme] .studioApp :is(.uiButton--primary,.studioNewVideo,.createShortButton):hover:not(:disabled) { color: var(--on-primary); background: var(--primary-hover); border-color: var(--primary-hover); box-shadow: var(--shadow-sm); }
+.studioApp .outputWorkspacePane.active { animation: studioReveal .22s ease-out; }
+.studioApp .outputWorkspace::before, .studioApp .outputWorkspace::after, body.studioApp::before { display: none; }
+@keyframes studioReveal { from { opacity: .6; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+html[data-theme] .studioApp :is(.clipCard,.jobRow,.sourceArchiveCard) { --job-accent: var(--primary); }
+html[data-theme] .studioApp :is(.clipCardCorrect,.jobRow.selected,.clipCard.selected) { border-color: var(--border-strong); background: var(--panel); box-shadow: var(--shadow-sm); }
+html[data-theme] .studioApp :is(.clipTitleBlock,.jobRowCore,.jobRowContent,.jobDetailGrid,.clipCardFooter,.clipValidation,.clipActions) { background: transparent; border-color: var(--border); }
+html[data-theme] .studioApp .clipInfo { display: grid; grid-template-columns: minmax(0,1fr) 28px; align-items: start; }
+html[data-theme] .studioApp .clipTitleBlock { min-height: 0; width: 100%; }
+html[data-theme] .studioApp .clipEyebrow { font: 550 9px/1.6 var(--font-sans); color: var(--success); letter-spacing: .045em; }
+html[data-theme] .studioApp .clipTitleBlock h3 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-height: 42px; }
+html[data-theme] .studioApp .copyTitleButton { position: static; width: 28px; min-height: 28px; padding: 6px; border: 0; border-radius: 6px; background: var(--panel-strong); color: var(--text-secondary); font: 400 10px/1.4 var(--font-sans); box-shadow: none; }
+html[data-theme] .studioApp .copyTitleButton > span { display: none; }
+html[data-theme] .studioApp .copyTitleButton:hover { color: var(--primary); background: var(--success-soft); }
+html[data-theme] .studioApp .clipMetrics { padding: 0 14px 10px; gap: 6px; }
+html[data-theme] .studioApp .clipMetric { color: var(--text-secondary); background: var(--bg-soft); border-color: var(--border); font: 400 10px/1.5 var(--font-sans); }
+html[data-theme] .studioApp .clipMetric--growth { color: var(--success); background: var(--success-soft); border-color: var(--success-border); }
+html[data-theme] .studioApp .clipMetric--blocked { color: var(--danger); background: var(--danger-soft); border-color: var(--danger-border); }
+html[data-theme] .studioApp .clipValidation { margin: 0; padding: 10px 13px; color: var(--text-secondary); font: 400 11px/1.65 var(--font-sans); }
+html[data-theme] .studioApp input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary); flex-shrink: 0; }
+html[data-theme] .studioApp .jobRow > input.jobSelect { width: 24px; height: 24px; }
+html[data-theme] .studioApp .clipActions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px; padding: 10px; }
+html[data-theme] .studioApp .clipActions :is(a,button) { min-width: 0; min-height: 34px; padding: 7px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-soft); color: var(--text-secondary); font: 500 10px/1.45 var(--font-sans); box-shadow: none; }
+html[data-theme] .studioApp .clipActions :is(a,button):hover:not(:disabled) { color: var(--primary); border-color: var(--border-strong); background: var(--success-soft); }
+html[data-theme] .studioApp .clipActions .clipDownloadButton { color: var(--primary); background: var(--success-soft); }
+html[data-theme] .studioApp .clipActions .clipDeleteButton { color: var(--danger); background: transparent; }
+html[data-theme] .studioApp .selectAllClips { min-height: 34px; padding: 7px 10px; border-radius: 8px; background: var(--panel); border-color: var(--border); color: var(--text-secondary); font: 500 11px/1.4 var(--font-sans); }
+html[data-theme] .studioApp .resultsActions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+html[data-theme] .studioApp :is(.clipUploadStatus,.tiktokUploadStatus,.youtubeUploadStatus) { margin: 0 10px 10px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-secondary); background: var(--bg-soft); font-family: var(--font-sans); }
+html[data-theme] .studioApp :is(.youtubeUploadError,.tiktokUploadError,.clipRepairNotice,.jobCardError,.sourceLogError) { color: var(--danger); border-color: var(--danger-border); background: var(--danger-soft); }
+html[data-theme] .studioApp .youtubeUploadStatusText { color: inherit; }
+html[data-theme] .studioApp .youtubeUploadStatusText strong { color: var(--text-primary); }
+html[data-theme] .studioApp .youtubeUploadStatus.status-failed .youtubeUploadStatusText strong { color: var(--danger); }
+html[data-theme] .studioApp .youtubeUploadStatusText small { color: var(--text-secondary); }
+html[data-theme] .studioApp :is(.youtubeUploadError,.tiktokUploadError) :is(strong,span,p) { color: inherit; }
+html[data-theme] .studioApp .youtubeUploadError button { color: var(--danger); border-color: var(--danger-border); background: var(--panel); box-shadow: none; }
+html[data-theme] .studioApp .queuePositionBadge { color: var(--warning); border-color: var(--warning-border); background: var(--warning-soft); }
+html[data-theme] .studioApp :is(.jobPlatformStatus,.jobPlatformQueue,.jobPlatformHold) { color: var(--text-secondary); background: var(--bg-soft); border-color: var(--border); font-family: var(--font-sans); }
+html[data-theme] .studioApp .jobPlatformStatus :is(small,strong,em) { font-family: var(--font-sans); }
+html[data-theme] .studioApp :is(.jobSourceLine,.jobDetailGrid span,.jobDetailGrid small,.jobDetailGrid b) { color: var(--text-muted); font-family: var(--font-sans); }
+html[data-theme] .studioApp .jobOpenHint { padding-top: 10px; margin-top: 12px; color: var(--primary); border-color: var(--border); font: 500 10px/1.5 var(--font-sans); }
+html[data-theme] .studioApp :is(.status-completed,.state-verified,.jobPlatformStatus.state-verified,.jobPlatformStatus.state-verified strong) { color: var(--success); }
+html[data-theme] .studioApp :is(.status-running,.status-queued,.state-running,.state-queued) { color: var(--info); }
+html[data-theme] .studioApp :is(.status-failed,.status-cancelled,.state-failed) { color: var(--danger); }
+html[data-theme] .studioApp :is(.state-unverified,.state-partial,.jobPlatformStatus.state-unverified strong) { color: var(--warning); }
+
+html[data-theme] .studioApp :is(.storyStudioComposer,.storyPromptInputs,.autoPolishBanner,.adaptivePolishCard,.polishAdvanced,.storyboardProgressPanel,.storyboardScene,.storyboardRenderBar,.productionTeamDesk,.thumbnailVariantDesk,.clipEditorialDesk) { color: var(--text-primary); background: var(--bg-soft); border-color: var(--border); box-shadow: none; }
+html[data-theme] .studioApp .storyStudioComposer { padding: 16px; border-radius: 12px; }
+html[data-theme] .studioApp .clipperHero.isLong .clipperHeroCopy { text-align: left; justify-items: start; }
+html[data-theme] .studioApp .clipperHero.isLong .clipperKicker { color: var(--primary); background: none; border: 0; box-shadow: none; }
+html[data-theme] .studioApp .clipperHero.isLong .formatChoice > button.active { color: var(--primary); background: var(--success-soft); border-color: var(--border-strong); box-shadow: none; }
+html[data-theme] .studioApp .formatChoice > button b { color: var(--text-primary); }
+html[data-theme] .studioApp .formatChoice > button.active b { color: var(--primary); }
+html[data-theme] .studioApp .clipperHero.isWorking .sourceActionGrid .createShortButton:disabled { background: var(--success-soft); border-color: var(--success-border); color: var(--success); opacity: 1; }
+html[data-theme] .studioApp .clipperHero.isWorking .sourceActionGrid .createShortButton small { color: var(--text-secondary); }
+html[data-theme] .studioApp .sourceActionGrid .createShortButton:disabled { color: var(--text-secondary); background: var(--panel-strong); border-color: var(--border); opacity: 1; filter: none; }
+html[data-theme] .studioApp .sourceActionGrid .createShortButton:disabled small { color: var(--text-muted); }
+html[data-theme] .studioApp :is(.storyPromptExamples button,.polishPresetGrid button,.shortTargetGrid label,.durationPresetGrid button,.shortToggle,.polishProfileGrid button,.longFeatureGrid > span,.longDurationGrid > button) { color: var(--text-secondary); background: var(--panel); border-color: var(--border); box-shadow: none; }
+html[data-theme] .studioApp .shortToggle.active { background: var(--success-soft); border-color: var(--success-border); }
+html[data-theme] .studioApp :is(.shortToggle strong,.longFeatureGrid b,.longDurationGrid strong) { color: var(--text-primary); font-size: 11px; }
+html[data-theme] .studioApp :is(.shortToggle small,.longFeatureGrid small,.longDurationGrid small,.advancedNumber small,.targetSourceNote) { color: var(--text-muted); font-family: var(--font-sans); font-size: 10px; }
+html[data-theme] .studioApp .shortToggleIcon { color: var(--text-muted); }
+html[data-theme] .studioApp .shortToggle.active .shortToggleIcon { color: var(--primary); }
+html[data-theme] .studioApp .shortToggle > i { background: var(--border); }
+html[data-theme] .studioApp .shortToggle > i::after { background: var(--text-muted); }
+html[data-theme] .studioApp .shortToggle.active > i { background: var(--success-border); }
+html[data-theme] .studioApp .shortToggle.active > i::after { background: var(--primary); }
+html[data-theme] .studioApp .polishSection > header strong, html[data-theme] .studioApp .clipStatusEmpty strong { color: var(--text-primary); }
+html[data-theme] .studioApp .polishSection > header small { color: var(--text-muted); font: 400 10px/1.6 var(--font-sans); }
+html[data-theme] .studioApp .polishSection > header > span { color: var(--primary); background: var(--success-soft); border-color: var(--success-border); }
+html[data-theme] .studioApp .autoPolishBanner > b { color: var(--success); background: var(--success-soft); border-color: var(--success-border); }
+html[data-theme] .studioApp .shortToggle:focus-within { outline: 2px solid var(--primary); outline-offset: 3px; }
+html[data-theme] .studioApp .longDurationGrid > button.active { color: var(--primary); background: var(--success-soft); border-color: var(--border-strong); }
+html[data-theme] .studioApp :is(.advancedFields label > span,.shortTargetGrid label > span,.adaptivePolishSelect > span,.polishAdvanced > summary > span) { color: var(--text-secondary); font: 500 11px/1.5 var(--font-sans); }
+html[data-theme] .studioApp :is(.adaptivePolishSelect select,.shortTargetSelect select,.advancedFields input,.advancedFields select) { color: var(--text-primary); background: var(--input-bg); border-color: var(--border); font-family: var(--font-sans); font-size: 12px; }
+html[data-theme] .studioApp .shortTargetGrid label > div:not(.shortTargetSelect) { background: var(--input-bg); border-color: var(--border); }
+html[data-theme] .studioApp :is(.shortTargetGrid input,.shortTargetGrid small,.adaptivePolishCopy em,.adaptivePolishCopy b,.polishAdvanced > summary > small) { color: var(--text-secondary); font-family: var(--font-sans); font-size: 10px; }
+html[data-theme] .studioApp .adaptivePolishCopy b { background: var(--success-soft); color: var(--success); }
+html[data-theme] .studioApp .storyPromptExamples button { min-height: 34px; padding: 8px 10px; font: 500 11px/1.5 var(--font-sans); }
+html[data-theme] .studioApp .storyPromptExamples button[aria-pressed="true"] { color: var(--primary); border-color: var(--border-strong); background: var(--success-soft); }
+html[data-theme] .studioApp .storyPromptExamples > span { color: var(--text-muted); font: 500 9px/1.5 var(--font-sans); }
+html[data-theme] .studioApp :is(.storyInputField textarea,.storyboardScene input,.storyboardScene textarea) { color: var(--text-primary); background: var(--input-bg); border: 1px solid var(--border); font: 400 13px/1.7 var(--font-sans); }
+html[data-theme] .studioApp .storyInputField textarea::placeholder { color: var(--text-muted); }
+html[data-theme] .studioApp :is(.storyInputField > small,.autoPolishBanner small,.adaptivePolishCopy small,.shortToggleGrid small,.polishSection p,.storyComposerActions small) { color: var(--text-muted); font-family: var(--font-sans); }
+html[data-theme] .studioApp .storyComposerActions { background: var(--panel); border-color: var(--border); }
+html[data-theme] .studioApp .storyComposerActions :is(strong,b) { color: var(--text-primary); }
+html[data-theme] .studioApp .storyComposerActions > span > svg { color: var(--primary); }
+html[data-theme] .studioApp .storyComposerActions button { color: var(--on-primary); background: var(--primary); border-color: var(--primary); }
+html[data-theme] .studioApp :is(.polishSection h3,.adaptivePolishCopy strong,.shortToggleGrid strong,.autoPolishBanner strong,.shortTargetGrid label > span) { color: var(--text-primary); }
+html[data-theme] .studioApp :is(.sourceDetected,.sourceQuickCheck,.sourceNotice,.renderLocalNotice) { background: var(--bg-soft); color: var(--text-secondary); border-color: var(--border); }
+html[data-theme] .studioApp :is(.sourceNotice.isWarning,.sourceQuickCheck--skip) { background: var(--warning-soft); color: var(--warning); border-color: var(--warning-border); }
+html[data-theme] .studioApp :is(.sourceNotice.isDanger,.sourceError) { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-border); }
+html[data-theme] .studioApp :is(.sourceRights,.sourceRights span,.sourceDetected small,.sourceQuickCheck small,.renderLocalNotice small) { color: var(--text-secondary); }
+html[data-theme] .studioApp .renderLocalNotice strong { color: var(--success); }
+html[data-theme] .studioApp .sourceNotice strong { color: var(--text-primary); }
+html[data-theme] .studioApp .sourceNotice small { color: var(--text-secondary); }
+html[data-theme] .studioApp .sourceNotice.isSuccess strong { color: var(--success); }
+html[data-theme] .studioApp .sourceNotice.isDanger strong { color: var(--danger); }
+html[data-theme] .studioApp .sourceNotice.isWarning strong { color: var(--warning); }
+html[data-theme] .studioApp :is(.sourceRights > svg,.renderLocalNotice > svg) { color: var(--success); }
+html[data-theme] .studioApp :is(.compactLogs,.logPanel,.processLogs,pre) { color: var(--text-secondary); background: var(--input-bg); border-color: var(--border); }
+
+html[data-theme] .studioApp :is(.productionTeamDesk,.thumbnailVariantDesk,.clipEditorialDesk) { margin: 0 10px 10px; padding: 10px; border-radius: 8px; }
+html[data-theme] .studioApp :is(.productionTeamDesk,.thumbnailVariantDesk,.clipEditorialDesk) summary { min-height: 30px; color: var(--text-secondary); font-family: var(--font-sans); }
+html[data-theme] .studioApp :is(.productionTeamDesk,.thumbnailVariantDesk,.clipEditorialDesk) :is(p,li,small,.productionTeamGrid span) { color: var(--text-secondary); font-family: var(--font-sans); }
+html[data-theme] .studioApp :is(.productionTeamGrid > div,.automaticQcPanel,.automaticQcCheck,.automaticQcWarnings,.automaticQcHuman) { background: var(--panel); border-color: var(--border); color: var(--text-secondary); }
+html[data-theme] .studioApp :is(.automaticQcHeader,.productionTeamGrid strong,.automaticQcCheck strong) { color: var(--text-primary); }
+html[data-theme] .studioApp .automaticQcHeader strong { color: var(--text-primary); }
+html[data-theme] .studioApp .automaticQcHeader > span { color: var(--primary); }
+html[data-theme] .studioApp .automaticQcCheck--passed > svg { color: var(--success); }
+html[data-theme] .studioApp .automaticQcCheck--failed > svg { color: var(--danger); }
+html[data-theme] .studioApp .automaticQcCheck--pending > svg { color: var(--warning); }
+html[data-theme] .studioApp .productionQcStatus { color: var(--text-secondary); background: var(--panel); border-color: var(--border); }
+html[data-theme] .studioApp .productionQcStatus--passed { color: var(--success); background: var(--success-soft); }
+html[data-theme] .studioApp .productionQcStatus--hold { color: var(--warning); background: var(--warning-soft); }
+html[data-theme] .studioApp .jobCardPreviewFallback { background: linear-gradient(135deg,var(--bg-soft),var(--panel-strong)); }
+html[data-theme] .studioApp .jobPreviewOpen { color: var(--text-secondary); background: var(--panel); border-color: var(--border); }
+html[data-theme] .studioApp :is(.jobFormatBadge,.clipScoreBadge,.clipSelect) { color: var(--on-media); background: #17242de8; border-color: #a4b9c633; box-shadow: none; }
+html[data-theme] .studioApp :is(.jobFormatBadge svg,.clipScoreBadge svg) { color: inherit; }
+html[data-theme] .studioApp :is(.archiveMonthHeader code,.sourceLogOutputs li) { color: var(--text-secondary); background: var(--input-bg); border-color: var(--border); }
+html[data-theme] .studioApp .sourceLogModeBadge { color: var(--primary); background: var(--success-soft); border-color: var(--success-border); }
+html[data-theme] .studioApp :is(.archiveModeMark,.archiveFolderTab,.adaptivePolishIcon) { color: var(--primary); background: var(--success-soft); border-color: var(--success-border); box-shadow: none; }
+html[data-theme] .studioApp :is(.archiveSidebar svg,.archiveMonthHeader svg) { color: var(--primary); }
+html[data-theme] .studioApp :is(.sourceLogEmpty,.sourceLogEmpty p,.sourceLogEmpty strong,.archivePagination) { color: var(--text-secondary); }
+html[data-theme] .studioApp .sourceArchiveStats > article { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px 18px; }
+html[data-theme] .studioApp .sourceArchiveStats > article strong { position: static; font-size: 24px; line-height: 1.25; }
+html[data-theme] .studioApp .sourceArchiveStats > article small { max-width: none; }
+html[data-theme] .studioApp .sourceArchiveHeroCopy h2 { font-size: 28px; }
+html[data-theme] .studioApp :is(.archiveSidebarTitle strong,.archiveCurrentFolder strong,.archiveYearGroup > header h3) { color: var(--text-primary); }
+html[data-theme] .studioApp :is(.archiveSidebarTitle small,.archiveCurrentFolder small,.archiveYearGroup > header span,.sourceLogFilters button,.sourceLogFilters button span,.sourceArchiveCardMeta b,.archivePagination strong) { color: var(--text-secondary); }
+html[data-theme] .studioApp :is(.cronDailyPlanHeading > strong,.cronDailyLane > div > strong) { color: var(--text-primary); }
+html[data-theme] .studioApp :is(.cronDailyPlanHeading > span,.cronActivityMeta i) { color: var(--text-secondary); }
+html[data-theme] .studioApp .cronDailyLane progress { background: var(--panel-strong); }
+html[data-theme] .studioApp .cronDailyLane progress::-webkit-progress-bar { background: var(--panel-strong); }
+html[data-theme] .studioApp .cronActivityProgress { background: var(--panel-strong); }
+html[data-theme] .studioApp .cronActivityProgress > span { background: var(--primary); }
+
+@media (max-width: 879px) {
+  .studioApp .clipGrid { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .studioApp .studioThemeToggle { flex-basis: 32px; width: 32px; height: 33px; }
+  .studioApp .studioTopbarActions { gap: 6px; }
+  .studioApp .studioBrand { min-width: 0; }
+  .studioApp .studioBrand small { display: none; }
+  html[data-theme] .studioApp .clipMedia video { height: 250px; max-height: 250px; }
+  html[data-theme] .studioApp .resultsActions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+  html[data-theme] .studioApp .resultsActions > .selectAllClips { grid-column: 1 / -1; }
+  html[data-theme] .studioApp .sourceArchiveStats > article { padding: 12px 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studioApp .outputWorkspacePane.active { animation: none; }
+  .studioApp :is(.clipCard,.studioThemeToggle):hover { transform: none; }
+}

@@ -1,0 +1,12 @@
+{
+  "backend_health": {
+    "status": "ok"
+  },
+  "production_frontend": {
+    "schema": 1,
+    "build_id": "EZD5pjFRxpF3un-VTYjVL",
+    "release_id": "8d78ffbbb76c820dc55acda3039b1a3419641485a8043aa5ec34e34a2da06ad0",
+    "ui_verified": true
+  },
+  "preview_build_id": "YjssnuBQntdzWzCK7kk_1"
+}

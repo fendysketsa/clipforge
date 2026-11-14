@@ -7,8 +7,9 @@ const digest = data => crypto.createHash('sha256').update(data).digest('hex');
 const requiredJS = ['jobDirectorRecovery', 'history-four-columns', 'jobPlatformQueue', '/reconcile',
   'dijadwalkan ulang otomatis', 'pengaturan privasi tertunda', 'Hasil posting perlu diperiksa',
   'cronActivityHeading', 'Detail pemeriksaan', 'cronDailyLanes',
-  'studioSidebar', 'studioQueueRow', 'connectionCard'];
+  'studioSidebar', 'studioQueueRow', 'connectionCard', 'studioThemeToggle'];
 const grid = /\.outputWorkspacePane\s+\.jobList\s*\{[^}]*grid-template-columns\s*:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/;
+const resultGrid = /\.clipGrid\s*\{[^}]*grid-template-columns\s*:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/;
 function walk(dir) {
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir, {withFileTypes:true}).flatMap(entry => {
@@ -27,7 +28,7 @@ function build() {
   const files = walk(path.join(root,dist,'static'));
   const js = files.filter(file=>file.endsWith('.js')).map(file=>fs.readFileSync(file,'utf8')).join('\n');
   const css = files.filter(file=>file.endsWith('.css')).map(file=>fs.readFileSync(file,'utf8')).join('\n');
-  if (!requiredJS.every(text=>js.includes(text)) || !grid.test(css) || js.includes('Loop belajar YouTube')) throw Error('Built UI lacks current studio navigation/cards/upload recovery');
+  if (!requiredJS.every(text=>js.includes(text)) || !grid.test(css) || !resultGrid.test(css) || !css.includes('[data-theme=light]') || js.includes('Loop belajar YouTube')) throw Error('Built UI lacks current studio theme/cards/upload recovery');
   const sources = sourceFingerprint(root);
   const manifest = {schema:1, dist, build_id:fs.readFileSync(path.join(root,dist,'BUILD_ID'),'utf8').trim(),
     release_id:digest(JSON.stringify(sources)),sources,
@@ -66,7 +67,7 @@ async function health() {
     if(!manifest.assets[name] || digest(body)!==manifest.assets[name]) throw Error('Served assets differ from built frontend');
     if(name.endsWith('.js')) js+=body; else css+=body;
   }
-  if(!requiredJS.every(text=>js.includes(text)) || !grid.test(css)) throw Error('Served frontend is incomplete');
+  if(!requiredJS.every(text=>js.includes(text)) || !grid.test(css) || !resultGrid.test(css) || !css.includes('[data-theme=light]')) throw Error('Served frontend is incomplete');
   console.log(`Frontend healthy: ${manifest.build_id}`);
 }
 if(require.main===module) Promise.resolve().then(()=>({build,prepare,health})[process.argv[2]]()).catch(error=>{console.error(error.message);process.exitCode=1});

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AudioNoticeToaster } from "./_components/AudioNoticeToaster";
 import "./globals.css";
+import { THEME_BOOTSTRAP } from "../lib/studioTheme";
 
 export const metadata: Metadata = {
   title: "ClipForge Studio",
@@ -16,7 +17,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="id">
+    <html lang="id" data-theme="dark" suppressHydrationWarning>
+      <head><script id="studio-theme-init" dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} /></head>
       <body className="studioApp">
         {children}
         <AudioNoticeToaster />

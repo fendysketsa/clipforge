@@ -1,0 +1,70 @@
+/* Shared semantic palette: components use the same roles in both themes. */
+:root {
+  color-scheme: dark;
+  --font-sans: "Inter", "Segoe UI", Arial, sans-serif;
+  --bg: #10151c;
+  --bg-soft: #141b23;
+  --panel: #19212b;
+  --panel-strong: #222d39;
+  --input-bg: #121a23;
+  --primary: #a9e8ce;
+  --primary-hover: #c3f1de;
+  --accent: var(--primary);
+  --on-primary: #153125;
+  --on-primary-muted: #365a49;
+  --text-primary: #edf2f7;
+  --text-secondary: #adbac8;
+  --text-muted: #91a2b4;
+  --border: #303d4b;
+  --border-strong: #587b6b;
+  --success: #a4dfbd;
+  --success-soft: #20372d;
+  --success-border: #3d6050;
+  --warning: #f0c88b;
+  --warning-soft: #382e20;
+  --warning-border: #705b38;
+  --danger: #f0a5b0;
+  --danger-soft: #35252e;
+  --danger-border: #75444f;
+  --info: #a4cdec;
+  --info-soft: #223342;
+  --media: #0a1017;
+  --on-media: #edf3fa;
+  --shadow-sm: 0 3px 12px #00000012;
+  --shadow-md: 0 12px 30px #00000025;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --header-bg: color-mix(in srgb, var(--bg-soft) 94%, transparent);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f3f6f8;
+  --bg-soft: #f9fbfc;
+  --panel: #ffffff;
+  --panel-strong: #edf2f5;
+  --input-bg: #f8fafc;
+  --primary: #216c53;
+  --primary-hover: #185a44;
+  --on-primary: #ffffff;
+  --on-primary-muted: #e1f3e9;
+  --text-primary: #203240;
+  --text-secondary: #526777;
+  --text-muted: #586d7d;
+  --border: #d7e1e7;
+  --border-strong: #8db9a5;
+  --success: #246347;
+  --success-soft: #e9f5ef;
+  --success-border: #bad9c8;
+  --warning: #815516;
+  --warning-soft: #fff4df;
+  --warning-border: #e8c993;
+  --danger: #a53f52;
+  --danger-soft: #fff0f3;
+  --danger-border: #e9bdc6;
+  --info: #2b6288;
+  --info-soft: #eaf3fa;
+  --shadow-sm: 0 3px 12px #263f5510;
+  --shadow-md: 0 12px 30px #263f5516;
+}

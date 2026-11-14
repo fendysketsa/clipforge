@@ -167,8 +167,8 @@ for(const name of ['package.json','package-lock.json','next.config.ts','tsconfig
 for(const dir of ['app','public','.next/static'])fs.mkdirSync(dir,{recursive:true});
 fs.writeFileSync('app/page.tsx','original source');
 fs.writeFileSync('.next/BUILD_ID','build-a');
-const js='jobDirectorRecovery history-four-columns jobPlatformQueue /reconcile dijadwalkan ulang otomatis pengaturan privasi tertunda Hasil posting perlu diperiksa cronActivityHeading Detail pemeriksaan cronDailyLanes studioSidebar studioQueueRow connectionCard';
-const css='.outputWorkspacePane .jobList{grid-template-columns:repeat(4,minmax(0,1fr))}';
+const js='jobDirectorRecovery history-four-columns jobPlatformQueue /reconcile dijadwalkan ulang otomatis pengaturan privasi tertunda Hasil posting perlu diperiksa cronActivityHeading Detail pemeriksaan cronDailyLanes studioSidebar studioQueueRow connectionCard studioThemeToggle';
+const css='.outputWorkspacePane .jobList{grid-template-columns:repeat(4,minmax(0,1fr))}.clipGrid{grid-template-columns:repeat(3,minmax(0,1fr))}:root[data-theme=light]{color-scheme:light}';
 fs.writeFileSync('.next/static/app.js',js);fs.writeFileSync('.next/static/app.css',css);
 const deploy=require('./scripts/deployment-health.cjs');
 deploy.build();deploy.prepare();

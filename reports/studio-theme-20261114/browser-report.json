@@ -1,0 +1,918 @@
+{
+  "screens": [
+    {
+      "theme": "dark",
+      "view": "create",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "columns": null,
+      "card": null,
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "results",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "columns": 3,
+      "card": {
+        "x": 236,
+        "y": 339.171875,
+        "width": 381.328125,
+        "height": 613.390625,
+        "top": 339.171875,
+        "right": 617.328125,
+        "bottom": 952.5625,
+        "left": 236
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "history",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "automation",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "settings",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "archive",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "columns": null,
+      "card": null,
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "create",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "columns": null,
+      "card": null,
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "results",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "columns": 3,
+      "card": {
+        "x": 236,
+        "y": 334.875,
+        "width": 328,
+        "height": 613.390625,
+        "top": 334.875,
+        "right": 564,
+        "bottom": 948.265625,
+        "left": 236
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "history",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "automation",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "settings",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "archive",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "columns": null,
+      "card": null,
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "create",
+      "width": 390,
+      "scrollWidth": 390,
+      "columns": null,
+      "card": null,
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "results",
+      "width": 390,
+      "scrollWidth": 390,
+      "columns": 1,
+      "card": {
+        "x": 18,
+        "y": 465.40625,
+        "width": 354,
+        "height": 871.578125,
+        "top": 465.40625,
+        "right": 372,
+        "bottom": 1336.984375,
+        "left": 18
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "history",
+      "width": 390,
+      "scrollWidth": 390,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "automation",
+      "width": 390,
+      "scrollWidth": 390,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "settings",
+      "width": 390,
+      "scrollWidth": 390,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "archive",
+      "width": 390,
+      "scrollWidth": 390,
+      "columns": null,
+      "card": null,
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "create",
+      "width": 320,
+      "scrollWidth": 320,
+      "columns": null,
+      "card": null,
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "results",
+      "width": 320,
+      "scrollWidth": 320,
+      "columns": 1,
+      "card": {
+        "x": 13,
+        "y": 484.59375,
+        "width": 294,
+        "height": 791.265625,
+        "top": 484.59375,
+        "right": 307,
+        "bottom": 1275.859375,
+        "left": 13
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "history",
+      "width": 320,
+      "scrollWidth": 320,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "automation",
+      "width": 320,
+      "scrollWidth": 320,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "settings",
+      "width": 320,
+      "scrollWidth": 320,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "dark",
+      "view": "archive",
+      "width": 320,
+      "scrollWidth": 320,
+      "columns": null,
+      "card": null,
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(16, 21, 28)",
+        "text": "rgb(237, 242, 247)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "create",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "columns": null,
+      "card": null,
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "results",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "columns": 3,
+      "card": {
+        "x": 236,
+        "y": 339.171875,
+        "width": 381.328125,
+        "height": 613.390625,
+        "top": 339.171875,
+        "right": 617.328125,
+        "bottom": 952.5625,
+        "left": 236
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "history",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "automation",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "settings",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "archive",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "columns": null,
+      "card": null,
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "create",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "columns": null,
+      "card": null,
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "results",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "columns": 3,
+      "card": {
+        "x": 236,
+        "y": 334.875,
+        "width": 328,
+        "height": 613.390625,
+        "top": 334.875,
+        "right": 564,
+        "bottom": 948.265625,
+        "left": 236
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "history",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "automation",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "settings",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "archive",
+      "width": 1280,
+      "scrollWidth": 1280,
+      "columns": null,
+      "card": null,
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "create",
+      "width": 390,
+      "scrollWidth": 390,
+      "columns": null,
+      "card": null,
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "results",
+      "width": 390,
+      "scrollWidth": 390,
+      "columns": 1,
+      "card": {
+        "x": 18,
+        "y": 465.40625,
+        "width": 354,
+        "height": 871.578125,
+        "top": 465.40625,
+        "right": 372,
+        "bottom": 1336.984375,
+        "left": 18
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "history",
+      "width": 390,
+      "scrollWidth": 390,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "automation",
+      "width": 390,
+      "scrollWidth": 390,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "settings",
+      "width": 390,
+      "scrollWidth": 390,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "archive",
+      "width": 390,
+      "scrollWidth": 390,
+      "columns": null,
+      "card": null,
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "create",
+      "width": 320,
+      "scrollWidth": 320,
+      "columns": null,
+      "card": null,
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "results",
+      "width": 320,
+      "scrollWidth": 320,
+      "columns": 1,
+      "card": {
+        "x": 13,
+        "y": 484.59375,
+        "width": 294,
+        "height": 791.265625,
+        "top": 484.59375,
+        "right": 307,
+        "bottom": 1275.859375,
+        "left": 13
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "history",
+      "width": 320,
+      "scrollWidth": 320,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "automation",
+      "width": 320,
+      "scrollWidth": 320,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "settings",
+      "width": 320,
+      "scrollWidth": 320,
+      "columns": null,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    },
+    {
+      "theme": "light",
+      "view": "archive",
+      "width": 320,
+      "scrollWidth": 320,
+      "columns": null,
+      "card": null,
+      "overflow": [],
+      "colors": {
+        "bg": "rgb(243, 246, 248)",
+        "text": "rgb(32, 50, 64)"
+      }
+    }
+  ],
+  "errors": [],
+  "contrast": []
+}

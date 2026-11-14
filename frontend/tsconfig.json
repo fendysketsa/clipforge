@@ -54,7 +54,9 @@
     ".next-lilang-status/types/**/*.ts",
     ".next-lilang-status/dev/types/**/*.ts",
     ".next-studio-redesign/types/**/*.ts",
-    ".next-studio-redesign/dev/types/**/*.ts"
+    ".next-studio-redesign/dev/types/**/*.ts",
+    ".next-studio-theme/types/**/*.ts",
+    ".next-studio-theme/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

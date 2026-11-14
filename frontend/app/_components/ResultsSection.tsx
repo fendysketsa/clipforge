@@ -682,7 +682,7 @@ export function ResultsSection({
                       {Math.round(clip.fyp_score)}
                     </span>
                   ) : null}
-                  <video controls preload="metadata" src={url} />
+                  <video controls preload="metadata" src={url} poster={clip.thumbnail_url ? getOutputUrl(clip.thumbnail_url) : undefined} />
                 </div>
                 <div className="clipInfo">
                   <div className="clipTitleBlock">
@@ -699,13 +699,14 @@ export function ResultsSection({
                             ? "Upload ditahan QC aplikasi"
                             : "Ditahan gate keamanan"}
                     </span>
-                    <h3>{title}</h3>
+                    <h3 title={title}>{title}</h3>
                   </div>
                   <button
                     className="copyTitleButton"
                     type="button"
                     onClick={() => handleCopyTitle(title)}
                     title="Salin judul klip"
+                    aria-label={`Salin judul ${title}`}
                   >
                     <Clipboard size={14} />
                     <span>Salin judul</span>
