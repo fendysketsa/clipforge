@@ -1,7 +1,10 @@
 {
   "stalled_run_ids": [],
-  "verified_at": 1794324977.9401195,
+  "verified_at": 1794613748.509179,
   "schedule": {
+    "cron_drama_lanes": {
+      "chinese_drama_story": "Drama China: Pilihan, Keluarga & Plot Twist"
+    },
     "cron_upload_recovery": {
       "last_tick_at": null,
       "queued": {
@@ -17,7 +20,7 @@
     "cron_source_process_limit": 2,
     "cron_follow_cta_adaptive": true,
     "cron_director_effects_required": true,
-    "cron_director_effects_policy_version": 3,
+    "cron_director_effects_policy_version": 4,
     "social_upload_serialized": true,
     "social_upload_min_gap_seconds": 45,
     "social_upload_failure_gap_seconds": 90,
@@ -34,9 +37,9 @@
     "paired_long_duration": 300.0,
     "paired_long_auto_public_enabled": false,
     "active_run_id": null,
-    "last_run_id": "4a9bb370f8824b37bc26dfab29a1c705",
-    "last_started_at": "2026-11-10T11:15:00.904640+00:00",
-    "last_finished_at": "2026-11-10T12:05:10.067121+00:00",
+    "last_run_id": "7f069fbfe2254a31a6d6edc89bce6c88",
+    "last_started_at": "2026-11-13T19:15:07.628737+00:00",
+    "last_finished_at": "2026-11-13T20:46:05.805501+00:00",
     "next_run_at": null,
     "news_hot_enabled": true,
     "news_hot_daily_limit": 3,
@@ -46,20 +49,22 @@
     "message": "Cron nonaktif dari kontrol frontend; proses yang sudah berjalan tetap diselesaikan. News Hot: 3/3 slot harian WIB; playlist News, review sebelum upload."
   },
   "sha256": {
-    "api": "e69bdd8021411ab9a700b387fa84d728960ee42642803d74f66534677982b194",
-    "clipper": "72b160b9c5e742f0f1d9605a36d856af2b94cbd37387decc599cbf626acf6dbe",
+    "api": "1574588795d07aa97cf2571bb194a22794f7aed00832c8214fc8ed1e5a14ddd5",
+    "clipper": "268aeb96735078caee7665efc27e362395881b6b213d5b8f2cb956701276f14f",
     "llm": "6015e4d668845836751eb9da29db6445347254945d35ae8c3e94382ada5310be",
-    "cron_director_effects": "3f4542bf1c14b3bdba4ad125e0a07bc265e2d5711a0e36d10452570a4017ac78",
+    "cron_director_effects": "6a8a56f9144808cc01be05e15387ccafdbf6889307e0dc2bbacad4f0083a19b9",
     "cron_short_director": "d352c8c7bc416a315beae0aa25e9fb9d6e8cd29d59d6856ffc380c2866aa7b2a",
     "cron_source_policy": "f6fefa2c1e4395b020971c9872746568865fb4509df1983dc1a527e5e85a4376",
-    "automatic_retry": "ffc69fd1f80f0a8dbe88038c766c1353bcc9d1762c4ab0b6e0c0e797672a708a",
+    "cron_long_strategy": "7a36d848964f45f6118bb34a08af0308d2d88a6f82449c43cb27c854f467a089",
+    "automatic_retry": "2b057d5440caebfe56ff1b95a4bc057f0892776e65a790afeb57209d56cbd9dc",
     "tiktok_strategy": "2c7a17bf7839e796a5957b760d674ab70b9b5aa5bb104dcfcffe1818b2a0823b",
     "youtube_remote_status": "bbc564486f5b7ff2b44b7d5c37eceffbcba75151d7fc2e07556ffd92271479dd",
     "ryuundy_reference_learning": "07a7613ab1fdf5410acca21e777b4a76be0a9599c8dc4efff99e569670ed91b9",
-    "long_video_qc": "f35e61bf12e1cef58a3f112701a29495b743ef7845e5a651b2b16835cb05632f",
+    "long_video_qc": "245f981941eb19460ca556401612945f62df5df96e1968695a58bb12b524fe0c",
     "shorts_thumbnail": "8641ca16c48238fd112d4583109a71f45da876ec7b152cae381bb60202c2e904",
-    "youtube_uploader": "401e80ab1e4993455d78106e86ac2d93f8c89c75794732f6805b6362eb301ddb",
-    "tiktok_uploader": "8f3d59a591dfd319d1f232b6a2d21da1dbc9e2c5dd4b19dc636256dfd3a8c7a7",
-    "youtube_blocked_cleanup": "adbc641322ff8e9f3529a00f6ce6878e3dd81fe0e94bf235021ee4b5f47ea4b6"
+    "youtube_uploader": "8c30b86b5163110162bf9017e1d60568998ea872d67ebc3314e0b4922543eeac",
+    "tiktok_uploader": "1c9640f0f3b950909db9be3f60f71ef8bf3a609807171308c191490741baa799",
+    "youtube_blocked_cleanup": "adbc641322ff8e9f3529a00f6ce6878e3dd81fe0e94bf235021ee4b5f47ea4b6",
+    "browser_page_activity": "878b0d5581de6d4e6a623ffb486bd49bee7e955fdce857f3432bb9f92087551e"
   }
 }

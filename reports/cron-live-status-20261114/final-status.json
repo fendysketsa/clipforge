@@ -1,0 +1,25 @@
+{
+  "checked_at_wib": "2026-11-14T07:01:54.176626+07:00",
+  "short": {
+    "id": "58fb3be64c5544eb97c83de813d2ca9e",
+    "status": "running",
+    "source_title": "Mio & Baby Celine Hilang Dan Pergi Dari Dunia Selamanya! Yuta Sedih Sendirian! | ROBLOX",
+    "progress_stage": "source",
+    "progress_detail": "Mengunduh video sumber 29% · 203 MB/693 MB · 6.4 MB/dtk · ETA 76 dtk · jalur 1/5",
+    "progress_percent": 7,
+    "started_at": "2026-11-14T00:01:14.106817+00:00",
+    "updated_at": "2026-11-14T00:01:52.481522+00:00",
+    "error": null
+  },
+  "long": {
+    "enabled": true,
+    "currently_rendering": false,
+    "daily_target": 1,
+    "attempt_limit": 3,
+    "attempts_today": 3,
+    "qc_passed_today": 0,
+    "wait_reason": "daily_attempt_limit",
+    "next_daily_budget_reset_wib": "2026-11-15T00:00:00+07:00",
+    "new_strategy_version": 2
+  }
+}

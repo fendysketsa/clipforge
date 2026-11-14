@@ -15,7 +15,8 @@ def setup_long(monkeypatch):
         candidates=[api.ClipCandidate(index=1, start=10, end=40, duration=30,
             score=85, title='Test', reason='complete', text='A complete moment')],
     )
-    source = {'url': short.request.url, 'title': 'Original', 'license': 'youtube'}
+    source = {'url': short.request.url, 'title': 'Original', 'license': 'youtube',
+              'duration': 1200, 'views': 5000}
     run = api.AutoViralRun(id='parent', status='completed', trigger='schedule',
         created_at=stamp, updated_at=stamp,
         request=api.AutoViralRequest(source_rights_confirmed=True,
@@ -48,6 +49,7 @@ def test_long_queues_even_with_full_short_buffers_and_zero_upload_quota(setup_lo
     assert result['status'] == 'queued'
     long = api.jobs[result['job_id']]
     assert long.request.clip_mode == 'highlight_5m'
+    assert long.request.cron_long_strategy
     assert long.request.compilation_target_seconds == 300
     assert long.request.compilation_anchor_ranges == [(10, 40)]
     assert long.request.paired_short_job_id == short.id
@@ -58,6 +60,47 @@ def test_long_queues_even_with_full_short_buffers_and_zero_upload_quota(setup_lo
     assert len(api.long_production_state()['attempts']) == 1
 
 
+def test_cron_skips_popular_short_sources_without_spending_render_attempts(setup_long):
+    _, run, started = setup_long
+    run.processed[0]['source'].update(duration=45, views=1000000)
+    result = api.queue_review_long_once()
+    assert result['status'] == 'waiting_for_eligible_short'
+    assert result['long_source_candidates'][0]['reasons'] == ['source_long_duration_missing_or_under_300s']
+    assert api.long_production_state()['attempts'] == []
+    assert not started
+
+
+def test_cron_ranks_long_demand_across_campaign_recency(setup_long):
+    short, run, _ = setup_long
+    other = short.model_copy(deep=True, update={'id': 'stronger-long-source'})
+    other.request.url = 'https://www.youtube.com/watch?v=otherABC123'
+    api.jobs[other.id] = other
+    run.processed.append({'job_id': other.id, 'source': dict(
+        url=other.request.url, title='Complete Long source', duration=1800, views=50000)})
+    assert api.queue_review_long_once()['short_job_id'] == other.id
+
+
+def test_political_long_renders_but_waits_for_human_review_before_automatic_qc(setup_long):
+    short, run, started = setup_long
+    run.request.cron_theme_key = 'domestic_politics'
+    short.request.scheduled_theme_key = 'domestic_politics'
+    short.request.scheduled_public_source_credit = True
+    result = api.queue_review_long_once()
+    assert result['status'] == 'queued'
+    long = api.jobs[result['job_id']]
+    assert long.request.publication_review_required
+    long.status = 'completed'
+    clip = api.ClipFile(name='resume_cerita_test.mp4', url='/outputs/test.mp4', size_bytes=123)
+    long.clips = [clip]
+    state = api.long_production_state()
+    state['auto_qc_enabled'] = True
+    api.save_long_production_state(state)
+    assert api.queue_review_long_qc_once() == 0
+    assert len(started) == 1
+    assert 'review manusia' in api.long_upload_review_hold(long, clip)
+    assert api.get_long_production()['manual_review_holds'][0]['job_id'] == long.id
+
+
 def test_long_skips_source_at_lifetime_cap_and_uses_another_short(setup_long):
     short,run,_=setup_long
     prior=short.model_copy(deep=True,update={'id':'previous-process'})
@@ -65,7 +108,7 @@ def test_long_skips_source_at_lifetime_cap_and_uses_another_short(setup_long):
     other=short.model_copy(deep=True,update={'id':'other-short'})
     other.request.url='https://www.youtube.com/watch?v=otherABC123'
     api.jobs[other.id]=other
-    run.processed.append({'job_id':other.id,'source':dict(url=other.request.url,title='Other source')})
+    run.processed.append({'job_id':other.id,'source':dict(url=other.request.url,title='Other source',duration=1200,views=5000)})
     result=api.queue_review_long_once()
     assert result['status']=='queued' and result['short_job_id']==other.id
 
@@ -197,6 +240,25 @@ def test_worker_persists_relevance_and_review_requirement(setup_long, monkeypatc
     assert attempt['status'] == 'completed'
     assert attempt['relevance']['passed']
     assert attempt['review_required']
+
+
+def test_failed_story_review_is_durable_even_without_rendered_clips(setup_long, monkeypatch, tmp_path):
+    short, _, _ = setup_long
+    result = api.queue_review_long_once()
+    job = api.jobs[result['job_id']]
+    monkeypatch.setattr(api, 'OUTPUTS_DIR', tmp_path / 'outputs')
+    path = api.OUTPUTS_DIR / job.id / 'story' / 'cron_long_story_review.json'
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({'passed': False, 'reasons': ['resolved_ending']}))
+    def render(job_id):
+        job.status = 'failed'
+        job.error = 'Long story incomplete'
+    monkeypatch.setattr(api, 'run_job', render)
+    api.run_review_long_job(job.id, short)
+    attempt = api.long_production_state()['attempts'][0]
+    assert attempt['status'] == 'failed'
+    assert attempt['long_story_review']['passed'] is False
+    assert 'relevance' not in attempt
 
 
 def test_attempt_cap_and_other_long_count(setup_long):

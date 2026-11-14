@@ -66,6 +66,8 @@ from article_presenter import is_article_presenter_prompt
 from religious_review import reassess_casual_work_wish
 import long_video_qc
 import cron_source_policy
+import cron_long_strategy
+import ryuundy_editorial_themes
 import automatic_retry
 import automatic_output_cleanup
 import ryuundy_growth_learning
@@ -506,6 +508,7 @@ class ClipJobRequest(BaseModel):
     # Internal long-form jobs may pin the exact source moments used by their
     # companion Shorts. This keeps a paired Long Story grounded in its Short.
     compilation_anchor_ranges: list[tuple[float, float]] = Field(default_factory=list)
+    cron_long_strategy: bool = False
     model: str = "Systran/faster-whisper-medium"
     language: str = "id"
     analyze_seconds: float | None = Field(default=None, ge=10, le=7200)
@@ -1658,6 +1661,7 @@ DEFAULT_CRON_GAMING_CHANNEL_QUERY = "reaction game populer indonesia lucu cerita
 # news, sport, politics, or generic entertainment.  Humour is an interlude,
 # while faith remains available only when that is what the source discusses.
 RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
+    **ryuundy_editorial_themes.PROFILES,
     **DRAMA_THEME_PROFILES,
     "love_betrayal": {
         "label": "Cinta, Pengkhianatan & Sakit Hati",
@@ -1888,6 +1892,7 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
 }
 
 RYUUNDY_CRON_THEME_SIGNALS: dict[str, set[str]] = {
+    **ryuundy_editorial_themes.SIGNALS,
     **DRAMA_THEME_SIGNALS,
     "love_betrayal": {
         "cinta", "pasangan", "selingkuh", "pengkhianatan", "dikhianati",
@@ -2708,6 +2713,9 @@ class AutoViralRequest(BaseModel):
             self.auto_upload_youtube = self.auto_upload_tiktok = False
             self.create_paired_long_video = self.auto_publish_paired_long_video = False
             self.paired_long_video_count = 0
+        if ryuundy_editorial_themes.requires_manual_review(self.cron_theme_key):
+            self.auto_upload_youtube = self.auto_upload_tiktok = False
+            self.auto_publish_paired_long_video = False
         return self
 
 
@@ -15247,6 +15255,8 @@ def build_clipper_command(
                 json.dumps(request.compilation_anchor_ranges, separators=(",", ":")),
             ]
         )
+    if request.clip_mode == "highlight_5m" and request.cron_long_strategy:
+        command.append("--cron-long-strategy")
     if request.clip_mode == "long_animate":
         command.extend(
             ["--long-animate-target-duration", str(request.compilation_target_seconds),
@@ -16983,7 +16993,7 @@ def cron_trend_candidate_rejection_reason(
     )
     if unsafe_hits:
         return f"tren tidak aman ({', '.join(unsafe_hits[:3])})"
-    if theme_key == NEWS_HOT_THEME:
+    if theme_key in {NEWS_HOT_THEME, "domestic_politics"}:
         rejection = news_hot_topic_rejection_reason(info)
         if rejection:
             return rejection
@@ -19846,11 +19856,13 @@ def auto_viral_format_perspective(
         )
     if request.cron_theme_key == NEWS_HOT_THEME:
         return " ".join(parts)[:4000]
-    if request.cron_theme_key:
+    if request.cron_theme_key and long_form:
+        parts.append(cron_long_strategy.LONG_EDITOR_BRIEF)
+    elif request.cron_theme_key:
         parts.append(RYUUNDY_REFERENCE_EDITOR_BRIEF)
     if request.cron_theme_key in DRAMA_THEME_PROFILES:
         parts.append(DRAMA_EDITOR_BRIEF)
-    if request.cron_theme_key in {"gaming_story", "quirky_animation", "islamic_animation_kids", "islamic_animation_general", *DRAMA_THEME_PROFILES}:
+    if not long_form and request.cron_theme_key in {"gaming_story", "quirky_animation", "islamic_animation_kids", "islamic_animation_general", *DRAMA_THEME_PROFILES}:
         parts.append(ryuundy_growth_learning.CHARACTER_EDITOR_BRIEF)
     if request.cron_short_role or request.cron_long_role:
         parts.append(
@@ -19890,6 +19902,11 @@ def source_theme_hashtags(
     """Choose truthful hashtags from source semantics instead of a fixed religion set."""
     if theme_key in DRAMA_THEME_PROFILES:
         return drama_hashtags(theme_key, long_form)
+    if theme_key in ryuundy_editorial_themes.HASHTAGS:
+        return [*ryuundy_editorial_themes.HASHTAGS[theme_key],
+                "VideoPanjang" if long_form else "ShortsIndonesia"]
+    if theme_key == "mystery_story":
+        return ["CeritaMisteri", "MisteriNusantara", "VideoPanjang" if long_form else "ShortsIndonesia"]
     if theme_key == "history_geography_nusantara":
         return ["SejarahNusantara", "GeografiIndonesia", "BudayaNusantara",
                 "VideoPanjang" if long_form else "ShortsIndonesia"]
@@ -20055,6 +20072,7 @@ def create_auto_viral_clip_job(
         require_creative_commons=request.require_creative_commons,
         auto_upload_youtube=False,
         scheduled_public_source_credit=scheduled,
+        publication_review_required=scheduled and ryuundy_editorial_themes.requires_manual_review(request.cron_theme_key),
         scheduled_director_effects=scheduled,
         scheduled_news_hot=news_hot,
         scheduled_theme_key=request.cron_theme_key if scheduled else "",
@@ -20130,8 +20148,16 @@ def create_auto_viral_paired_long_job(
     *,
     wait_for_slot: bool = True,
     publication_review_required: bool = False,
+    cron_long_strategy_required: bool = False,
 ) -> ClipJob:
     """Create a Long Story whose selected parts must include every Short beat."""
+    cron_long = bool(cron_long_strategy_required or request.cron_theme_key
+                     or short_job.request.scheduled_public_source_credit
+                     or short_job.request.scheduled_director_effects)
+    if cron_long:
+        profile = cron_long_strategy.source_profile(source)
+        if not profile["eligible"]:
+            raise RuntimeError("Sumber belum layak Long cron: " + ", ".join(profile["reasons"]))
     strict_rejection = viral_source_rejection_reason(
         source,
         require_creative_commons=request.require_creative_commons,
@@ -20155,12 +20181,13 @@ def create_auto_viral_paired_long_job(
         url=str(source["url"]),
         top=max(4, math.ceil(request.paired_long_duration / 60)),
         paired_short_job_id=short_job.id,
-        publication_review_required=publication_review_required,
+        publication_review_required=publication_review_required or ryuundy_editorial_themes.requires_manual_review(request.cron_theme_key),
         min_duration=request.min_duration,
         max_duration=request.max_duration,
         clip_mode="highlight_5m",
         compilation_target_seconds=request.paired_long_duration,
         compilation_anchor_ranges=anchors,
+        cron_long_strategy=cron_long,
         video_quality=request.video_quality,
         visual_mode=request.visual_mode,
         background_mode=request.background_mode,
@@ -20170,7 +20197,7 @@ def create_auto_viral_paired_long_job(
         require_creative_commons=request.require_creative_commons,
         auto_upload_youtube=False,
         scheduled_public_source_credit=short_job.request.scheduled_public_source_credit,
-        scheduled_theme_key=short_job.request.scheduled_theme_key,
+        scheduled_theme_key=short_job.request.scheduled_theme_key or request.cron_theme_key,
         scheduled_director_effects=bool(short_job.request.scheduled_director_effects or short_job.request.scheduled_public_source_credit),
         scheduled_human_editor=short_job.request.scheduled_human_editor,
         scheduled_contextual_audio=short_job.request.scheduled_contextual_audio,
@@ -20219,6 +20246,7 @@ def long_qc_context(job: ClipJob, clip: ClipFile) -> dict[str, Any]:
         "rights_risks": source_rights_risk_reasons(metadata_for_job(job)),
         "claim_block": youtube_clip_claim_block(job.id, clip.url),
         "news_hot": job.request.scheduled_news_hot,
+        **({"cron_long_strategy_required": True} if job.request.cron_long_strategy else {}),
         "repair_attempted": bool(job.repair_source_job_id or job.repair_source_clip_url
             or any(line.startswith(AUTO_REPAIR_ATTEMPT_PREFIX) for line in job.logs)),
         "score_floor_met": (clip.fyp_score is not None and clip.fyp_score >= SHORT_FYP_TARGET_SCORE
@@ -20230,6 +20258,12 @@ def long_upload_review_hold(job: ClipJob, clip: ClipFile) -> str | None:
     """Apply the same persisted Long QC decision to both upload platforms."""
     if job.request.clip_mode != "highlight_5m" or not job.request.publication_review_required:
         return None
+    if ryuundy_editorial_themes.requires_manual_review(job.request.scheduled_theme_key) and not clip.is_correct:
+        return "Long politik menunggu review manusia atas fakta, tanggal kejadian, konteks, judul dan hak penggunaan."
+    if job.request.cron_long_strategy:
+        sidecar = clip_sidecar_payload(clip)
+        if (sidecar.get("cron_long_story_review") or {}).get("passed") is not True:
+            return "Long cron menunggu audit alur khusus Long dengan bukti transkrip."
     try:
         path = long_qc_path(job.id, clip.url)
         record = json.loads(path.read_text()) if path.exists() else {}
@@ -20557,6 +20591,8 @@ def queue_review_long_qc_once() -> int:
             and job.request.clip_mode == "highlight_5m" and job.request.publication_review_required]
     for job in review_jobs:
         for clip in job.clips:
+            if ryuundy_editorial_themes.requires_manual_review(job.request.scheduled_theme_key) and not clip.is_correct:
+                continue
             path = long_qc_path(job.id, clip.url)
             record = json.loads(path.read_text()) if path.exists() else {}
             if record.get("cleanup_requested_reason") and job.request.scheduled_public_source_credit:
@@ -20674,6 +20710,17 @@ def run_review_long_job(job_id: str, short_job: ClipJob) -> None:
             for attempt in state["attempts"]:
                 if attempt.get("job_id") == job_id and job is not None:
                     attempt.update(status=job.status, error=job.error)
+                    job_root = OUTPUTS_DIR / job.id
+                    review_dirs = [*output_work_dirs_for_job(job),
+                                   *(path.parent for path in job_root.glob("*/cron_long_story_review.json"))]
+                    for work_dir in review_dirs:
+                        review_path = work_dir / "cron_long_story_review.json"
+                        if review_path.is_file():
+                            try:
+                                attempt["long_story_review"] = json.loads(review_path.read_text())
+                            except (OSError, ValueError):
+                                attempt["long_story_review"] = {"passed": False, "reasons": ["unreadable_review"]}
+                            break
                     if job.status == "completed":
                         attempt["relevance"] = auto_viral_short_long_relevance_audit(short_job, job)
                         attempt["review_required"] = True
@@ -20731,53 +20778,70 @@ def queue_review_long_once() -> dict[str, Any]:
             return {"status": "daily_attempt_limit"}
         used = {row["short_job_id"] for row in attempts}
         used.update(job.request.paired_short_job_id for job in current_jobs.values())
-        for run in campaigns:
-            if run.trigger != "schedule" or run.request.cron_theme_key == NEWS_HOT_THEME:
+        # Rank Long source demand across campaigns; Short recency/FYP is not
+        # evidence that viewers want the corresponding longer story.
+        options = [(run, item) for run in campaigns
+                   if run.trigger == "schedule" and run.request.cron_theme_key != NEWS_HOT_THEME
+                   for item in run.processed]
+        def option_source(option):
+            run, item = option
+            return item.get("source") or next(
+                (source for source in run.selected_sources if source.get("url") == item.get("url")), {})
+        options.sort(key=lambda option: cron_long_strategy.source_profile(option_source(option))["rank"], reverse=True)
+        selection = []
+        for run, item in options:
+            short_id = str(item.get("job_id") or "")
+            if not short_id or short_id in used or item.get("long_job_id"):
                 continue
-            for item in run.processed:
-                short_id = str(item.get("job_id") or "")
-                if not short_id or short_id in used or item.get("long_job_id"):
-                    continue
-                short = current_jobs.get(short_id)
-                if short is None and item.get("paired_short_snapshot"):
-                    short = ClipJob.model_validate(item["paired_short_snapshot"])
-                if short is None or short.status != "completed" or not short.candidates:
-                    continue
-                source = item.get("source") or next(
-                    (s for s in run.selected_sources if s.get("url") == item.get("url")), None
+            short = current_jobs.get(short_id)
+            if short is None and item.get("paired_short_snapshot"):
+                short = ClipJob.model_validate(item["paired_short_snapshot"])
+            if short is None or short.status != "completed" or not short.candidates:
+                continue
+            source = item.get("source") or next(
+                (s for s in run.selected_sources if s.get("url") == item.get("url")), None
+            )
+            if not source or not run.request.source_rights_confirmed or not run.request.source_rights_evidence.strip():
+                continue
+            if cron_source_process_limit_reached(str(source.get('url') or '')):
+                continue
+            profile = cron_long_strategy.source_profile(source)
+            selection.append({"short_job_id": short.id, "source_url": source.get("url"), **profile})
+            if not profile["eligible"]:
+                continue
+            state["last_source_selection"] = selection[:50]
+            request = run.request.model_copy(deep=True, update={
+                "create_paired_long_video": True, "paired_long_video_count": 1,
+                "paired_long_duration": 300, "auto_publish_paired_long_video": False,
+                "auto_upload_youtube": False, "auto_upload_tiktok": False,
+            })
+            try:
+                job = create_auto_viral_paired_long_job(
+                    source, request, short, wait_for_slot=False, publication_review_required=True,
+                    cron_long_strategy_required=True,
                 )
-                if not source or not run.request.source_rights_confirmed or not run.request.source_rights_evidence.strip():
-                    continue
-                if cron_source_process_limit_reached(str(source.get('url') or '')):
-                    continue
-                request = run.request.model_copy(deep=True, update={
-                    "create_paired_long_video": True, "paired_long_video_count": 1,
-                    "paired_long_duration": 300, "auto_publish_paired_long_video": False,
-                    "auto_upload_youtube": False, "auto_upload_tiktok": False,
-                })
-                try:
-                    job = create_auto_viral_paired_long_job(
-                        source, request, short, wait_for_slot=False, publication_review_required=True,
-                    )
-                except Exception as exc:
-                    with jobs_lock:
-                        if any(j.status in {"queued", "running"} for j in jobs.values()):
-                            return {"status": "waiting_for_render"}
-                    attempts.append({
-                        "day": day, "short_job_id": short.id, "source_run_id": run.id,
-                        "status": "failed", "error": str(exc),
-                    })
-                    save_long_production_state(state)
-                    # Try a different source on the next tick, with a durable cap.
-                    return {"status": "source_rejected", "error": str(exc)}
+            except Exception as exc:
+                with jobs_lock:
+                    if any(j.status in {"queued", "running"} for j in jobs.values()):
+                        return {"status": "waiting_for_render"}
                 attempts.append({
-                    "day": day, "short_job_id": short.id, "job_id": job.id,
-                    "source_run_id": run.id, "status": "queued", "review_required": True,
+                    "day": day, "short_job_id": short.id, "source_run_id": run.id,
+                    "status": "failed", "error": str(exc),
                 })
                 save_long_production_state(state)
-                threading.Thread(target=run_review_long_job, args=(job.id, short), daemon=True).start()
-                return {"status": "queued", "job_id": job.id, "short_job_id": short.id}
-        return {"status": "waiting_for_eligible_short"}
+                # Try a different source on the next tick, with a durable cap.
+                return {"status": "source_rejected", "error": str(exc)}
+            attempts.append({
+                "day": day, "short_job_id": short.id, "job_id": job.id,
+                "source_run_id": run.id, "status": "queued", "review_required": True,
+                "long_source_profile": profile,
+            })
+            save_long_production_state(state)
+            threading.Thread(target=run_review_long_job, args=(job.id, short), daemon=True).start()
+            return {"status": "queued", "job_id": job.id, "short_job_id": short.id}
+        state["last_source_selection"] = selection[:50]
+        save_long_production_state(state)
+        return {"status": "waiting_for_eligible_short", "long_source_candidates": selection[:50]}
 
 
 def auto_viral_short_long_relevance_audit(
@@ -24210,7 +24274,8 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
             and not youtube_channel_recovery_mode()
         ),
     )
-    if theme_key in DRAMA_THEME_PROFILES or theme_profile.get("performance_winner"):
+    if (theme_key in DRAMA_THEME_PROFILES or theme_key in ryuundy_editorial_themes.PROFILES
+            or theme_profile.get("performance_winner")):
         request = request.model_copy(update={'queries': merge_unique_queries([theme_focus], theme_queries)})
     elif trend_expansion_enabled:
         request = request.model_copy(
@@ -25410,6 +25475,21 @@ def set_auto_viral_schedule(
     return auto_viral_schedule_status()
 
 
+@app.get("/api/automation/viral-cc/long-strategy")
+def get_cron_long_strategy() -> dict[str, Any]:
+    """Read-only capability contract used by the standard Compose healthcheck."""
+    return {
+        "version": 2, "scope": "new_cron_long_jobs", "target_views": 1000,
+        "minimum_source_views": 1000, "minimum_source_seconds": 300,
+        "minimum_output_seconds": 180, "minimum_new_material_fraction": 0.6,
+        "semantic_story_review_required": True, "future_views_guaranteed": False,
+        "editorial_brief": cron_long_strategy.LONG_EDITOR_BRIEF,
+        "themes": [{"key": key, "label": profile["label"],
+                    "manual_review_required": ryuundy_editorial_themes.requires_manual_review(key)}
+                   for key, profile in RYUUNDY_CRON_THEME_PROFILES.items()],
+    }
+
+
 @app.get("/api/automation/viral-cc/long-production")
 def get_long_production() -> dict[str, Any]:
     confirmed_uploads = confirmed_long_uploads_by_job()
@@ -25430,6 +25510,15 @@ def get_long_production() -> dict[str, Any]:
     provider = long_video_qc.provider_config()
     state["qc_vision_configured"] = bool(provider["base_url"] and provider["model"])
     state["tiktok_qc_upload_supported"] = True
+    state["long_strategy"] = get_cron_long_strategy()
+    state["manual_review_holds"] = [
+        {"job_id": job.id, "theme": job.request.scheduled_theme_key,
+         "reason": "Review manusia atas fakta, tanggal kejadian, konteks dan hak penggunaan."}
+        for job in current_jobs.values()
+        if job.status == "completed" and job.request.clip_mode == "highlight_5m"
+        and ryuundy_editorial_themes.requires_manual_review(job.request.scheduled_theme_key)
+        and any(not clip.is_correct for clip in job.clips)
+    ]
     cleanup_path = terminal_output_cleanup_path()
     cleanup_history = json.loads(cleanup_path.read_text()) if cleanup_path.exists() else {}
     state["terminal_output_cleanup"] = {

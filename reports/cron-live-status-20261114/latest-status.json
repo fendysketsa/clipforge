@@ -1,0 +1,44 @@
+{
+  "checked_at_wib": "2026-11-14T07:01:14.355455+07:00",
+  "schedule": {
+    "enabled": true,
+    "scheduler_running": true,
+    "active_run_id": "a5a9d45c488d4039b01e2876a8f8845a",
+    "next_run_at": null,
+    "message": "Automation sedang berjalan; jadwal berikutnya tidak akan membuat run tumpang tindih. News Hot: 3/3 slot harian WIB; playlist News, review sebelum upload.",
+    "cron_upload_recovery": {
+      "last_tick_at": "2026-11-14T00:01:11.732586+00:00",
+      "queued": {
+        "youtube": 0,
+        "tiktok": 0
+      },
+      "errors": {},
+      "enabled": true
+    }
+  },
+  "capacity": {
+    "cron_private_buffer_count": 5,
+    "scheduled_backlog_count": 10,
+    "active_upload_id": null
+  },
+  "active_jobs": [
+    {
+      "id": "58fb3be64c5544eb97c83de813d2ca9e",
+      "status": "running",
+      "source_title": "Mio & Baby Celine Hilang Dan Pergi Dari Dunia Selamanya! Yuta Sedih Sendirian! | ROBLOX",
+      "progress_stage": "source",
+      "progress_detail": "Menyiapkan worker pemrosesan",
+      "updated_at": "2026-11-14T00:01:14.106853+00:00",
+      "mode": "short"
+    }
+  ],
+  "active_campaign": {
+    "id": "a5a9d45c488d4039b01e2876a8f8845a",
+    "status": "running",
+    "progress_stage": "clip_queued",
+    "progress_detail": null,
+    "created_at": "2026-11-14T00:00:24.725195+00:00",
+    "updated_at": "2026-11-14T00:01:14.068773+00:00",
+    "error": null
+  }
+}

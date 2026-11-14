@@ -46,7 +46,7 @@ while (( $# )); do
   esac
   shift
 done
-modules=(api clipper llm cron_director_effects cron_short_director cron_source_policy automatic_retry tiktok_strategy youtube_remote_status ryuundy_reference_learning long_video_qc shorts_thumbnail)
+modules=(api clipper llm cron_director_effects cron_short_director cron_source_policy cron_long_strategy automatic_retry tiktok_strategy youtube_remote_status ryuundy_reference_learning long_video_qc shorts_thumbnail)
 activation_report=reports/cron-upload-recovery-activation.json
 if [[ "$preserve_browser" == true ]]; then
   modules+=(youtube_uploader tiktok_uploader youtube_blocked_cleanup browser_page_activity)

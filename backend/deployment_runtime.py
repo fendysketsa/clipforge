@@ -104,9 +104,17 @@ def backend_contract(base: str) -> dict:
         raise RuntimeError('TikTok duplicate or cron draft guard is stale')
     if schedule.get('cron_director_effects_policy_version') != 4 or schedule.get('cron_source_process_limit') != 2:
         raise RuntimeError('Cron director/source policy is stale')
+    long = get_json(base + '/api/automation/viral-cc/long-strategy')
+    themes = {row.get('key'): row for row in long.get('themes', [])}
+    if (long.get('version') != 2 or long.get('semantic_story_review_required') is not True
+            or not {'mystery_story', 'legend_folklore', 'domestic_politics',
+                    'food_healthy_review', 'food_taste_review'} <= themes.keys()
+            or themes['domestic_politics'].get('manual_review_required') is not True):
+        raise RuntimeError('Cron Long strategy or RYUUNDY theme policy is stale')
     return {**expected, 'cron_enabled': schedule.get('enabled'),
             'scheduler_running': schedule.get('scheduler_running'),
-            'director_policy': 4, 'source_process_limit': 2}
+            'director_policy': 4, 'source_process_limit': 2,
+            'long_strategy_version': 2, 'long_theme_count': len(themes)}
 
 
 def report_path(role: str) -> Path:

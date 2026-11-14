@@ -1,0 +1,15 @@
+{
+  "checked_at": "2026-11-13T23:37:55.534716+00:00",
+  "health": {
+    "status": "ok"
+  },
+  "cron_enabled": true,
+  "long_enabled": true,
+  "long_strategy_exposed_by_runtime": null,
+  "active_long_jobs": [],
+  "deployment": "not_activated",
+  "blockers": [
+    "Docker socket access denied",
+    "sudo requires password"
+  ]
+}

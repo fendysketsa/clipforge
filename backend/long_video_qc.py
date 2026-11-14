@@ -296,6 +296,10 @@ def audit_long(media: Path, context: dict, *, reviewer=None) -> dict:
         return {"status": "reviewed", "audit": _decision(context, gates=gates,
                 evidence=["Rendered media/sidecar is absent, invalid or lacks audio/video."])}
     provenance = sidecar.get("source_provenance") or {}
+    if context.get("cron_long_strategy_required") and (sidecar.get("cron_long_story_review") or {}).get("passed") is not True:
+        gates["context_safe"] = False
+        return {"status": "reviewed", "audit": _decision(context, gates=gates,
+                evidence=["Cron Long lacks a passing transcript-grounded Long story review."])}
     # Match the upload preflight: persisted documented operator permission is
     # a valid basis for Private review, even when source license metadata is
     # unverified. This does not assert independent chain-of-title verification.

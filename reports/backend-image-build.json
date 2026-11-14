@@ -5,11 +5,11 @@
       "attempt": 1,
       "mode": "compose",
       "exit_code": 0,
-      "log": "/www/wwwroot/clipper/clipforge/reports/backend-build-njdi7idq/attempt-1.log",
+      "log": "/www/wwwroot/clipper/clipforge/reports/backend-build-wdboeu08/attempt-1.log",
       "export_writer_lock": false
     }
   ],
-  "log_directory": "/www/wwwroot/clipper/clipforge/reports/backend-build-njdi7idq",
+  "log_directory": "/www/wwwroot/clipper/clipforge/reports/backend-build-wdboeu08",
   "application_runtime_changed": false,
   "recovery_builder": null
 }

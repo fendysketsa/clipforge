@@ -15,7 +15,8 @@ ROOT=Path(__file__).resolve().parents[2]
 @pytest.fixture
 def project(tmp_path):
     root=tmp_path/'image';root.mkdir()
-    for name in ('api.py','telegram_bot.py','requirements.txt','docker-entrypoint.sh','Dockerfile'):
+    for name in ('api.py','telegram_bot.py','cron_long_strategy.py','ryuundy_editorial_themes.py',
+                 'requirements.txt','docker-entrypoint.sh','Dockerfile'):
         (root/name).write_text('# deployment fixture\n')
     (root/'remotion/src').mkdir(parents=True)
     (root/'remotion/src/index.jsx').write_text('export const value=1;')
@@ -25,7 +26,8 @@ def project(tmp_path):
 
 def test_image_manifest_covers_bot_backend_and_renderer(project):
     result=deploy.verify_manifest(project)
-    assert {'api.py','telegram_bot.py','remotion/src/index.jsx'} <= result['files'].keys()
+    assert {'api.py','telegram_bot.py','cron_long_strategy.py','ryuundy_editorial_themes.py',
+            'remotion/src/index.jsx'} <= result['files'].keys()
 
 
 @pytest.mark.parametrize('change',['edit','add','delete'])
@@ -104,9 +106,16 @@ def test_bot_preparation_requires_verified_frontend(project,tmp_path,monkeypatch
 
 def test_backend_contract_does_not_resume_disabled_cron(monkeypatch):
     payloads={'/api/health':{'status':'ok'},'/api/tiktok/config':{'duplicate_guard_version':2,'cron_draft_policy':'discard'},
-      '/api/automation/viral-cc/schedule':{'cron_director_effects_policy_version':4,'cron_source_process_limit':2,'enabled':False,'scheduler_running':False}}
+      '/api/automation/viral-cc/schedule':{'cron_director_effects_policy_version':4,'cron_source_process_limit':2,'enabled':False,'scheduler_running':False},
+      '/api/automation/viral-cc/long-strategy':{'version':2,'semantic_story_review_required':True,'themes':[
+          {'key':key,'manual_review_required':key=='domestic_politics'} for key in
+          ('mystery_story','legend_folklore','domestic_politics','food_healthy_review','food_taste_review')]}}
     monkeypatch.setattr(deploy,'get_json',lambda url:payloads[url.removeprefix('http://local')])
     assert deploy.backend_contract('http://local')['cron_enabled'] is False
+    assert deploy.backend_contract('http://local')['long_strategy_version'] == 2
+    payloads['/api/automation/viral-cc/long-strategy']['version']=1
+    with pytest.raises(RuntimeError,match='Long strategy'):deploy.backend_contract('http://local')
+    payloads['/api/automation/viral-cc/long-strategy']['version']=2
     payloads['/api/tiktok/config']['duplicate_guard_version']=1
     with pytest.raises(RuntimeError,match='guard is stale'):deploy.backend_contract('http://local')
 

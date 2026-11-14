@@ -1,0 +1,10 @@
+{
+  "verified": true,
+  "verified_at": 1794570378.0067484,
+  "backend_release": "82149bd6cbbfe3873976beea47ac4383d519265c728cc21ee6c4cd393dcb8369",
+  "terminal_output_cleanup": {
+    "enabled": true,
+    "max_recovery_attempts": 3,
+    "recent": []
+  }
+}

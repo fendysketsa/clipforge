@@ -875,6 +875,26 @@ provider quotas.
 
 ## NVIDIA GPU Deployment
 
+Perintah baku deployment proyek ini tetap:
+
+```bash
+sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot
+```
+
+Perubahan cron Long, profil tema RYUUNDY, dan audit alur ikut di-build ke image
+backend yang juga dipakai telegram-bot. Startup memverifikasi source image;
+healthcheck memeriksa strategi Long versi 2 dan tema yang diwajibkan. Tidak ada
+skrip aktivasi tambahan. Pilihan aktif/nonaktif cron/Long dan checkpoint upload
+yang sudah tersimpan tetap dipertahankan.
+
+Long dapat membahas misteri, legenda/cerita rakyat, politik dalam negeri,
+review makanan sehat, review makanan enak, dan tema RYUUNDY lainnya. Setiap
+tema memiliki peran Short dan Long tersendiri. Politik masuk melalui profil
+`domestic_politics`, terpisah dari News Hot pendek, dan hasilnya ditahan untuk
+review fakta/konteks manusia. Legenda tidak dikemas sebagai fakta sejarah;
+review makanan tidak mengarang angka gizi, harga, atau janji medis. Semua
+Long tetap memerlukan sumber berizin dan alur utuh; ribuan views adalah target.
+
 GPU access is enabled directly on the default `backend` service. After NVIDIA
 Container Toolkit has been configured once, normal rebuilds need no wrapper or
 additional Compose file:
@@ -914,27 +934,10 @@ The dependency and lifecycle behavior follows the official
 [Compose startup](https://docs.docker.com/compose/how-tos/startup-order/) and
 [lifecycle hook](https://docs.docker.com/compose/how-tos/lifecycle/) documentation.
 
-For the first-time host setup, full-stack rebuild, and GPU verification, run:
-
-```bash
-sudo bash /www/wwwroot/clipper/clipforge/scripts/gpu-compose-up.sh
-```
-
-The wrapper is idempotent: toolkit installation and the Docker daemon restart
-are skipped when the `nvidia` runtime is already registered.
-The existing `setup-nvidia-container-runtime.sh` command now forwards to this
-same full-stack GPU rebuild after configuration succeeds.
-
-To deliberately stop every active ClipForge render/upload and replace an older
-rebuild that is still waiting on the idle gate, use the scoped force mode:
-
-```bash
-sudo /www/wwwroot/clipper/clipforge/scripts/recreate-compose-up.sh --force-active
-```
-
-The force mode verifies that any lock holder is the ClipForge rebuild script
-before terminating it, cancels active API jobs when available, then recreates
-the backend, Telegram bot, and frontend without deleting persistent data.
+GPU drivers and NVIDIA Container Toolkit are host prerequisites. Once the host
+is configured, use the single standard Compose command above for every normal
+deployment. No GPU wrapper, feature activation script or separate force-mode
+command is required for application updates.
 
 ## Cron Drama China dan Korea
 

@@ -49,7 +49,7 @@ def test_both_drama_lanes_enter_rotation_and_preserve_pairing(monkeypatch,lane):
         assert req.theme_focus in DRAMA_THEME_PROFILES[lane]['queries']
         for long_form in (False,True):
             direction=api.auto_viral_format_perspective(req,long_form=long_form)
-            assert 'satu momen, satu makna' in direction
+            assert ('Konsep khusus Long' if long_form else 'satu momen, satu makna') in direction
             assert 'fiksi/dramatisasi' in direction
             assert 'jangan menebak terjemahan' in direction
             assert (req.cron_long_role if long_form else req.cron_short_role) in direction

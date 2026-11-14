@@ -1,0 +1,359 @@
+{
+  "checked_at_utc": "2026-11-13T23:59:06.291852+00:00",
+  "/api/health": {
+    "status": "ok"
+  },
+  "/api/automation/viral-cc/schedule": {
+    "cron_drama_lanes": {
+      "chinese_drama_story": "Drama China: Pilihan, Keluarga & Plot Twist"
+    },
+    "cron_upload_recovery": {
+      "last_tick_at": "2026-11-13T23:58:54.552563+00:00",
+      "queued": {
+        "youtube": 0,
+        "tiktok": 0
+      },
+      "errors": {},
+      "enabled": true
+    },
+    "tiktok_strategy_version": 3,
+    "tiktok_automatic_retry_enabled": true,
+    "tiktok_automatic_retry_limit": 3,
+    "cron_source_process_limit": 2,
+    "cron_follow_cta_adaptive": true,
+    "cron_director_effects_required": true,
+    "cron_director_effects_policy_version": 4,
+    "social_upload_serialized": true,
+    "social_upload_min_gap_seconds": 45,
+    "social_upload_failure_gap_seconds": 90,
+    "cron_requested_source_rescue_supported": true,
+    "enabled": true,
+    "interval_hours": 24.0,
+    "run_on_startup": true,
+    "once_per_boot": false,
+    "scheduler_running": true,
+    "boot_delay_minutes": 5.0,
+    "post_clip_upload_delay_minutes": 0.0,
+    "background_upload_enabled": true,
+    "paired_long_video_enabled": false,
+    "paired_long_duration": 300.0,
+    "paired_long_auto_public_enabled": false,
+    "active_run_id": null,
+    "last_run_id": "7f069fbfe2254a31a6d6edc89bce6c88",
+    "last_started_at": "2026-11-13T19:15:07.628737+00:00",
+    "last_finished_at": "2026-11-13T20:46:05.805501+00:00",
+    "next_run_at": "2026-11-14T00:01:00+00:00",
+    "news_hot_enabled": true,
+    "news_hot_daily_limit": 3,
+    "news_hot_daily_reserved": 3,
+    "news_hot_playlist": "News",
+    "news_hot_review_required": true,
+    "message": "Antrean jadwal dan cadangan Private penuh; cron menunggu kapasitas setelah publikasi berikutnya. News Hot: 3/3 slot harian WIB; playlist News, review sebelum upload."
+  },
+  "/api/automation/viral-cc/long-production": {
+    "enabled": true,
+    "daily_target": 1,
+    "attempts": [
+      {
+        "day": "2026-11-13",
+        "short_job_id": "c19efa03f597447982ca6b31b69aa43c",
+        "job_id": "74a52b6c25ef45fba32d4ab83279ae09",
+        "source_run_id": "300f5dfd2f7a4cc5ac400c4d5829bd3d",
+        "status": "failed",
+        "review_required": true,
+        "error": "clipper.py exited with code 1 Workspace dan seluruh file sementara proses gagal telah dihapus."
+      },
+      {
+        "day": "2026-11-13",
+        "short_job_id": "bf6c2c5e46564cc1bf14104066956158",
+        "job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+        "source_run_id": "205e2e10b4174889afd615470a207097",
+        "status": "completed",
+        "review_required": true,
+        "qc_decision": "DROP_SOURCE",
+        "error": null
+      },
+      {
+        "day": "2026-11-13",
+        "short_job_id": "e4958d6247d347a082628eb2fc0f6eb5",
+        "job_id": "85fde21850f548b4af607f99edca5db5",
+        "source_run_id": "c62e66976f094d4aaa69f28a029fdd2a",
+        "status": "completed",
+        "review_required": true,
+        "confirmed_upload_id": "2f546df2dfe545559f12fdd4fd1fc2eb",
+        "confirmed_video_url": "https://www.youtube.com/watch?v=2PRl4z8aSx4",
+        "error": null
+      },
+      {
+        "day": "2026-11-14",
+        "short_job_id": "15f9a0c62993427b92f62a59ae9db422",
+        "job_id": "7e45d9158017488d95de6f8525dd0be9",
+        "source_run_id": "302091f427bf442d95e2de9f07ca6ba2",
+        "status": "completed",
+        "review_required": true,
+        "error": null,
+        "relevance": {
+          "passed": true,
+          "same_source": true,
+          "source_url": "https://www.youtube.com/watch?v=TXSEO8RDy8c",
+          "required_short_count": 1,
+          "matched_short_count": 1,
+          "matches": [
+            {
+              "short_index": 1,
+              "long_part_index": 6,
+              "source_overlap_seconds": 37.139,
+              "short_coverage": 1.0,
+              "passed": true
+            }
+          ]
+        },
+        "qc_decision": "DROP_SOURCE",
+        "disposition": "deleted_terminal_output",
+        "cleanup_reason": "long_qc_drop_source",
+        "cleaned_at": "2026-11-13T17:41:12.893386+00:00"
+      },
+      {
+        "day": "2026-11-14",
+        "short_job_id": "65fab5f51186406ba23a904189474ccf",
+        "job_id": "b2ab97d636e04518b47c76f402a52227",
+        "source_run_id": "5fcacd0612834e5d8623949bfe994038",
+        "status": "completed",
+        "review_required": true,
+        "error": null,
+        "relevance": {
+          "passed": true,
+          "same_source": true,
+          "source_url": "https://www.youtube.com/watch?v=dehO9QA4p7A",
+          "required_short_count": 1,
+          "matched_short_count": 1,
+          "matches": [
+            {
+              "short_index": 1,
+              "long_part_index": 4,
+              "source_overlap_seconds": 36.9,
+              "short_coverage": 0.9483,
+              "passed": true
+            }
+          ]
+        },
+        "qc_decision": "DROP_SOURCE",
+        "disposition": "deleted_terminal_output",
+        "cleanup_reason": "long_qc_drop_source",
+        "cleaned_at": "2026-11-13T18:58:00.409671+00:00"
+      },
+      {
+        "day": "2026-11-14",
+        "short_job_id": "f73d7456928946a79f2b8b7a40667cd6",
+        "job_id": "9829ef7a3b9b40c9b6e33b06c659c59b",
+        "source_run_id": "60766fa97da14461ba0c410389f5c120",
+        "status": "completed",
+        "review_required": true,
+        "error": null,
+        "relevance": {
+          "passed": true,
+          "same_source": true,
+          "source_url": "https://www.youtube.com/watch?v=wQGhRLkgaqE",
+          "required_short_count": 1,
+          "matched_short_count": 1,
+          "matches": [
+            {
+              "short_index": 1,
+              "long_part_index": 2,
+              "source_overlap_seconds": 26.06,
+              "short_coverage": 1.0,
+              "passed": true
+            }
+          ]
+        },
+        "qc_decision": "DROP_SOURCE",
+        "disposition": "deleted_terminal_output",
+        "cleanup_reason": "long_qc_drop_source",
+        "cleaned_at": "2026-11-13T20:10:39.549532+00:00"
+      }
+    ],
+    "auto_qc_enabled": true,
+    "auto_qc_private_upload": true,
+    "auto_qc_tiktok_upload": true,
+    "active_jobs": [],
+    "qc_vision_configured": true,
+    "tiktok_qc_upload_supported": true,
+    "long_strategy": {
+      "version": 2,
+      "scope": "new_cron_long_jobs",
+      "target_views": 1000,
+      "minimum_source_views": 1000,
+      "minimum_source_seconds": 300,
+      "minimum_output_seconds": 180,
+      "minimum_new_material_fraction": 0.6,
+      "semantic_story_review_required": true,
+      "future_views_guaranteed": false,
+      "editorial_brief": "Konsep khusus Long: satu pertanyaan atau perjalanan tokoh dengan konteks, perkembangan, bukti/konsekuensi, dan jawaban tuntas. Penonton harus mendapat informasi baru sepanjang video. Dalam 30 detik awal jelaskan masalah dan alasan mengikuti cerita; teaser singkat tidak boleh membocorkan seluruh jawaban. Pertahankan hubungan sebab-akibat dan akhir sumber. Short hanya satu momen; Long harus memberi penjelasan dan perkembangan yang belum ada di Short. Pilih durasi sesuai bahan, buang pengulangan, salam panjang, dan filler; jangan memanjangkan Short demi lima menit. Judul dan thumbnail harus cocok dengan isi pembuka dan jawaban. Untuk game/fiksi ikuti tujuan, pilihan, akibat dan penyelesaian tokoh; untuk pengetahuan ikuti pertanyaan, penjelasan, contoh/bukti dan simpulan. Caption stabil, visual mengikuti kejadian. Misteri boleh berakhir dengan batas pengetahuan yang jelas; jangan mengarang penyelesaian. Legenda diberi atribusi sebagai cerita rakyat. Politik membedakan fakta, opini dan tuduhan serta memerlukan review manusia. Review makanan membedakan pengalaman rasa dengan fakta bahan/gizi; jangan menjanjikan manfaat medis atau mengarang harga dan angka nutrisi. Target eksperimen 1000+ views, bukan jaminan. Ukur CTR, retensi 30 detik, durasi tonton rata-rata dan bagian penonton keluar setelah publikasi; bandingkan hanya Long bertopik dan usia setara.",
+      "themes": [
+        {
+          "key": "legend_folklore",
+          "label": "Legenda, Cerita Rakyat & Asal-Usul Nusantara",
+          "manual_review_required": false
+        },
+        {
+          "key": "domestic_politics",
+          "label": "Politik Dalam Negeri, Kronologi & Dampak Kebijakan",
+          "manual_review_required": true
+        },
+        {
+          "key": "food_healthy_review",
+          "label": "Review Makanan Sehat & Pilihan Menu",
+          "manual_review_required": false
+        },
+        {
+          "key": "food_taste_review",
+          "label": "Review Makanan Enak & Cerita Kuliner",
+          "manual_review_required": false
+        },
+        {
+          "key": "chinese_drama_story",
+          "label": "Drama China: Pilihan, Keluarga & Plot Twist",
+          "manual_review_required": false
+        },
+        {
+          "key": "korean_drama_story",
+          "label": "Drama Korea: Hubungan, Konsekuensi & Pelajaran Hidup",
+          "manual_review_required": false
+        },
+        {
+          "key": "love_betrayal",
+          "label": "Cinta, Pengkhianatan & Sakit Hati",
+          "manual_review_required": false
+        },
+        {
+          "key": "family_conflict",
+          "label": "Konflik Keluarga & Rumah Tangga",
+          "manual_review_required": false
+        },
+        {
+          "key": "friendship_twist",
+          "label": "Persahabatan, Kepercayaan & Plot Twist",
+          "manual_review_required": false
+        },
+        {
+          "key": "life_comeback",
+          "label": "Jatuh, Bangkit & Pelajaran Hidup",
+          "manual_review_required": false
+        },
+        {
+          "key": "mystery_story",
+          "label": "Misteri & Kisah Tak Terduga",
+          "manual_review_required": false
+        },
+        {
+          "key": "humor_interlude",
+          "label": "Jeda Humor Kehidupan",
+          "manual_review_required": false
+        },
+        {
+          "key": "gaming_story",
+          "label": "Game, Mabar & Cerita Pemain",
+          "manual_review_required": false
+        },
+        {
+          "key": "famous_game_reaction",
+          "label": "Reaction Game Populer, Gagal Lucu & Comeback",
+          "manual_review_required": false
+        },
+        {
+          "key": "quirky_animation",
+          "label": "Kartun Nyeleneh, Animasi Absurd & Plot Twist",
+          "manual_review_required": false
+        },
+        {
+          "key": "reaction_clip_story",
+          "label": "Clip Lucu, Reaction Natural & Cerita Singkat",
+          "manual_review_required": false
+        },
+        {
+          "key": "islamic_animation_kids",
+          "label": "Animasi Islami Anak & Keluarga",
+          "manual_review_required": false
+        },
+        {
+          "key": "islamic_animation_general",
+          "label": "Animasi Kisah Islami Umum & Dewasa",
+          "manual_review_required": false
+        },
+        {
+          "key": "podcast_conversation",
+          "label": "Podcast, Wawancara & Cerita Narasumber",
+          "manual_review_required": false
+        },
+        {
+          "key": "football_story",
+          "label": "Bola, Rivalitas & Cerita Pertandingan",
+          "manual_review_required": false
+        },
+        {
+          "key": "history_geography_nusantara",
+          "label": "Sejarah, Geografi & Budaya Nusantara",
+          "manual_review_required": false
+        },
+        {
+          "key": "faith_life",
+          "label": "Iman, Hijrah & Ujian Hidup",
+          "manual_review_required": false
+        },
+        {
+          "key": "lecture_wisdom",
+          "label": "Ceramah, Kajian & Tanya Jawab Kehidupan",
+          "manual_review_required": false
+        }
+      ]
+    },
+    "manual_review_holds": []
+  },
+  "/api/jobs": [],
+  "/api/youtube/uploads": {
+    "active": [],
+    "recent": [
+      {
+        "id": "43b97d7a980049819d5c842b91875541",
+        "status": "completed",
+        "updated_at": "2026-11-13T23:59:01.878182+00:00",
+        "title": "Mau Sewa Tempat Pak Rudi? 800 Ribu Bulan, Listrik dan Air Sertain #Shorts",
+        "error": null,
+        "upload_confirmed": true
+      },
+      {
+        "id": "2b5903ef4f004b62a3b133b4dde04993",
+        "status": "completed",
+        "updated_at": "2026-11-13T23:59:01.612538+00:00",
+        "title": "Godzilla Plush Still Sleeping in Front of House? #Shorts",
+        "error": null,
+        "upload_confirmed": true
+      }
+    ]
+  },
+  "/api/tiktok/uploads": {
+    "active": [],
+    "recent": [
+      {
+        "id": "845c4514768e49909898a3d5dc20ae7f",
+        "status": "completed",
+        "updated_at": "2026-11-13T23:50:19.919815+00:00",
+        "title": null,
+        "error": null,
+        "upload_confirmed": true
+      },
+      {
+        "id": "864d5a3c9580443b9ef454478511a587",
+        "status": "completed",
+        "updated_at": "2026-11-13T23:22:49.845128+00:00",
+        "title": null,
+        "error": null,
+        "upload_confirmed": true
+      }
+    ]
+  },
+  "/api/automation/viral-cc/long-strategy": {
+    "version": 2,
+    "semantic_story_review_required": true
+  }
+}

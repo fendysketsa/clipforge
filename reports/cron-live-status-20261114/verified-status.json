@@ -1,0 +1,117 @@
+{
+  "checked_at_wib": "2026-11-14T06:59:56.029442+07:00",
+  "youtube_capacity": {
+    "cron_private_buffer_count": 5,
+    "cron_private_buffer_limit": 5,
+    "scheduled_backlog_count": 11,
+    "scheduled_backlog_limit": 11,
+    "short_publish_slots": [
+      "07:00",
+      "09:15",
+      "11:30",
+      "13:45",
+      "16:00",
+      "18:15",
+      "20:30"
+    ],
+    "public_daily_limit": 7,
+    "active_upload_id": null
+  },
+  "long": {
+    "enabled": true,
+    "daily_target": 1,
+    "attempt_count_today": 3,
+    "active_jobs": [],
+    "strategy_version": 2,
+    "attempts": [
+      {
+        "job_id": "7e45d9158017488d95de6f8525dd0be9",
+        "status": "completed",
+        "qc_decision": "DROP_SOURCE",
+        "disposition": "deleted_terminal_output"
+      },
+      {
+        "job_id": "b2ab97d636e04518b47c76f402a52227",
+        "status": "completed",
+        "qc_decision": "DROP_SOURCE",
+        "disposition": "deleted_terminal_output"
+      },
+      {
+        "job_id": "9829ef7a3b9b40c9b6e33b06c659c59b",
+        "status": "completed",
+        "qc_decision": "DROP_SOURCE",
+        "disposition": "deleted_terminal_output"
+      }
+    ],
+    "qc_reasons": [
+      {
+        "job_id": "9829ef7a3b9b40c9b6e33b06c659c59b",
+        "stage": "local_audio",
+        "decision": "DROP_SOURCE",
+        "evidence": [
+          "Rendered audio does not sufficiently match timed captions at output 283.006-289.006s"
+        ]
+      },
+      {
+        "job_id": "7e45d9158017488d95de6f8525dd0be9",
+        "stage": "vision_review",
+        "decision": "DROP_SOURCE",
+        "evidence": [
+          "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+        ]
+      },
+      {
+        "job_id": "b2ab97d636e04518b47c76f402a52227",
+        "stage": "vision_review",
+        "decision": "DROP_SOURCE",
+        "evidence": [
+          "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+        ]
+      }
+    ]
+  },
+  "schedule": {
+    "enabled": true,
+    "scheduler_running": true,
+    "active_run_id": null,
+    "next_run_at": "2026-11-14T00:01:00+00:00",
+    "message": "Antrean jadwal dan cadangan Private penuh; cron menunggu kapasitas setelah publikasi berikutnya. News Hot: 3/3 slot harian WIB; playlist News, review sebelum upload.",
+    "cron_upload_recovery": {
+      "last_tick_at": "2026-11-13T23:59:54.601709+00:00",
+      "queued": {
+        "youtube": 0,
+        "tiktok": 0
+      },
+      "errors": {},
+      "enabled": true
+    },
+    "next_run_wib": "2026-11-14T07:01:00+07:00"
+  },
+  "next_scheduled": [
+    {
+      "id": "4b266fd23e5a45fbbff6192b7f113590",
+      "title": "Misteri Hilangnya Baby Celin yang Bikin Kak Yuta Panik #Shorts",
+      "publish_at": "2026-11-14T00:00:00+00:00",
+      "visibility": "public",
+      "status": "completed",
+      "upload_confirmed": true
+    },
+    {
+      "id": "bb1bb66d100c4289ac473ccf613ccd61",
+      "title": "Pasal 7a DPR: BUKAN KETERPENUHAN SYARAT PENCALONAN #Shorts",
+      "publish_at": "2026-11-14T02:15:00+00:00",
+      "visibility": "public",
+      "status": "completed",
+      "upload_confirmed": true
+    },
+    {
+      "id": "4c5505f6ae764c3698e68cd59607c2d6",
+      "title": "Toko Kentang Goreng Tutup, Kita Buka Jadi Restoran Mewah #Shorts",
+      "publish_at": "2026-11-14T04:30:00+00:00",
+      "visibility": "public",
+      "status": "completed",
+      "upload_confirmed": true
+    }
+  ],
+  "active_clip_jobs": []
+}

@@ -65,6 +65,14 @@ def test_real_media_audit_uses_opening_ending_and_thumbnail(media):
     assert calls[0][0]["audio_mean_db"] < 0
 
 
+def test_cron_long_cannot_reuse_media_without_its_story_evidence(media):
+    c = {**context(), "cron_long_strategy_required": True}
+    def forbidden(*args): pytest.fail("A media review cannot replace missing Long story evidence")
+    result = qc.audit_long(media, c, reviewer=forbidden)
+    assert result["audit"]["decision"] == "DROP_SOURCE"
+    assert not result["audit"]["upload_allowed"]
+
+
 @pytest.mark.parametrize("failure", ["rights", "claim", "source", "context", "render", "hash"])
 def test_hard_failure_never_calls_ai(media, failure):
     c = context()

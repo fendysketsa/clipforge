@@ -1,0 +1,11 @@
+{
+  "standard_command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+  "deployment_attempt": "not_run: sudo requires password",
+  "checked_on": "2026-11-14",
+  "health": {
+    "status": "ok"
+  },
+  "long_strategy": {
+    "http_status": 404
+  }
+}
