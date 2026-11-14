@@ -1,0 +1,129 @@
+{
+  "before": [
+    {
+      "id": "1c415b951501449ba25d6203b9fa2f08",
+      "status": "failed",
+      "source_title": "ATUN & MOMON KEKAR DI USIR DARI WARGA BUMI GENDUT KE LUAR ANGKASA !! Feat @sapipurba Minecraft",
+      "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus.",
+      "director_recovery": {
+        "schema_version": 1,
+        "genre": "gaming",
+        "recipes": [
+          "action_reaction",
+          "goal_obstacle_outcome",
+          "setup_reveal"
+        ],
+        "attempted": true,
+        "outcome": "source_replaced",
+        "summary": "Alur sumber ini belum layak. Sumber alternatif sudah masuk pipeline.",
+        "reason": "no_grounded_complete_story",
+        "selected": [],
+        "next_job_id": "ba6dd393e44e4f3f9fcd9049329e1b02",
+        "next_source_title": "ATUN & MOMON SEMBUNYI DI BAWAH RANJANG DARI MONSTER CAT IN THE HAT !! Feat @sapipurba Minecraft"
+      },
+      "campaign_checkpoints": [
+        {
+          "run_id": "fbf51146902b495fb37fe097c734caa3",
+          "run_status": "completed",
+          "job_id": "1c415b951501449ba25d6203b9fa2f08",
+          "job_status": "failed",
+          "status": "failed",
+          "clip_count": 0,
+          "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus.",
+          "selection_rejected_at": "2026-11-14T07:52:10.752302+00:00"
+        }
+      ]
+    },
+    {
+      "id": "1401a4ab3b1142ab8092dcbc80ee6842",
+      "status": "failed",
+      "source_title": "ASAP & BANJIR MENYERANG!! || TRIO REMPONG || SAKURA SCHOOL SIMULATOR",
+      "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus.",
+      "director_recovery": {
+        "schema_version": 1,
+        "genre": "story",
+        "recipes": [
+          "cause_effect",
+          "problem_solution",
+          "setup_reveal"
+        ],
+        "attempted": true,
+        "outcome": "source_replaced",
+        "summary": "Alur sumber ini belum layak. Sumber alternatif sudah masuk pipeline.",
+        "reason": "no_grounded_complete_story",
+        "selected": [],
+        "next_job_id": "b72334f696c94d19b4606549e7e74808",
+        "next_source_title": "Yuta, Mio Dan Baby Celine Menggambar Avatar Masing Masing || ROBLOX"
+      },
+      "campaign_checkpoints": [
+        {
+          "run_id": "2e5eb7bda2654d919b19d039393cadb8",
+          "run_status": "completed",
+          "job_id": "1401a4ab3b1142ab8092dcbc80ee6842",
+          "job_status": "failed",
+          "status": "failed",
+          "clip_count": 0,
+          "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus.",
+          "selection_rejected_at": "2026-11-14T05:40:22.158718+00:00"
+        }
+      ]
+    },
+    {
+      "id": "acf1b4896a5c46d0aecefc6bece769f2",
+      "status": "failed",
+      "source_title": "ATUN PRANK MOMON JADI TELUR GODZILLA DI ONE CHUNK !! Feat @sapipurba Minecraft",
+      "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus.",
+      "director_recovery": {
+        "schema_version": 1,
+        "genre": "gaming",
+        "recipes": [
+          "action_reaction",
+          "goal_obstacle_outcome",
+          "setup_reveal"
+        ],
+        "attempted": true,
+        "outcome": "replace_source",
+        "summary": "Sudut editorial alternatif belum menemukan alur utuh; beralih ke sumber lain dengan brief cerita yang lebih jelas.",
+        "reason": "no_grounded_complete_story",
+        "selected": []
+      },
+      "campaign_checkpoints": [
+        {
+          "job_id": "acf1b4896a5c46d0aecefc6bece769f2",
+          "job_status": "failed",
+          "status": "failed",
+          "clip_count": 0,
+          "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus.",
+          "selection_rejected_at": "2026-11-14T08:26:03.103740+00:00"
+        }
+      ]
+    }
+  ],
+  "deleted": [
+    {
+      "id": "1c415b951501449ba25d6203b9fa2f08",
+      "response": {
+        "status": "ok",
+        "removed_jobs": 1,
+        "removed_outputs": 0
+      }
+    },
+    {
+      "id": "1401a4ab3b1142ab8092dcbc80ee6842",
+      "response": {
+        "status": "ok",
+        "removed_jobs": 1,
+        "removed_outputs": 0
+      }
+    },
+    {
+      "id": "acf1b4896a5c46d0aecefc6bece769f2",
+      "response": {
+        "status": "ok",
+        "removed_jobs": 1,
+        "removed_outputs": 0
+      }
+    }
+  ],
+  "after": []
+}

@@ -19753,6 +19753,65 @@ SHORT_SELECTION_REJECTION_PREFIX = (
 )
 
 
+def cleanup_rejected_source_jobs_once() -> int:
+    """Remove exhausted cron selections after their failure checkpoint is durable.
+
+    Selection has already tried boundary repair and the grounded director.
+    Campaign evidence retains the error, source identity and rejection cooldown.
+    A worker's caller must read its result before this sweep removes the card.
+    """
+    with auto_viral_lock:
+        checkpoints = [(run.trigger, dict(item)) for run in auto_viral_runs.values()
+                       for item in run.processed]
+    rejected_ids = {
+        str(item["job_id"]) for trigger, item in checkpoints
+        if trigger == "schedule" and item.get("job_id") and item.get("status") == "failed"
+        and item.get("job_status") == "failed" and item.get("clip_count") == 0
+        and str(item.get("error") or "").startswith(SHORT_SELECTION_REJECTION_PREFIX)
+    }
+    # A second checkpoint still consuming the result vetoes deletion.
+    rejected_ids -= {
+        str(item["job_id"]) for _trigger, item in checkpoints if item.get("job_id")
+        and (item.get("status") != "failed" or item.get("job_status") != "failed")
+    }
+    removed = 0
+    with youtube_upload_creation_lock, tiktok_upload_creation_lock:
+        with youtube_uploads_lock:
+            upload_job_ids = {row.source_job_id for row in youtube_uploads.values()}
+        with tiktok_uploads_lock:
+            upload_job_ids.update(row.source_job_id for row in tiktok_uploads.values())
+        with process_lock, jobs_lock:
+            for job_id in rejected_ids - upload_job_ids:
+                job = jobs.get(job_id)
+                if (job is None or job.status != "failed" or job.clips or job.candidates
+                        or job_id in job_processes or job.request.review_only
+                        or job.request.publication_review_required
+                        or not str(job.error or "").startswith(SHORT_SELECTION_REJECTION_PREFIX)
+                        or (OUTPUTS_DIR / job_id).exists()
+                        or any(child.status in {"queued", "running"}
+                               and (child.source_recovery_parent_job_id == job_id
+                                    or child.repair_source_job_id == job_id)
+                               for child in jobs.values())):
+                    continue
+                # The failed workspace must already be gone: partial renders,
+                # uploads and holds belong to their existing recovery paths.
+                jobs.pop(job_id)
+                job_secrets.pop(job_id, None)
+                cancelled_job_ids.discard(job_id)
+                removed += 1
+            if removed:
+                save_jobs_unlocked()
+    return removed
+
+
+@app.on_event("startup")
+def cleanup_rejected_source_jobs_on_startup() -> None:
+    try:
+        cleanup_rejected_source_jobs_once()
+    except OSError as exc:
+        print(f"Pembersihan kartu gagal ditunda: {type(exc).__name__}", flush=True)
+
+
 def recently_rejected_scheduled_source_urls(now: datetime | None = None) -> set[str]:
     """Avoid repeating a completed, unsuccessful selection scan for one day.
 
@@ -23732,14 +23791,18 @@ def run_auto_viral_campaign(run_id: str) -> None:
                     if director_replacement_request(run_request, item) is not None:
                         weak_story_item = item
                 append_auto_viral_error(run_id, f"{source.get('title')}: {exc}")
+                exhausted_selection = (
+                    run.trigger == "schedule" and item.get("job_status") == "failed"
+                    and item.get("clip_count") == 0
+                    and item["error"].startswith(SHORT_SELECTION_REJECTION_PREFIX)
+                )
                 item["cleanup"] = (
-                    "Card gagal dipertahankan agar error dapat diperiksa; "
-                    "hapus manual setelah penyebabnya selesai ditangani"
+                    "Seleksi dan perbaikan otomatis habis; kartu tanpa hasil dibersihkan "
+                    "setelah checkpoint tersimpan. Bukti penolakan sumber tetap disimpan."
+                    if exhausted_selection else
+                    "Job ditahan untuk diagnosis atau pemulihan otomatis."
                 )
-                append_auto_viral_log(
-                    run_id,
-                    "Job gagal dipertahankan di Riwayat; cron tidak menyembunyikan error dengan cleanup otomatis.",
-                )
+                append_auto_viral_log(run_id, item["cleanup"])
             if not item_checkpointed:
                 processed.append(item)
             update_auto_viral_run(
@@ -23749,6 +23812,10 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 progress_total=run_request.video_count,
                 message=f"{completed_count}/{run_request.video_count} video sukses",
             )
+            try:
+                cleanup_rejected_source_jobs_once()
+            except OSError as exc:
+                append_auto_viral_log(run_id, f"Pembersihan kartu gagal ditunda: {type(exc).__name__}")
             if (run.trigger == 'schedule' and source_index == len(sources)
                     and completed_count < run_request.video_count and weak_story_item
                     and not director_discovery_used):
@@ -25671,6 +25738,7 @@ def auto_viral_scheduler_loop() -> None:
                     auto_viral_scheduler_health.update(last_tick_at=now.isoformat(), phase="checking")
                 queue_scheduled_upload_recoveries_once()
                 reconcile_stalled_scheduled_upload_runs(now)
+                cleanup_rejected_source_jobs_once()
                 try:
                     queue_youtube_private_buffer_promotions_once()
                     reconcile_youtube_short_dates_once()

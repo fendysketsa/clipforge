@@ -289,6 +289,9 @@ def test_campaign_adds_at_most_one_directed_replacement_and_does_not_restart_old
     assert created==([URL] if previously_attempted else [URL,OTHER])
     assert api.auto_viral_runs[run.id].status=='failed'
     assert len(api.auto_viral_runs[run.id].processed)==len(created)
+    assert not any(key.startswith('job-') for key in api.jobs)
+    assert all(row['error'].startswith(api.SHORT_SELECTION_REJECTION_PREFIX)
+        for row in api.auto_viral_runs[run.id].processed)
     assert api.AutoViralRun.model_validate_json(api.auto_viral_runs[run.id].model_dump_json()).director_source_search_attempted
     assert roles[0]==''
     if not previously_attempted:assert 'Sudut pengganti' in roles[1]

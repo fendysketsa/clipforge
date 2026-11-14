@@ -1,0 +1,18 @@
+{
+  "backend_health": {
+    "status": "ok"
+  },
+  "remaining_jobs": [],
+  "scheduler": {
+    "enabled": true,
+    "scheduler_running": true,
+    "active_run_id": null
+  },
+  "frontend_http_status": 200,
+  "backend_deployment_check": "HTTPError",
+  "deployment_attempt": {
+    "command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+    "activated": false,
+    "error": "sudo: a password is required"
+  }
+}
