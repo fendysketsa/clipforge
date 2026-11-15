@@ -1,0 +1,63 @@
+.fbWorkspace { display: grid; gap: 22px; min-width: 0; }
+.fbIntro { display: flex; align-items: center; justify-content: space-between; gap: 22px; padding: 24px 26px; border-radius: var(--radius-lg); background: var(--info-soft); }
+.fbEyebrow { display: flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 650; letter-spacing: .08em; color: var(--info); }
+.fbIntro h2 { margin: 10px 0 7px; font-size: 27px; line-height: 1.25; font-weight: 550; letter-spacing: -.8px; }
+.fbIntro p, .fbRecipe span { margin: 0; color: var(--text-secondary); font-size: 12px; }
+.fbRecipe { display: flex; flex-direction: column; gap: 7px; }
+.fbRecipe strong { font-size: 14px; font-weight: 550; }
+.fbConnection small { display: block; color: var(--text-secondary); font-size: 11px; margin-top: 10px; }
+.fbLogo { color: var(--info); background: var(--info-soft); }
+.fbColumns { display: grid; grid-template-columns: minmax(290px, .72fr) minmax(0, 1.4fr); gap: 22px; align-items: start; }
+.fbComposer { display: grid; gap: 17px; padding: 22px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); min-width: 0; }
+.fbComposer > header, .fbResultsHeading { display: flex; align-items: center; gap: 10px; }
+.fbComposer h2, .fbResults h2 { font-size: 16px; font-weight: 600; margin: 0; }
+.fbWorkspace label { display: grid; gap: 8px; color: var(--text-secondary); font-size: 12px; min-width: 0; }
+.fbWorkspace :is(input:not([type=checkbox]):not([type=file]), select, textarea) { width: 100%; min-width: 0; min-height: 42px; padding: 10px 11px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary); background: var(--input-bg); font-size: 12px; }
+.fbWorkspace textarea { resize: vertical; line-height: 1.6; }
+.fbWorkspace select { text-overflow: ellipsis; }
+.fbFormPair { display: grid; grid-template-columns: minmax(0,1fr) minmax(95px,.55fr); gap: 12px; }
+.fbOptional, .fbHint { color: var(--text-muted); font-size: 11px; line-height: 1.7; }
+.fbHint { margin: 0; }
+.fbFile { position: relative; display: flex !important; align-items: center; justify-content: center; min-height: 80px; border: 1px dashed var(--border-strong); border-radius: 10px; cursor: pointer; padding: 12px; overflow-wrap: anywhere; }
+.fbFile input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+.fbFile:focus-within { outline: 2px solid var(--primary); outline-offset: 3px; }
+.fbWorkspace .fbCheck { display: flex; align-items: flex-start; gap: 9px; font-size: 11px; line-height: 1.6; }
+.fbCheck input { margin: 3px 0 0; width: 17px; height: 17px; flex: 0 0 17px; accent-color: var(--primary); }
+.fbSubmit { width: 100%; min-height: 44px; justify-content: center; }
+.fbResults { display: grid; gap: 16px; min-width: 0; }
+.fbResultsHeading { justify-content: space-between; min-height: 48px; }
+.fbResultsHeading p { margin: 5px 0 0; color: var(--text-muted); font-size: 11px; }
+.fbEmpty { padding: 64px 32px; text-align: center; color: var(--text-secondary); border: 1px dashed var(--border); border-radius: var(--radius-lg); }
+.fbEmpty > svg { color: var(--info); }
+.fbEmpty h3 { color: var(--text-primary); margin: 18px 0 12px; font-size: 19px; font-weight: 550; }
+.fbEmpty p { font-size: 12px; line-height: 1.8; max-width: 370px; margin: 0 auto 24px; }
+.fbEmpty span { font-size: 10px; color: var(--text-muted); }
+.fbProduction { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; min-width: 0; }
+.fbProduction > header { display: flex; justify-content: space-between; align-items: start; gap: 12px; padding: 19px 20px; }
+.fbProduction h3 { font-size: 14px; font-weight: 550; line-height: 1.5; margin: 6px 0 0; overflow-wrap: anywhere; }
+.fbProduction > header small { white-space: nowrap; font-size: 10px; color: var(--text-muted); }
+.fbState { font-size: 10px; color: var(--text-secondary); }
+.fbState.is-completed { color: var(--success); }
+.fbState.is-running { color: var(--info); }
+.fbState.is-failed { color: var(--danger); }
+.fbResult { display: grid; grid-template-columns: minmax(125px,.6fr) minmax(0,1fr); gap: 20px; padding: 20px; border-top: 1px solid var(--border); align-items: start; }
+.fbResult video { width: 100%; aspect-ratio: 9/16; border-radius: 9px; background: var(--media); object-fit: contain; }
+.fbResultDetail { min-width: 0; display: grid; gap: 14px; }
+.fbResultDetail h4 { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.fbCaption { margin: 0; white-space: pre-wrap; font-size: 12px; color: var(--text-secondary); line-height: 1.8; overflow-wrap: anywhere; }
+.fbActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.fbActions .uiButton { min-height: 36px; font-size: 11px; }
+.fbAudit { color: var(--text-secondary); font-size: 11px; line-height: 1.7; }
+.fbAudit strong { color: var(--warning); }
+.fbAudit p { display: flex; gap: 6px; align-items: center; color: var(--success); margin: 0; }
+.fbAudit ul { margin: 8px 0 0; padding-left: 17px; }
+.fbPost { border-top: 1px solid var(--border); padding-top: 14px; font-size: 12px; }
+.fbPost p { margin: 6px 0; color: var(--text-secondary); font-size: 11px; }
+.fbPost a { color: var(--info); }
+.fbReconcile { display: grid; gap: 10px; margin-top: 14px; }
+.fbError { color: var(--danger); background: var(--danger-soft); padding: 12px 15px; border-radius: 8px; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.fbProgress { display: grid; gap: 10px; padding: 0 20px 20px; color: var(--text-secondary); font-size: 12px; }
+.fbProgress progress { width: 100%; height: 7px; accent-color: var(--primary); }
+.fbProgress button { min-height: 32px; justify-self: start; background: none; color: var(--text-muted); border: 0; text-decoration: underline; }
+@media(max-width:1100px) { .fbColumns { grid-template-columns: minmax(0,1fr); } .fbComposer { max-width: none; } .fbResult { grid-template-columns: 200px minmax(0,1fr); } }
+@media(max-width:600px) { .fbIntro { align-items: start; flex-direction: column; padding: 20px; } .fbIntro h2 { font-size: 24px; } .fbResult { grid-template-columns: minmax(0,1fr); padding: 16px; } .fbResult video { max-width: 260px; justify-self: center; } .fbComposer { padding: 17px; } .fbFormPair { grid-template-columns: minmax(0,1fr); } .fbProduction > header { padding: 16px; } .fbEmpty { padding: 40px 20px; } }

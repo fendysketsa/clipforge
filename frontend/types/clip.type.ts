@@ -264,6 +264,8 @@ export type ClipJob = {
   error: string | null;
   telemetry?: JobTelemetry | null;
   request: {
+    target_platform?: "standard" | "facebook";
+    facebook_niche?: "tech_daily" | "digital_simple";
     publication_review_required?: boolean;
     url: string;
     source_file: string;

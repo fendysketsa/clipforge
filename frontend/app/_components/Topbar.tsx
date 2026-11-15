@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, ArrowUpRight, Clock3, Film, FolderArchive, Loader2, Plus, Power, RefreshCw, Settings2, Sparkles } from "lucide-react";
+import { Activity, ArrowUpRight, Clock3, Facebook, Film, FolderArchive, Loader2, Plus, Power, RefreshCw, Settings2, Sparkles } from "lucide-react";
 import type { AutoViralScheduleStatus } from "../../types/clip.type";
 import type { StudioView } from "../../lib/workspaceNavigation";
 import { ThemeSwitch } from "./ThemeSwitch";
@@ -14,6 +14,7 @@ type TopbarProps = {
 
 const navigation = [
   { key: "create", href: "/#quick-start-title", label: "Buat video", icon: Plus },
+  { key: "facebook", href: "/#facebook", label: "Facebook Reels", icon: Facebook },
   { key: "results", href: "/#results", label: "Hasil video", icon: Film },
   { key: "history", href: "/#history", label: "Riwayat", icon: Clock3 },
   { key: "automation", href: "/#automation", label: "Otomasi", icon: Activity },

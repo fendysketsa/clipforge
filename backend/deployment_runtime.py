@@ -128,7 +128,11 @@ def backend_contract(base: str) -> dict:
                     'food_healthy_review', 'food_taste_review'} <= themes.keys()
             or themes['domestic_politics'].get('manual_review_required') is not True):
         raise RuntimeError('Cron Long strategy or RYUUNDY theme policy is stale')
-    return {**expected, 'cron_enabled': schedule.get('enabled'),
+    facebook = get_json(base + '/api/facebook/config')
+    if (facebook.get('version') != 1 or facebook.get('max_seconds') != 55
+            or facebook.get('target_email') != 'fendysketsa@gmail.com'):
+        raise RuntimeError('Facebook workspace or duration policy is stale')
+    return {**expected, 'facebook_workspace_version': facebook['version'], 'cron_enabled': schedule.get('enabled'),
             'scheduler_running': schedule.get('scheduler_running'),
             'director_policy': 4, 'source_process_limit': 2,
             'long_strategy_version': 2, 'long_theme_count': len(themes)}

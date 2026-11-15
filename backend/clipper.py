@@ -44,6 +44,7 @@ from tiktok_strategy import build_tiktok_strategy, tiktok_caption_from_strategy
 from whisper_cache import cached_whisper_model_path
 from metadata_copy import choose_contextual_cta, contextual_engagement_copy
 from channel_branding import watermark_filter, watermark_metadata
+import facebook_strategy
 from hypit_quick import (
     hypit_prompt_body,
     is_hypit_infographic_auto_prompt,
@@ -6630,6 +6631,8 @@ def short_auto_expand_max_duration(configured_max_duration: float) -> float:
     up to 105 seconds. Use that existing safe range as an automatic fallback
     instead of asking the user to rerun the same source with a larger value.
     """
+    if os.environ.get("CLIPFORGE_FACEBOOK_NICHE"):
+        return min(55.0, float(configured_max_duration))
     return max(float(configured_max_duration), SHORT_AUTO_EXPAND_MAX_SECONDS)
 
 
@@ -8862,7 +8865,10 @@ def select_candidates(
         )
         and item.religious_context_safe
     ]
-    target_duration = 38
+    facebook_niche = os.environ.get("CLIPFORGE_FACEBOOK_NICHE", "")
+    if facebook_niche in facebook_strategy.NICHES:
+        candidates = [item for item in candidates if facebook_strategy.candidate_score(item, facebook_niche) >= 0]
+    target_duration = 30 if facebook_niche else 38
     candidates.sort(
         key=lambda item: candidate_rank_score(item, target_duration),
         reverse=True,
@@ -8883,7 +8889,9 @@ def select_candidates(
             if max_topic_similarity >= SHORT_BATCH_MAX_TOPIC_SIMILARITY:
                 continue
             diversity_bonus = 5.0 if picked and max_topic_similarity < 0.22 else 0.0
-            adjusted = candidate_rank_score(candidate, target_duration) + diversity_bonus
+            adjusted = (facebook_strategy.candidate_score(candidate, facebook_niche)
+                        if facebook_niche in facebook_strategy.NICHES
+                        else candidate_rank_score(candidate, target_duration)) + diversity_bonus
             if adjusted > best_adjusted:
                 best = candidate
                 best_adjusted = adjusted
@@ -9394,6 +9402,12 @@ AI_SYSTEM_PROMPT = (
 
 def candidate_editor_system_prompt() -> str:
     """Add the scheduler's human-editor brief without affecting manual jobs."""
+    niche = os.environ.get("CLIPFORGE_FACEBOOK_NICHE", "")
+    if niche in facebook_strategy.NICHES:
+        return (AI_SYSTEM_PROMPT + " Facebook Reels khusus: " + facebook_strategy.NICHES[niche]['brief']
+                + " Utamakan 30 detik, maksimum 55 detik. Pertahankan urutan masalah, langkah, hasil; "
+                "jangan potong demonstrasi atau peringatan. Jangan mengarang langkah tutorial. "
+                "Tidak perlu menyebut sumber, channel lain, atau menambahkan ajakan like/share/follow.")
     if not env_enabled("SHORTS_SCHEDULED_HUMAN_EDITOR_ENABLED", False):
         return AI_SYSTEM_PROMPT
     return (
@@ -15215,6 +15229,8 @@ def subtitle_cues(
     clip_duration: float,
 ) -> list[tuple[float, float, str]]:
     """Split speech into compact cues and distribute time by word count."""
+    if os.environ.get("CLIPFORGE_FACEBOOK_NICHE"):
+        return facebook_strategy.phrase_cues(segments, offset, clip_duration)
     cues: list[tuple[float, float, str]] = []
     for item in segments:
         start = max(0, item.start - offset)
@@ -15834,7 +15850,13 @@ def write_dynamic_ass(
         if caption.baseline_y is not None:
             margin_v = 1920 - max(SHORTS_SAFE_TOP+180, min(SHORTS_SAFE_BOTTOM-8, int(caption.baseline_y)))
 
-    cues = subtitle_cues(segments, offset, clip_duration)
+    facebook = bool(os.environ.get("CLIPFORGE_FACEBOOK_NICHE"))
+    cues = (facebook_strategy.phrase_cues(segments, offset, clip_duration)
+            if facebook else subtitle_cues(segments, offset, clip_duration))
+    if facebook:
+        font_size, outline = 58, 3.5
+        alignment, margin_v = 2, 430
+        primary, outline_color = _hex_to_ass_color("#FFFFFF"), _hex_to_ass_color("#10243A")
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
@@ -15852,7 +15874,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     events = [
         "Dialogue: 0,"
         f"{_ass_timestamp(start)},{_ass_timestamp(end)},Caption,,0,0,0,,"
-        f"{highlight_caption_keyword(text, accent)}"
+        f"{_ass_escape(text) if facebook else highlight_caption_keyword(text, accent)}"
         for start, end, text in cues
     ]
     path.write_text(header + "\n".join(events) + ("\n" if events else ""), encoding="utf-8")
@@ -16506,6 +16528,9 @@ def generate_social_caption(
     *,
     long_form: bool = False,
 ) -> str:
+    facebook_niche = os.environ.get("CLIPFORGE_FACEBOOK_NICHE", "")
+    if facebook_niche in facebook_strategy.NICHES:
+        return facebook_strategy.make_caption(clip, config, facebook_niche)
     if not config.enabled or not config.base_url or not config.model:
         return fallback_social_caption(clip, required_hashtags, long_form=long_form)
 
@@ -17362,6 +17387,8 @@ def export_clip(
     ) and not social_card_selected and not reaction_avatar_selected
     if cron_accents_enabled and output_format=='vertical_short':
         subscriber_cta_planned = False  # The adaptive plan owns the one permitted invitation.
+    if os.environ.get("CLIPFORGE_FACEBOOK_NICHE"):
+        subscriber_cta_planned = subscribe_pulse_planned = False
     applied_edits = list(clip.applied_edits)
     if creative_direction:
         director_label = (
@@ -19418,6 +19445,10 @@ def export_clip(
             else 1.0
         ),
     )
+    if os.environ.get("CLIPFORGE_FACEBOOK_NICHE"):
+        actual_facebook_duration = probe_media_duration_seconds(out_path)
+        if actual_facebook_duration is None or actual_facebook_duration > 55:
+            raise UserFacingError("Facebook: durasi encoded melebihi 55 detik; hasil ditahan untuk potong ulang.")
     temp_video_path.unlink(missing_ok=True)
     temp_audio_path.unlink(missing_ok=True)
     temp_cta_audio_path.unlink(missing_ok=True)
@@ -19575,6 +19606,16 @@ def export_clip(
         save_json(json_path, sidecar_payload)
 
         social_caption = generate_social_caption(clip, ai_config or AIConfig(), required_hashtags)
+        facebook_niche = os.environ.get("CLIPFORGE_FACEBOOK_NICHE", "")
+        if facebook_niche in facebook_strategy.NICHES:
+            sidecar_payload["facebook"] = {
+                "version": facebook_strategy.VERSION, "niche": facebook_niche,
+                "target_seconds": 30, "max_seconds": 55,
+                "caption_style": "stable_phrase_white_58px", "caption": social_caption,
+                "public_source_credit": False, "watermark": watermark_metadata(output_format),
+            }
+            save_json(json_path, sidecar_payload)
+            (clips_dir / f"{base_name}_facebook_caption.txt").write_text(social_caption + "\n", encoding="utf-8")
         if social_caption:
             (clips_dir / f"{base_name}_caption.txt").write_text(social_caption + "\n", encoding="utf-8")
             if output_format == "vertical_short" and isinstance(tiktok_strategy, dict):
@@ -21382,6 +21423,10 @@ def render_animated_script(
 
 def main() -> int:
     args = parse_args()
+    if os.environ.get("CLIPFORGE_FACEBOOK_NICHE"):
+        args.clip_mode = "short"
+        args.min, args.max = 25.0, min(55.0, max(26.0, args.max))
+        args.top = min(3, max(1, args.top))
 
     compilation_anchor_ranges: list[tuple[float, float]] = []
     if args.compilation_anchor_ranges:
@@ -21985,6 +22030,15 @@ def main() -> int:
             )
             return 1
 
+    facebook_niche = os.environ.get("CLIPFORGE_FACEBOOK_NICHE", "")
+    if facebook_niche in facebook_strategy.NICHES:
+        candidates = sorted(
+            [item for item in candidates if facebook_strategy.candidate_score(item, facebook_niche) >= 0],
+            key=lambda item: facebook_strategy.candidate_score(item, facebook_niche), reverse=True,
+        )[:args.top]
+        if not candidates:
+            console.print("[red]Facebook: tidak ada momen relevan dengan konteks utuh dalam 20–55 detik.[/red]")
+            return 1
     save_json(work_dir / f"candidates{cache_suffix}.json", [asdict(item) for item in candidates])
     print_candidates(candidates)
 

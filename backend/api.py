@@ -500,6 +500,9 @@ def youtube_public_min_gap_hours() -> float:
 
 
 class ClipJobRequest(BaseModel):
+    target_platform: Literal["standard", "facebook"] = "standard"
+    facebook_niche: Literal["tech_daily", "digital_simple"] = "tech_daily"
+    facebook_source_rights: Literal["", "owned", "permission_no_credit"] = ""
     cron_daily_lane: Literal["", "scheduled_short", "private_short", "long"] = ""
     cron_production_day: str = ""
     paired_short_job_id: str = ""
@@ -614,7 +617,19 @@ class ClipJobRequest(BaseModel):
 
     @model_validator(mode="after")
     def _apply_channel_recovery_profile(self) -> "ClipJobRequest":
-        if youtube_channel_recovery_mode() and self.clip_mode == "short":
+        if self.target_platform == "facebook":
+            self.clip_mode = "short"
+            self.min_duration = 25
+            self.max_duration = min(55, max(26, self.max_duration))
+            self.top = min(3, self.top or 1)
+            self.auto_upload_youtube = False
+            self.slow_motion_no_voice = False
+            self.burn_subtitles = True
+            self.caption_font = "DejaVu Sans"
+            self.enhanced_edit = True
+            self.auto_blur_watermarks = False
+            self.background_mode = "keep"
+        elif youtube_channel_recovery_mode() and self.clip_mode == "short":
             recovery_max = youtube_recovery_short_max_seconds()
             self.max_duration = min(self.max_duration, recovery_max)
             if self.min_duration >= self.max_duration:
@@ -7006,6 +7021,8 @@ def audited_score_floor_short_for_automatic_upload(
 
 def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | None:
     """Return a hard block or a review hold before the Private upload stage."""
+    if job.request.target_platform == "facebook":
+        return "Hasil ini khusus Facebook; gunakan ruang Facebook Reels."
     long_hold = long_upload_review_hold(job, clip)
     if long_hold:
         return long_hold
@@ -8570,7 +8587,7 @@ def best_automatic_upload_clip_urls(
     require_numeric_fyp_score: bool = False,
 ) -> list[str]:
     """Return every actually uploadable clip, including a single good result."""
-    if job.request.publication_review_required:
+    if job.request.publication_review_required or job.request.target_platform == "facebook":
         return []
     clips_by_url = {clip.url: clip for clip in job.clips}
     return [
@@ -12558,7 +12575,7 @@ def social_upload_cooldown_remaining(now: datetime | None = None) -> float:
         rows = list(youtube_uploads.values())
     with tiktok_uploads_lock:
         rows += list(tiktok_uploads.values())
-    remaining = 0.0
+    remaining = facebook_upload_cooldown(current) if 'facebook_upload_cooldown' in globals() else 0.0
     for row in rows:
         if row.dry_run or not row.started_at or row.status not in {'completed', 'failed'}:
             continue
@@ -14363,6 +14380,7 @@ def queue_completed_job_uploads_once() -> dict[str, int]:
                 for item in jobs.values()
                 if item.status == "completed"
                 and item.clips
+                and item.request.target_platform != "facebook"
                 and not item.request.publication_review_required
                 and item.id not in managed_auto_viral_job_ids
             ),
@@ -15870,6 +15888,11 @@ def clipper_worker_environment(request: ClipJobRequest) -> dict[str, str]:
     job running beside it.
     """
     environment = os.environ.copy()
+    environment.pop("CLIPFORGE_FACEBOOK_NICHE", None)
+    if request.target_platform == "facebook":
+        environment["CLIPFORGE_FACEBOOK_NICHE"] = request.facebook_niche
+        environment["SHORTS_BACKGROUND_MUSIC_ENABLED"] = "false"
+        environment["SHORTS_ALLOW_THIRD_PARTY_MUSIC"] = "false"
     if request.clip_mode == "long_animate" and not is_hypit_quick_prompt(
         request.script_text
     ):
@@ -28064,6 +28087,8 @@ def repair_job_clip_context(job_id: str, repair: ClipRepairRequest) -> ClipJob:
 
 
 def delete_job_clips_by_url(job_id: str, clip_urls: set[str]) -> ClipDeleteResponse:
+    if facebook_upload_protected(job_id, clip_urls):
+        raise HTTPException(409, "Hasil Facebook masih terkait upload aktif atau Post yang perlu diperiksa.")
     with process_lock:
         is_running = job_id in job_processes
     with jobs_lock:
@@ -28164,6 +28189,8 @@ def get_job(job_id: str) -> ClipJob:
 
 @app.delete("/api/jobs/{job_id}")
 def delete_job(job_id: str) -> dict[str, str | int]:
+    if facebook_upload_protected(job_id):
+        raise HTTPException(409, "Hasil Facebook masih terkait upload aktif atau Post yang perlu diperiksa.")
     with process_lock:
         is_running = job_id in job_processes
         youtube_processes = dict(youtube_upload_processes)
@@ -28247,3 +28274,8 @@ def cancel_job(job_id: str) -> dict[str, str | bool]:
             error="Proses dibatalkan sebelum worker berjalan.",
         )
     return {"status": "cancelled", "cancelled": True}
+
+
+# Register the isolated Facebook workspace after the shared job/browser contracts.
+from facebook_api import install as install_facebook_workspace
+install_facebook_workspace(app, sys.modules[__name__])

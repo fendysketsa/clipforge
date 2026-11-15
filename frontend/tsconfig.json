@@ -56,7 +56,9 @@
     ".next-studio-redesign/types/**/*.ts",
     ".next-studio-redesign/dev/types/**/*.ts",
     ".next-studio-theme/types/**/*.ts",
-    ".next-studio-theme/dev/types/**/*.ts"
+    ".next-studio-theme/dev/types/**/*.ts",
+    ".next-facebook/types/**/*.ts",
+    ".next-facebook/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

@@ -1,4 +1,5 @@
 import { ArrowUpRight, CheckCircle2, ChevronDown, Loader2, RefreshCw, Settings2, Youtube } from "lucide-react";
+import { FacebookConnection } from './FacebookConnection';
 
 type Props = {
   youtubeEnabled: boolean; tiktokEnabled: boolean;
@@ -10,6 +11,7 @@ type Props = {
 
 export function ConnectionsPanel(props: Props) {
   return <div className="connectionGrid">
+    <FacebookConnection />
     <section className="connectionCard">
       <header><span className="connectionLogo isYoutube"><Youtube size={25} /></span><div><h2>YouTube</h2><p>Upload, jadwal, dan pemeriksaan video.</p></div></header>
       <span className={`connectionState ${props.youtubeEnabled ? "isReady" : ""}`}><CheckCircle2 size={14} />{props.youtubeEnabled ? "Integrasi tersedia" : "Perlu dihubungkan"}</span>

@@ -1,0 +1,19 @@
+{
+  "type": "synthetic_render_fixture_not_publication",
+  "media_issues": [],
+  "duration": "30.000000",
+  "watermark": {
+    "style_version": 2,
+    "style": "channel_monogram_champagne_seal",
+    "asset": "ryuundy-watermark-v2.svg",
+    "channel_url": "https://www.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ",
+    "position": "center_46_percent",
+    "size_px": 208,
+    "opacity": 0.24,
+    "wordmark_opacity": 0.34,
+    "backplate_opacity": 0.0,
+    "ornament": "original_channel_r_crescent_ring",
+    "animated": false,
+    "source_ownership_claimed": false
+  }
+}

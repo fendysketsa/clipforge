@@ -1,0 +1,36 @@
+1
+00:00:00,000 --> 00:00:03,500
+Buka pengaturan HP
+lalu pilih menu
+
+2
+00:00:03,500 --> 00:00:07,000
+notifikasi.
+
+3
+00:00:07,000 --> 00:00:11,000
+Pilih aplikasi yang
+ingin Anda atur
+
+4
+00:00:11,000 --> 00:00:15,000
+notifikasinya.
+
+5
+00:00:15,000 --> 00:00:19,000
+Periksa pilihan yang
+tersedia dan
+
+6
+00:00:19,000 --> 00:00:23,000
+sesuaikan dengan
+kebutuhan.
+
+7
+00:00:23,000 --> 00:00:26,500
+Nama menu dapat
+berbeda sesuai
+
+8
+00:00:26,500 --> 00:00:30,000
+merek dan versi HP.

@@ -1,0 +1,84 @@
+{
+  "preview_only": true,
+  "fixtures_used": true,
+  "viewports": [
+    {
+      "width": 1440,
+      "bodyWidth": 1440,
+      "columns": "391.922px 762.078px",
+      "buttons": [
+        {
+          "text": " Salin caption",
+          "height": 36
+        },
+        {
+          "text": " Periksa QC",
+          "height": 36
+        },
+        {
+          "text": " Upload Reel publik",
+          "height": 36
+        }
+      ]
+    },
+    {
+      "width": 1280,
+      "bodyWidth": 1280,
+      "columns": "337.578px 656.422px",
+      "buttons": [
+        {
+          "text": " Salin caption",
+          "height": 36
+        },
+        {
+          "text": " Periksa QC",
+          "height": 36
+        },
+        {
+          "text": " Upload Reel publik",
+          "height": 36
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "bodyWidth": 390,
+      "columns": "354px",
+      "buttons": [
+        {
+          "text": " Salin caption",
+          "height": 36
+        },
+        {
+          "text": " Periksa QC",
+          "height": 36
+        },
+        {
+          "text": " Upload Reel publik",
+          "height": 36
+        }
+      ]
+    },
+    {
+      "width": 320,
+      "bodyWidth": 320,
+      "columns": "294px",
+      "buttons": [
+        {
+          "text": " Salin caption",
+          "height": 36
+        },
+        {
+          "text": " Periksa QC",
+          "height": 36
+        },
+        {
+          "text": " Upload Reel publik",
+          "height": 36
+        }
+      ]
+    }
+  ],
+  "page_errors": [],
+  "qc_then_queue_flow": true
+}

@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Fendy Clipper Social Studio Chrome
-Comment=Start one persistent browser with YouTube Studio and TikTok Studio tabs
+Comment=Start one persistent browser with YouTube Studio, TikTok Studio and Facebook tabs
 Exec=/bin/sh -lc 'for root in /www/wwwroot/clipper/*; do test -x "$root/scripts/open-youtube-login-chrome.sh" && exec "$root/scripts/open-youtube-login-chrome.sh" --headed --no-minimized --foreground; done; exit 1'
 Icon=google-chrome
 Terminal=false

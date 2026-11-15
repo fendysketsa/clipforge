@@ -90,6 +90,7 @@ YOUTUBE_REFRESH_LOGIN_PROFILE="${YOUTUBE_REFRESH_LOGIN_PROFILE:-false}"
 YOUTUBE_STUDIO_URL="${YOUTUBE_STUDIO_URL:-https://studio.youtube.com}"
 SOCIAL_BROWSER_SHARED="${SOCIAL_BROWSER_SHARED:-false}"
 TIKTOK_STUDIO_URL="${TIKTOK_STUDIO_URL:-https://www.tiktok.com/tiktokstudio/upload}"
+FACEBOOK_STUDIO_URL="${FACEBOOK_STUDIO_URL:-https://www.facebook.com/}"
 YOUTUBE_CHROME_LOG="${YOUTUBE_CHROME_LOG:-/tmp/fendy-clipper-youtube-chrome.log}"
 YOUTUBE_CHROME_START_MINIMIZED="${YOUTUBE_CHROME_START_MINIMIZED:-false}"
 YOUTUBE_CHROME_HEADLESS="${YOUTUBE_CHROME_HEADLESS:-false}"
@@ -98,13 +99,13 @@ YOUTUBE_HOST_RUNTIME_DIR="${YOUTUBE_HOST_RUNTIME_DIR:-/run/fendy-clipper-host-us
 YOUTUBE_GUI_BRIDGE_DIR="${YOUTUBE_GUI_BRIDGE_DIR:-/app/data/youtube-gui}"
 
 ensure_browser_tabs() {
-  python - "$YOUTUBE_CDP_PORT" "$YOUTUBE_STUDIO_URL" "$SOCIAL_BROWSER_SHARED" "$TIKTOK_STUDIO_URL" <<'PY'
+  python - "$YOUTUBE_CDP_PORT" "$YOUTUBE_STUDIO_URL" "$SOCIAL_BROWSER_SHARED" "$TIKTOK_STUDIO_URL" "$FACEBOOK_STUDIO_URL" <<'PY'
 import json
 import sys
 import urllib.parse
 import urllib.request
 
-port, youtube_url, shared, tiktok_url = sys.argv[1:]
+port, youtube_url, shared, tiktok_url, facebook_url = sys.argv[1:]
 base = f"http://127.0.0.1:{port}"
 with urllib.request.urlopen(f"{base}/json/list", timeout=2) as response:
     pages = json.load(response)
@@ -112,6 +113,7 @@ open_urls = [str(page.get("url") or "").casefold() for page in pages]
 required = [("studio.youtube.com", youtube_url)]
 if shared == "true":
     required.append(("tiktok.com", tiktok_url))
+    required.append(("facebook.com", facebook_url))
 for marker, target in required:
     if any(marker in url for url in open_urls):
         continue
@@ -126,7 +128,15 @@ PY
 
 if curl -fsS --max-time 2 "http://127.0.0.1:${YOUTUBE_CDP_PORT}/json/version" >/dev/null 2>&1; then
   ensure_browser_tabs
-  echo "Chrome bersama sudah berjalan; tab YouTube/TikTok dipastikan tersedia tanpa membuka proses baru."
+  echo "Chrome bersama sudah berjalan; tab YouTube/TikTok/Facebook dipastikan tersedia tanpa membuka proses baru."
+  # A foreground systemd owner must stay alive while an already-running
+  # Chrome owns the profile. Exiting here caused a restart loop every 10s.
+  if [[ "$CLI_YOUTUBE_CHROME_BACKGROUND" == "false" ]]; then
+    while curl -fsS --max-time 3 "http://127.0.0.1:${YOUTUBE_CDP_PORT}/json/version" >/dev/null 2>&1; do
+      sleep 10
+    done
+    exit 75
+  fi
   exit 0
 fi
 
@@ -402,8 +412,8 @@ startup_urls=()
 if [[ "$SOCIAL_BROWSER_SHARED" == "true" ]]; then
   # Keep TikTok first for compatibility with an older running backend image,
   # whose uploader used the first CDP page instead of selecting by hostname.
-  startup_urls+=("$TIKTOK_STUDIO_URL" "$YOUTUBE_STUDIO_URL")
-  echo "Shared social browser: YouTube Studio + TikTok Studio"
+  startup_urls+=("$TIKTOK_STUDIO_URL" "$YOUTUBE_STUDIO_URL" "$FACEBOOK_STUDIO_URL")
+  echo "Shared social browser: YouTube Studio + TikTok Studio + Facebook"
 else
   startup_urls+=("$YOUTUBE_STUDIO_URL")
 fi

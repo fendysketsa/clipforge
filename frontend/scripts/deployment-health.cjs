@@ -7,7 +7,8 @@ const digest = data => crypto.createHash('sha256').update(data).digest('hex');
 const requiredJS = ['jobDirectorRecovery', 'history-four-columns', 'jobPlatformQueue', '/reconcile',
   'dijadwalkan ulang otomatis', 'pengaturan privasi tertunda', 'Hasil posting perlu diperiksa',
   'cronActivityHeading', 'Detail pemeriksaan', 'cronDailyLanes',
-  'studioSidebar', 'studioQueueRow', 'connectionCard', 'studioThemeToggle'];
+  'studioSidebar', 'studioQueueRow', 'connectionCard', 'studioThemeToggle',
+  'fbWorkspace', 'facebook/uploads', 'Facebook Reels'];
 const grid = /\.outputWorkspacePane\s+\.jobList\s*\{[^}]*grid-template-columns\s*:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/;
 const resultGrid = /\.clipGrid\s*\{[^}]*grid-template-columns\s*:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/;
 function walk(dir) {

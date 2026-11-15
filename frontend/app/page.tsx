@@ -2,6 +2,7 @@
 
 import { CronActivity } from "./_components/CronActivity";
 import { ConnectionsPanel } from "./_components/ConnectionsPanel";
+import { FacebookWorkspace } from "./_components/FacebookWorkspace";
 import { UploadQueuePanel } from "./_components/UploadQueuePanel";
 import { STUDIO_VIEWS, studioViewFromHash, type StudioView } from "../lib/workspaceNavigation";
 import { ArrowRight, Clapperboard, Film, UploadCloud, Activity } from "lucide-react";
@@ -1774,6 +1775,8 @@ export default function HomePage() {
         <CronActivity schedule={cronSchedule} receivedAt={cronReceivedAt} refreshFailed={cronRefreshFailed} />
         <UploadQueuePanel youtube={youtubeUploads} tiktok={tiktokUploads} />
       </div> : null}
+
+      {studioView === "facebook" ? <FacebookWorkspace /> : null}
 
       {studioView === "settings" ? <ConnectionsPanel
         youtubeEnabled={Boolean(youtubeConfig?.enabled)} tiktokEnabled={Boolean(tiktokConfig?.enabled)}
