@@ -1,0 +1,38 @@
+{
+  "expected_backend_source_release": "53d9f5d4571be25f92a37477f891070701964041764d168bae22da16e10ca260",
+  "deployment_blocker": "sudo requires a password; no rebuild attempted while recoveries are running",
+  "services": {
+    "backend": {
+      "release_id": "4d5e98207ce29649503c8ecea0943d97808abba78fb8b4572a1c1f0ed4457fca",
+      "source_verified": true,
+      "verified": true,
+      "matches_current_source": false
+    },
+    "telegram-bot": {
+      "release_id": "4d5e98207ce29649503c8ecea0943d97808abba78fb8b4572a1c1f0ed4457fca",
+      "source_verified": true,
+      "verified": true,
+      "matches_current_source": false
+    },
+    "backend-health": {
+      "release_id": "4d5e98207ce29649503c8ecea0943d97808abba78fb8b4572a1c1f0ed4457fca",
+      "verified": true,
+      "checked_at": 1795159184.7933428,
+      "cron_enabled": true,
+      "scheduler_running": true
+    }
+  },
+  "health": {
+    "status": "ok"
+  },
+  "optimization": {
+    "version": 1,
+    "dashboard_upload_view": true,
+    "full_upload_evidence_preserved": true,
+    "owned_render_sessions": true,
+    "native_checkpoint_json": true,
+    "daily_plan_projection": true
+  },
+  "deployment_performed": false,
+  "sudo_without_password_available": false
+}

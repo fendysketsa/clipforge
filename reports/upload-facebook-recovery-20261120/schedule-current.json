@@ -1,0 +1,132 @@
+{
+  "short_schedule_policy_version": 1,
+  "short_schedule_daily_limit": 5,
+  "short_schedule_timezone": "Asia/Jakarta",
+  "daily_plan_version": 1,
+  "daily_plan": {
+    "version": 1,
+    "enabled": true,
+    "day": "2026-11-20",
+    "timezone": "Asia/Jakarta",
+    "total_target": 23,
+    "total_used": 7,
+    "total_uploaded": 5,
+    "lanes": {
+      "scheduled_short": {
+        "label": "Short terjadwal",
+        "target": 17,
+        "uploaded": 1,
+        "active": 0,
+        "ready": 1,
+        "held": 0,
+        "used": 2,
+        "remaining": 15
+      },
+      "private_short": {
+        "label": "Short Private",
+        "target": 4,
+        "uploaded": 4,
+        "active": 0,
+        "ready": 0,
+        "held": 0,
+        "used": 4,
+        "remaining": 0
+      },
+      "long": {
+        "label": "Long clip",
+        "target": 2,
+        "uploaded": 0,
+        "active": 1,
+        "ready": 0,
+        "held": 0,
+        "used": 1,
+        "remaining": 1
+      }
+    },
+    "long_production_enabled": true,
+    "long_rejected_today": 3
+  },
+  "activity_version": 1,
+  "reported_at": "2026-11-20T06:44:58.917995+00:00",
+  "activity": {
+    "state": "running",
+    "label": "Cron sedang bekerja",
+    "detail": "1 kandidat terurut; mulai mengolah sumber terbaik",
+    "progress_percent": 18,
+    "stage": "selection",
+    "updated_at": "2026-11-20T06:41:12.144702+00:00",
+    "source_title": null
+  },
+  "scheduler_health": {
+    "last_tick_at": "2026-11-20T06:44:53.634497+00:00",
+    "last_checked_at": "2026-11-20T06:44:54.076656+00:00",
+    "phase": "waiting",
+    "last_error": null,
+    "long_production_status": "waiting_for_render"
+  },
+  "capacity": {
+    "enabled": true,
+    "daily_mode": true,
+    "scheduled_count": 50,
+    "scheduled_limit": 57,
+    "private_count": 5,
+    "private_limit": 4
+  },
+  "upload_queue": {
+    "youtube": {
+      "queued": 7,
+      "running": 1
+    },
+    "tiktok": {
+      "queued": 0,
+      "running": 0
+    }
+  },
+  "last_run_status": "running",
+  "last_run_message": "1 kandidat terurut; mulai mengolah sumber terbaik",
+  "cron_drama_lanes": {
+    "chinese_drama_story": "Drama China: Pilihan, Keluarga & Plot Twist"
+  },
+  "cron_upload_recovery": {
+    "last_tick_at": "2026-11-20T06:44:54.041498+00:00",
+    "queued": {
+      "youtube": 0,
+      "tiktok": 0
+    },
+    "errors": {},
+    "enabled": true
+  },
+  "tiktok_strategy_version": 3,
+  "tiktok_automatic_retry_enabled": true,
+  "tiktok_automatic_retry_limit": 3,
+  "cron_source_process_limit": 2,
+  "cron_follow_cta_adaptive": true,
+  "cron_director_effects_required": true,
+  "cron_director_effects_policy_version": 4,
+  "social_upload_serialized": true,
+  "social_upload_min_gap_seconds": 45,
+  "social_upload_failure_gap_seconds": 90,
+  "cron_requested_source_rescue_supported": true,
+  "enabled": true,
+  "interval_hours": 24.0,
+  "run_on_startup": true,
+  "once_per_boot": false,
+  "scheduler_running": true,
+  "boot_delay_minutes": 5.0,
+  "post_clip_upload_delay_minutes": 0.0,
+  "background_upload_enabled": true,
+  "paired_long_video_enabled": false,
+  "paired_long_duration": 300.0,
+  "paired_long_auto_public_enabled": false,
+  "active_run_id": "494c9197ed8545ff92cd45951e38e91c",
+  "last_run_id": "494c9197ed8545ff92cd45951e38e91c",
+  "last_started_at": "2026-11-20T06:40:50.248869+00:00",
+  "last_finished_at": null,
+  "next_run_at": null,
+  "news_hot_enabled": true,
+  "news_hot_daily_limit": 3,
+  "news_hot_daily_reserved": 3,
+  "news_hot_playlist": "News",
+  "news_hot_review_required": true,
+  "message": "Automation sedang berjalan; jadwal berikutnya tidak akan membuat run tumpang tindih. News Hot: 3/3 slot harian WIB; playlist News, review sebelum upload."
+}

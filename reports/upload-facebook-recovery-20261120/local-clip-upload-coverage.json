@@ -1,0 +1,200 @@
+[
+  {
+    "job_id": "dea786e7bdad4e25aeb43d536f35efea",
+    "status": "running",
+    "clip_mode": "highlight_5m",
+    "publication_review_required": true,
+    "error": null,
+    "clips": []
+  },
+  {
+    "job_id": "1d3800153c204933938f15b528aeef44",
+    "status": "completed",
+    "clip_mode": "short",
+    "publication_review_required": false,
+    "error": null,
+    "clips": [
+      {
+        "url": "/outputs/1d3800153c204933938f15b528aeef44/cak-nun-ungkap-kelebihan-gibran-ternyata-ini-yang-tak-dimiliki-prabowo/clips/clip_01_bertasbih-itu-tidak-hanya-mengucapkan-subhanallah-tetapi-pokoknya.mp4",
+        "is_correct": false,
+        "render_qc_passed": false,
+        "youtube": [],
+        "tiktok": []
+      }
+    ]
+  },
+  {
+    "job_id": "7cacad18f21a4c528e656b3312aef66d",
+    "status": "cancelled",
+    "clip_mode": "short",
+    "publication_review_required": false,
+    "error": "Proses dibatalkan. 1 data output sementara dihapus.",
+    "clips": []
+  },
+  {
+    "job_id": "25907d822e3d44c6a9b949eb3f156780",
+    "status": "failed",
+    "clip_mode": "highlight_5m",
+    "publication_review_required": true,
+    "error": "RuntimeError: Long dan kompilasi belum memiliki bahan valid; render ditahan: insufficient_or_excessive_compilation_material Workspace dan seluruh file sementara proses gagal telah dihapus.",
+    "clips": []
+  },
+  {
+    "job_id": "0cc016846cfd487f979f682266eea9e7",
+    "status": "failed",
+    "clip_mode": "short",
+    "publication_review_required": true,
+    "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus.",
+    "clips": []
+  },
+  {
+    "job_id": "46e06aa4d42345b0b12075d1f22f4f38",
+    "status": "completed",
+    "clip_mode": "short",
+    "publication_review_required": false,
+    "error": null,
+    "clips": [
+      {
+        "url": "/outputs/46e06aa4d42345b0b12075d1f22f4f38/pengamat-komunikasi-politik-wapres-harus-bisa-representasikan-kepentingan-daerah/clips/clip_01_nah-tapi-apakah-nanti-bisa-secara-publik-atau.mp4",
+        "is_correct": true,
+        "render_qc_passed": true,
+        "youtube": [
+          {
+            "id": "d9dcf6cee28d4ec5bd66492b27db3865",
+            "status": "completed",
+            "upload_confirmed": true,
+            "error": null
+          }
+        ],
+        "tiktok": [
+          {
+            "id": "42a723bb0ec84a41a6ee41492abde1f6",
+            "status": "failed",
+            "upload_confirmed": false,
+            "error": "TikTok tidak dapat dibuka: Page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at https://www.tiktok.com/@titikbalikislami"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "job_id": "be2751e7001f499bbfafdf32dcb33fd5",
+    "status": "completed",
+    "clip_mode": "short",
+    "publication_review_required": false,
+    "error": null,
+    "clips": [
+      {
+        "url": "/outputs/facebook_autopilot/be2751e7001f499bbfafdf32dcb33fd5/facebook_original.mp4",
+        "is_correct": false,
+        "render_qc_passed": true,
+        "youtube": [],
+        "tiktok": []
+      }
+    ]
+  },
+  {
+    "job_id": "1c9af7d86ac445da83e7020d3dcc78bb",
+    "status": "completed",
+    "clip_mode": "short",
+    "publication_review_required": false,
+    "error": null,
+    "clips": [
+      {
+        "url": "/outputs/facebook_autopilot/1c9af7d86ac445da83e7020d3dcc78bb/facebook_original.mp4",
+        "is_correct": false,
+        "render_qc_passed": true,
+        "youtube": [],
+        "tiktok": []
+      }
+    ]
+  },
+  {
+    "job_id": "44a35eb5552a46528c3b8a78d259e89d",
+    "status": "completed",
+    "clip_mode": "short",
+    "publication_review_required": false,
+    "error": null,
+    "clips": [
+      {
+        "url": "/outputs/facebook_autopilot/44a35eb5552a46528c3b8a78d259e89d/facebook_original.mp4",
+        "is_correct": false,
+        "render_qc_passed": true,
+        "youtube": [],
+        "tiktok": []
+      }
+    ]
+  },
+  {
+    "job_id": "b1936133fd204666b68663bd2b208723",
+    "status": "completed",
+    "clip_mode": "short",
+    "publication_review_required": false,
+    "error": null,
+    "clips": [
+      {
+        "url": "/outputs/facebook_autopilot/b1936133fd204666b68663bd2b208723/facebook_original.mp4",
+        "is_correct": false,
+        "render_qc_passed": true,
+        "youtube": [],
+        "tiktok": []
+      }
+    ]
+  },
+  {
+    "job_id": "ea38928df7084765bc722090684cb994",
+    "status": "completed",
+    "clip_mode": "short",
+    "publication_review_required": false,
+    "error": null,
+    "clips": [
+      {
+        "url": "/outputs/facebook_autopilot/ea38928df7084765bc722090684cb994/facebook_original.mp4",
+        "is_correct": false,
+        "render_qc_passed": true,
+        "youtube": [],
+        "tiktok": []
+      }
+    ]
+  },
+  {
+    "job_id": "af0a3163942840d2a474cff8f4f46313",
+    "status": "completed",
+    "clip_mode": "short",
+    "publication_review_required": false,
+    "error": null,
+    "clips": [
+      {
+        "url": "/outputs/facebook_autopilot/af0a3163942840d2a474cff8f4f46313/facebook_original.mp4",
+        "is_correct": false,
+        "render_qc_passed": true,
+        "youtube": [],
+        "tiktok": []
+      }
+    ]
+  },
+  {
+    "job_id": "372a941bc2404fd4875db168ad9ce41f",
+    "status": "failed",
+    "clip_mode": "short",
+    "publication_review_required": false,
+    "error": "QC menolak sumber; video ditarik dari hasil upload.",
+    "clips": []
+  },
+  {
+    "job_id": "cccd4129e1ef451f9f330a991ee2af28",
+    "status": "completed",
+    "clip_mode": "short",
+    "publication_review_required": false,
+    "error": null,
+    "clips": [
+      {
+        "url": "/outputs/facebook_autopilot/cccd4129e1ef451f9f330a991ee2af28/facebook_original.mp4",
+        "is_correct": false,
+        "render_qc_passed": true,
+        "youtube": [],
+        "tiktok": []
+      }
+    ]
+  }
+]

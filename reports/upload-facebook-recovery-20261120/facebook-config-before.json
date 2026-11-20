@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "monetization_version": 1,
+  "autopilot_version": 1,
+  "activity_version": 1,
+  "bonus_priority_version": 1,
+  "creative_policy_version": 2,
+  "creative_strategy": {
+    "version": 2,
+    "niche": "Digital sehari-hari untuk keluarga",
+    "pillars": [
+      {
+        "key": "storage",
+        "label": "File dan foto lebih rapi",
+        "weight": 4,
+        "topics": [
+          "size",
+          "group",
+          "search"
+        ]
+      },
+      {
+        "key": "everyday",
+        "label": "Langkah digital yang memudahkan",
+        "weight": 4,
+        "topics": [
+          "copy",
+          "rename",
+          "date",
+          "number"
+        ]
+      },
+      {
+        "key": "mistakes",
+        "label": "Hindari salah langkah",
+        "weight": 2,
+        "topics": [
+          "extension",
+          "restore",
+          "paths"
+        ]
+      }
+    ],
+    "evidence": "Hipotesis editorial berbasis referensi; belum ada pemenang terukur dari akun FB ini.",
+    "references": {
+      "meta_original": "https://about.fb.com/news/2026/03/rewarding-original-creators-on-facebook/",
+      "meta_performance": "https://about.fb.com/news/2026/03/creator-fast-track-grow-your-audience-earn-money-on-facebook/",
+      "meta_relevance": "https://about.fb.com/news/2025/04/cracking-down-spammy-content-facebook/",
+      "android_storage": "https://support.google.com/android/answer/7431795?hl=id",
+      "drive_search": "https://support.google.com/drive/answer/2375114?hl=id"
+    },
+    "first_visual_seconds": 2,
+    "animation": "Objek 2D memperagakan tindakan dan hasil.",
+    "sound": "Klik pemilihan, gerak objek, dan konfirmasi kedatangan di bawah narasi."
+  },
+  "local_cleanup_version": 1,
+  "educational_motion_version": 1,
+  "originals_request_version": 1,
+  "target_email": "fendysketsa@gmail.com",
+  "target_seconds": 30,
+  "max_seconds": 55,
+  "shared_browser": true,
+  "session": {
+    "status": "ready",
+    "logged_in": true,
+    "account_verified": true,
+    "target_email": "fendysketsa@gmail.com",
+    "profile_id": "100000284326847",
+    "checked_at": "2026-11-20T05:46:02.164238+00:00",
+    "message": "Akun Facebook target terverifikasi di browser bersama.",
+    "profile_url": "https://www.facebook.com/hafendycandranugrahaayahekayshaayunindyagavaputri/",
+    "professional_mode": true,
+    "verified_profile_id": "100000284326847"
+  },
+  "niches": [
+    {
+      "key": "tech_daily",
+      "label": "Tips teknologi & trik HP sehari-hari",
+      "brief": "Satu masalah nyata, satu langkah yang terlihat, satu hasil yang bisa dicoba. Pilih tips HP, pengaturan aplikasi, dan kebiasaan digital; hindari klaim keamanan mutlak, pembobolan akun, hoaks, promosi investasi, serta tutorial yang kedaluwarsa.",
+      "queries": [
+        "tips HP Android sehari hari bahasa Indonesia",
+        "trik pengaturan WhatsApp tutorial Indonesia",
+        "cara merapikan penyimpanan HP tutorial Indonesia"
+      ],
+      "signals": [
+        "hp",
+        "ponsel",
+        "android",
+        "iphone",
+        "whatsapp",
+        "aplikasi",
+        "pengaturan",
+        "penyimpanan",
+        "baterai",
+        "notifikasi",
+        "kamera",
+        "file",
+        "ponsel"
+      ],
+      "hashtags": [
+        "TipsHP",
+        "TeknologiSehariHari"
+      ]
+    },
+    {
+      "key": "digital_simple",
+      "label": "Digital sehari-hari untuk keluarga",
+      "brief": "Satu persoalan file atau foto, demonstrasi asli yang terlihat, lalu hasil dan batasannya. Variasikan beres-beres penyimpanan, langkah praktis, dan kekeliruan digital. Jangan memotong peringatan atau membuat hasil yang tidak terlihat di rekaman.",
+      "queries": [
+        "tips mengatur file foto HP tutorial Indonesia",
+        "tips produktivitas digital sederhana Indonesia"
+      ],
+      "signals": [
+        "file",
+        "foto",
+        "pesan",
+        "folder",
+        "dokumen",
+        "aplikasi",
+        "digital",
+        "notifikasi",
+        "pengaturan",
+        "ponsel",
+        "hp",
+        "komputer"
+      ],
+      "hashtags": [
+        "TipsDigital",
+        "TipsSehariHari"
+      ]
+    }
+  ],
+  "caption_style": "Frasa putih stabil, dua baris; caption posting singkat dan kontekstual.",
+  "login_note": "Satu browser menyimpan sesi tiap platform. Facebook tetap memerlukan login awal dan dapat meminta verifikasi ulang.",
+  "publication_policy": "Klip manual memerlukan preview; produksi asli otomatis memerlukan QC independen. Post yang belum terkonfirmasi ditahan."
+}

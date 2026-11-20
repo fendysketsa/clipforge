@@ -57,6 +57,42 @@ def test_restart_needs_actual_prior_account_and_baseline_evidence():
     assert automatic_retry.tiktok_verified_session_recovery_reason(RESTART,['TARGET_ACCOUNT_CONFIRMED:@target','POST_BASELINE_VISIBLE_IDS:0'])=='restart_before_post_revalidated'
 
 
+PROFILE_FAILURE = ('TikTok tidak dapat dibuka: Page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at '
+                   'https://www.tiktok.com/@titikbalikislami')
+
+
+def test_profile_navigation_recovery_keeps_original_short_id_and_retry_budget(restarted_short):
+    _, upload, _ = restarted_short
+    upload.error = PROFILE_FAILURE
+    upload.logs = ['TARGET_ACCOUNT_CONFIRMED:@titikbalikislami']
+    recovered = api.retry_failed_tiktok_short(upload.id)
+    assert recovered.id == upload.id and recovered.status == 'queued'
+    assert recovered.auto_retry_count == 2
+    assert recovered.auto_retry_reason == 'profile_navigation_revalidated_before_file'
+
+
+@pytest.mark.parametrize('risk', ['started', 'accepted', 'intent', 'wrong_account', 'file', 'draft',
+                                 'transfer', 'foreign_url', 'post_url', 'login', 'captcha', 'session'])
+def test_profile_navigation_recovery_requires_exact_pre_file_failure(restarted_short, monkeypatch, risk):
+    _, upload, _ = restarted_short
+    upload.error = PROFILE_FAILURE
+    upload.logs = ['TARGET_ACCOUNT_CONFIRMED:@titikbalikislami']
+    if risk == 'started': upload.submission_started = True
+    if risk == 'accepted': upload.submission_accepted = True
+    if risk == 'intent': upload.logs += ['POST_SUBMIT_INTENT: issued']
+    if risk == 'wrong_account': upload.logs = ['TARGET_ACCOUNT_CONFIRMED:@different']
+    if risk == 'file': upload.logs += ['Video dipilih: clip.mp4']
+    if risk == 'draft': upload.logs += ['DRAFT_FILE_RECOVERED:clip.mp4']
+    if risk == 'transfer': upload.logs += ['CDP_FILE_TRANSFER_RECOVERED:clip.mp4']
+    if risk == 'foreign_url': upload.error += '.evil.test'
+    if risk == 'post_url': upload.error += '/video/1234567890123456789'
+    if risk == 'login': upload.error = upload.error.replace('/@titikbalikislami', '/login')
+    if risk == 'captcha': upload.error += ' CAPTCHA'
+    if risk == 'session': monkeypatch.setattr(api, 'check_tiktok_session', lambda: NS(ok=False, error='not ready', message=''))
+    with pytest.raises(api.HTTPException): api.retry_failed_tiktok_short(upload.id)
+    assert api.tiktok_uploads[upload.id].status == 'failed'
+
+
 @pytest.fixture
 def remote_verification(failed_caption,monkeypatch):
     _,upload,_=failed_caption

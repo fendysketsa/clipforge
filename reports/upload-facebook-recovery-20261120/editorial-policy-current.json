@@ -1,0 +1,263 @@
+{
+  "version": 1,
+  "scope": "cron_only",
+  "timezone": "Asia/Jakarta",
+  "all_channel_search": true,
+  "monthly_refresh": true,
+  "current_month": "2026-11",
+  "selection_count": 3,
+  "season": {
+    "key": "",
+    "theme_key": "",
+    "priority_percent": 0,
+    "date": "2026-11-20",
+    "timezone": "Asia/Jakarta",
+    "calendar_basis": "umm_al_qura_editorial_estimate",
+    "official_religious_date_confirmed": false,
+    "hijri_year": 1448,
+    "hijri_month": 6,
+    "hijri_day": 10
+  },
+  "monthly_plan": {
+    "month_key": "2026-11",
+    "refreshed_at": "2026-11-20T11:13:45.502542+07:00",
+    "status": "ready",
+    "niches": [
+      {
+        "id": "monthly_202611_d56df4551b",
+        "theme_key": "famous_game_reaction",
+        "topic": "🔴PLAYING GTA 6 EARLY ACCESS GAMEPLAY GET IN HERE!",
+        "queries": [
+          "🔴PLAYING GTA 6 EARLY ACCESS GAMEPLAY GET IN HERE! penjelasan indonesia",
+          "🔴PLAYING GTA 6 EARLY ACCESS GAMEPLAY GET IN HERE! cerita konteks indonesia"
+        ],
+        "discovery_score": 37.984,
+        "evidence": {
+          "source": "youtube_most_popular_id",
+          "url": "https://www.youtube.com/watch?v=qSyo5d-dVzA",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_42e6709d3c",
+        "theme_key": "gaming_story",
+        "topic": "Mio & Baby Celine Ubah Yuta Jadi Penjaga Telur Di Steal An Egg! | ROBLOX",
+        "queries": [
+          "Mio & Baby Celine Ubah Yuta Jadi Penjaga Telur Di Steal An Egg! | ROBLOX penjelasan indonesia",
+          "Mio & Baby Celine Ubah Yuta Jadi Penjaga Telur Di Steal An Egg! | ROBLOX cerita konteks indonesia"
+        ],
+        "discovery_score": 33.076,
+        "evidence": {
+          "source": "youtube_most_popular_id",
+          "url": "https://www.youtube.com/watch?v=i3KTCDoG7x0",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_a59c884759",
+        "theme_key": "mystery_story",
+        "topic": "Yuta Mio Buat Benteng Raksasa Paling Aman Dari Mahluk Punah, Hantu Si Samsul Di Kota Sakura😱",
+        "queries": [
+          "Yuta Mio Buat Benteng Raksasa Paling Aman Dari Mahluk Punah, Hantu Si Samsul Di Kota Sakura😱 penjelasan indonesia",
+          "Yuta Mio Buat Benteng Raksasa Paling Aman Dari Mahluk Punah, Hantu Si Samsul Di Kota Sakura😱 cerita konteks indonesia"
+        ],
+        "discovery_score": 22.419,
+        "evidence": {
+          "source": "youtube_most_popular_id",
+          "url": "https://www.youtube.com/watch?v=WYJ4OgSKLXY",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_8683bf9895",
+        "theme_key": "love_betrayal",
+        "topic": "MIPAN & ZUZUZU SEDIH! Harus Berpisah Sama Sahabat Nya! ROBLOX",
+        "queries": [
+          "MIPAN & ZUZUZU SEDIH! Harus Berpisah Sama Sahabat Nya! ROBLOX penjelasan indonesia",
+          "MIPAN & ZUZUZU SEDIH! Harus Berpisah Sama Sahabat Nya! ROBLOX cerita konteks indonesia"
+        ],
+        "discovery_score": 22.067,
+        "evidence": {
+          "source": "youtube_most_popular_id",
+          "url": "https://www.youtube.com/watch?v=CcjmXcWPicg",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_bc81638c90",
+        "theme_key": "practical_knowledge",
+        "topic": "Konvensi Sains 2026: Inovasi RI Wajib Cuan, Bukan Cuma Pamer",
+        "queries": [
+          "Konvensi Sains 2026: Inovasi RI Wajib Cuan, Bukan Cuma Pamer penjelasan indonesia",
+          "Konvensi Sains 2026: Inovasi RI Wajib Cuan, Bukan Cuma Pamer cerita konteks indonesia"
+        ],
+        "discovery_score": 20.0,
+        "evidence": {
+          "source": "youtube_monthly_knowledge_id",
+          "url": "https://www.youtube.com/watch?v=fnpica7wEEQ",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_ba5b4a467d",
+        "theme_key": "domestic_politics",
+        "topic": "Gibran Bongkar Hubungan Prabowo-Jokowi Usai Mundur dari Wapres: Pak Presiden Sayang Banget Ayah Saya",
+        "queries": [
+          "Gibran Bongkar Hubungan Prabowo-Jokowi Usai Mundur dari Wapres: Pak Presiden Sayang Banget Ayah Saya penjelasan indonesia",
+          "Gibran Bongkar Hubungan Prabowo-Jokowi Usai Mundur dari Wapres: Pak Presiden Sayang Banget Ayah Saya cerita konteks indonesia"
+        ],
+        "discovery_score": 16.179,
+        "evidence": {
+          "source": "youtube_channel_search_terms",
+          "url": "https://studio.youtube.com",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_2afd58d01c",
+        "theme_key": "football_story",
+        "topic": "selisih gol",
+        "queries": [
+          "selisih gol penjelasan indonesia",
+          "selisih gol cerita konteks indonesia"
+        ],
+        "discovery_score": 10.693,
+        "evidence": {
+          "source": "google_trends_rss",
+          "url": "https://trends.google.com/trending/rss?geo=ID",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_8b0b6fb44e",
+        "theme_key": "famous_game_reaction",
+        "topic": "I Survived 100 Hours In GTA 6",
+        "queries": [
+          "I Survived 100 Hours In GTA 6 penjelasan indonesia",
+          "I Survived 100 Hours In GTA 6 cerita konteks indonesia"
+        ],
+        "discovery_score": 26.264,
+        "evidence": {
+          "source": "youtube_most_popular_id",
+          "url": "https://www.youtube.com/watch?v=ymCHX_Dcc-U",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_ce08bff659",
+        "theme_key": "gaming_story",
+        "topic": "Yuta, Mio Dan Baby Celine Berjualan Pizza Tapi Yang Beli Anomaly || ROBLOX",
+        "queries": [
+          "Yuta, Mio Dan Baby Celine Berjualan Pizza Tapi Yang Beli Anomaly || ROBLOX penjelasan indonesia",
+          "Yuta, Mio Dan Baby Celine Berjualan Pizza Tapi Yang Beli Anomaly || ROBLOX cerita konteks indonesia"
+        ],
+        "discovery_score": 30.869,
+        "evidence": {
+          "source": "youtube_most_popular_id",
+          "url": "https://www.youtube.com/watch?v=4fVbD0VFSOw",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_a2f8bb18b9",
+        "theme_key": "practical_knowledge",
+        "topic": "Sains dan Inovasi Indonesia: Produksi Pengetahuan Lintas Bidang Ilmu",
+        "queries": [
+          "Sains dan Inovasi Indonesia: Produksi Pengetahuan Lintas Bidang Ilmu penjelasan indonesia",
+          "Sains dan Inovasi Indonesia: Produksi Pengetahuan Lintas Bidang Ilmu cerita konteks indonesia"
+        ],
+        "discovery_score": 20.0,
+        "evidence": {
+          "source": "youtube_monthly_knowledge_id",
+          "url": "https://www.youtube.com/watch?v=beuBdZwwScc",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_2ace2ec20e",
+        "theme_key": "famous_game_reaction",
+        "topic": "GTA VI 60 FPS ??? APAKAH INI BINTANG 6 PERTAMAAAAAA - EP. 2",
+        "queries": [
+          "GTA VI 60 FPS ??? APAKAH INI BINTANG 6 PERTAMAAAAAA - EP. 2 penjelasan indonesia",
+          "GTA VI 60 FPS ??? APAKAH INI BINTANG 6 PERTAMAAAAAA - EP. 2 cerita konteks indonesia"
+        ],
+        "discovery_score": 23.684,
+        "evidence": {
+          "source": "youtube_most_popular_id",
+          "url": "https://www.youtube.com/watch?v=VbpauhOGs3U",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_24777de828",
+        "theme_key": "gaming_story",
+        "topic": "Encontramos un TRANSFORMER BAJO EL AGUA en Minecraft!",
+        "queries": [
+          "Encontramos un TRANSFORMER BAJO EL AGUA en Minecraft! penjelasan indonesia",
+          "Encontramos un TRANSFORMER BAJO EL AGUA en Minecraft! cerita konteks indonesia"
+        ],
+        "discovery_score": 24.257,
+        "evidence": {
+          "source": "youtube_most_popular_id",
+          "url": "https://www.youtube.com/watch?v=0MSGP-xdIM0",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      }
+    ],
+    "signal_count": 80,
+    "source_count": 4,
+    "all_channel_search": true,
+    "automatic_publication_authorized": false
+  },
+  "monthly_plan_current": true,
+  "next_refresh_attempt_at": "2026-11-20T17:08:41.964136+07:00",
+  "speaker_search_seeds": [
+    "Ustadz Adi Hidayat",
+    "Ustadz Abdul Somad",
+    "Buya Yahya",
+    "Ustadz Hanan Attaki",
+    "Aa Gym",
+    "Ustadz Khalid Basalamah",
+    "Ustadz Syafiq Riza Basalamah",
+    "Ustadz Firanda Andirja",
+    "Ustadz Felix Siauw",
+    "Ustadz Das'ad Latif",
+    "Gus Baha",
+    "Habib Husein Ja'far",
+    "Ustadz Muhammad Nuzul Dzikri",
+    "Ustadz Oemar Mita",
+    "Ustadz Hilman Fauzi",
+    "Ustadz Salim A. Fillah",
+    "Ustadzah Mumpuni Handayayekti",
+    "Ustadzah Oki Setiana Dewi"
+  ],
+  "speaker_whitelist": false,
+  "manual_requests_modified": false,
+  "automatic_publication_authorized": false,
+  "refresh_diagnostics": [],
+  "enabled": true
+}

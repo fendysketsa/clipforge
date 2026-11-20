@@ -1,0 +1,1458 @@
+{
+  "version": 1,
+  "config": {
+    "enabled": true,
+    "weekly_posts": 13,
+    "weekly_stories": 7,
+    "timezone": "Asia/Jakarta",
+    "reel_times": [
+      "11:30",
+      "18:30"
+    ],
+    "story_time": "15:00",
+    "version": 1
+  },
+  "week_start": "2026-11-16",
+  "week_end": "2026-11-22",
+  "runtime_state": "working",
+  "confirmed_posts": 3,
+  "confirmed_stories": 0,
+  "produced": 7,
+  "active": {
+    "key": "2026-11-18:reel:0",
+    "kind": "reel",
+    "due_at": "2026-11-18T11:30:00+07:00",
+    "day": "2026-11-18",
+    "week_start": "2026-11-16",
+    "week_end": "2026-11-22",
+    "due": true,
+    "content_seed": "79b5d696e58ddd24c45363a7e36ebf7de79a382389173583475e363037a99e9f",
+    "title": "Tanggal yang mudah diurutkan",
+    "topic": "date",
+    "status": "qc_wait",
+    "job_id": "be2751e7001f499bbfafdf32dcb33fd5",
+    "created_at": "2026-11-18T04:30:14.690814+00:00",
+    "updated_at": "2026-11-20T05:18:59.777185+00:00",
+    "progress_percent": 90,
+    "message": "Layanan QC belum tersedia (HTTP 429); bukti tetap disimpan.",
+    "attempts": 21,
+    "authored_plan": {
+      "version": 1,
+      "seed": "79b5d696e58ddd24c45363a7e36ebf7de79a382389173583475e363037a99e9f",
+      "kind": "reel",
+      "topic": "date",
+      "title": "Tanggal yang mudah diurutkan",
+      "stages": [
+        {
+          "title": "Masalahnya",
+          "text": "Catatan keluarga sering berantakan saat tanggal tidak konsisten.",
+          "start": 0.0,
+          "end": 3.984
+        },
+        {
+          "title": "Perhatikan contoh",
+          "text": "Contoh simulasi: tiga file catatan berbeda tanggal belum menunjukkan yang lebih dahulu.",
+          "start": 3.984,
+          "end": 9.36
+        },
+        {
+          "title": "Coba langkahnya",
+          "text": "Tulis tahun, bulan, tanggal dengan jumlah digit konsisten, lalu urutkan nama A ke Z; contoh berubah dari 23, 04, 15 menjadi 04, 15, 23.",
+          "start": 9.36,
+          "end": 21.671999999999997
+        },
+        {
+          "title": "Lihat hasilnya",
+          "text": "Hasil contoh: nama file tersusun mengikuti tanggal. Batasannya, pola ini hanya berlaku jika semua file memakai format dan jumlah digit yang sama.",
+          "start": 21.671999999999997,
+          "end": 31.535999999999998
+        }
+      ],
+      "files": [
+        {
+          "id": "a",
+          "label": "2026-10-23_catatan.txt",
+          "size": 2,
+          "type": "document"
+        },
+        {
+          "id": "b",
+          "label": "2026-10-04_catatan.txt",
+          "size": 8,
+          "type": "document"
+        },
+        {
+          "id": "c",
+          "label": "2026-10-15_catatan.txt",
+          "size": 5,
+          "type": "document"
+        }
+      ],
+      "caption": "Pada contoh ini, pengurutan nama A ke Z menyusun file sesuai tanggal. Gunakan pola tahun, bulan, tanggal dengan jumlah digit sama agar urutannya tetap mudah dibaca.\n\n#TipsDigital #TeknologiSehariHari",
+      "visual_type": "authored_animated_simulation",
+      "third_party_footage": false,
+      "third_party_music": false,
+      "synthetic_voice": true,
+      "narration_provider": "edge_neural_id-ID-ArdiNeural",
+      "example": "Kegiatan_24",
+      "creative_policy": {
+        "version": 2,
+        "niche": "Digital sehari-hari untuk keluarga",
+        "pillar": "everyday",
+        "pillar_label": "Langkah digital yang memudahkan",
+        "basis": "editorial_hypothesis_not_measured_winner",
+        "format": "persistent_object_demonstration",
+        "reference_keys": [
+          "meta_original",
+          "meta_performance",
+          "meta_relevance",
+          "drive_search"
+        ],
+        "first_result_preview": null,
+        "captions_stable": true,
+        "source_clock_changed": false,
+        "views_guaranteed": false
+      },
+      "motion_version": 1,
+      "plan_sha256": "77cb24c708d3d639caca54de451440e86fac025e403efb2d20f64f2486d1e723",
+      "authoring": "fresh_grounded_ai_script_pending_independent_qc",
+      "script_sha256": "f11696868f6ee4b4acacc45a6e157ddcbaea2b23b8e75a4b45941696e4105b33",
+      "motion_timeline": {
+        "version": 1,
+        "fps": 30,
+        "alignment": "measured_tts_phrase_with_estimated_verb_position",
+        "select": 15.241,
+        "departure": 15.591,
+        "arrival": 18.791,
+        "search_reset": 22.022,
+        "complete": 18.991,
+        "compare": 18.891,
+        "inspect": 22.072,
+        "phase_order": [
+          "recognize",
+          "select",
+          "demonstrate",
+          "inspect_result"
+        ],
+        "label": "SIMULASI EDUKASI",
+        "source_clock_changed": false
+      },
+      "sound_design": {
+        "version": 1,
+        "author": "ClipForge procedural UI synthesis",
+        "third_party_audio": false,
+        "attribution_required": false,
+        "music": false,
+        "narration_priority": true,
+        "ducked_under_voice": true,
+        "limiter_peak_dbfs": -1.5,
+        "inserted_timeline_seconds": 0,
+        "events": [
+          {
+            "kind": "tap",
+            "start": 0.35,
+            "duration": 0.065,
+            "gain_db": -23,
+            "event": "opening_question"
+          },
+          {
+            "kind": "tap",
+            "start": 15.241,
+            "duration": 0.065,
+            "gain_db": -23,
+            "event": "object_selected"
+          },
+          {
+            "kind": "swoosh",
+            "start": 15.591,
+            "duration": 0.24,
+            "gain_db": -25,
+            "event": "object_travels"
+          },
+          {
+            "kind": "chime",
+            "start": 18.791,
+            "duration": 0.38,
+            "gain_db": -24,
+            "event": "object_arrives"
+          }
+        ],
+        "sha256": "6b87d35882fac1c4be2da8d10abe4e8e9bd51e7385d0651cfb7e0160cc9fe49f",
+        "sample_rate": 48000,
+        "generated_peak_dbfs": -23.0
+      }
+    },
+    "script_sha256": "f11696868f6ee4b4acacc45a6e157ddcbaea2b23b8e75a4b45941696e4105b33",
+    "last_qc_at": "2026-11-20T05:18:48.464286+00:00",
+    "rendered_at": "2026-11-20T05:18:48.464294+00:00",
+    "qc_decision": null,
+    "qc_evidence": [],
+    "qc_provider_http_status": 429,
+    "qc_provider_error": "Provider returned error inclusionai/ling-3.2-flash:free is temporarily rate-limited upstream. Please retry shortly, or add your own provider key to use your own limits: https://openrouter.ai/workspaces/default/byok"
+  },
+  "runs": [
+    {
+      "key": "2026-11-18:reel:0",
+      "kind": "reel",
+      "due_at": "2026-11-18T11:30:00+07:00",
+      "day": "2026-11-18",
+      "week_start": "2026-11-16",
+      "week_end": "2026-11-22",
+      "due": true,
+      "content_seed": "79b5d696e58ddd24c45363a7e36ebf7de79a382389173583475e363037a99e9f",
+      "title": "Tanggal yang mudah diurutkan",
+      "topic": "date",
+      "status": "qc_wait",
+      "job_id": "be2751e7001f499bbfafdf32dcb33fd5",
+      "created_at": "2026-11-18T04:30:14.690814+00:00",
+      "updated_at": "2026-11-20T05:18:59.777185+00:00",
+      "progress_percent": 90,
+      "message": "Layanan QC belum tersedia (HTTP 429); bukti tetap disimpan.",
+      "attempts": 21,
+      "authored_plan": {
+        "version": 1,
+        "seed": "79b5d696e58ddd24c45363a7e36ebf7de79a382389173583475e363037a99e9f",
+        "kind": "reel",
+        "topic": "date",
+        "title": "Tanggal yang mudah diurutkan",
+        "stages": [
+          {
+            "title": "Masalahnya",
+            "text": "Catatan keluarga sering berantakan saat tanggal tidak konsisten.",
+            "start": 0.0,
+            "end": 3.984
+          },
+          {
+            "title": "Perhatikan contoh",
+            "text": "Contoh simulasi: tiga file catatan berbeda tanggal belum menunjukkan yang lebih dahulu.",
+            "start": 3.984,
+            "end": 9.36
+          },
+          {
+            "title": "Coba langkahnya",
+            "text": "Tulis tahun, bulan, tanggal dengan jumlah digit konsisten, lalu urutkan nama A ke Z; contoh berubah dari 23, 04, 15 menjadi 04, 15, 23.",
+            "start": 9.36,
+            "end": 21.671999999999997
+          },
+          {
+            "title": "Lihat hasilnya",
+            "text": "Hasil contoh: nama file tersusun mengikuti tanggal. Batasannya, pola ini hanya berlaku jika semua file memakai format dan jumlah digit yang sama.",
+            "start": 21.671999999999997,
+            "end": 31.535999999999998
+          }
+        ],
+        "files": [
+          {
+            "id": "a",
+            "label": "2026-10-23_catatan.txt",
+            "size": 2,
+            "type": "document"
+          },
+          {
+            "id": "b",
+            "label": "2026-10-04_catatan.txt",
+            "size": 8,
+            "type": "document"
+          },
+          {
+            "id": "c",
+            "label": "2026-10-15_catatan.txt",
+            "size": 5,
+            "type": "document"
+          }
+        ],
+        "caption": "Pada contoh ini, pengurutan nama A ke Z menyusun file sesuai tanggal. Gunakan pola tahun, bulan, tanggal dengan jumlah digit sama agar urutannya tetap mudah dibaca.\n\n#TipsDigital #TeknologiSehariHari",
+        "visual_type": "authored_animated_simulation",
+        "third_party_footage": false,
+        "third_party_music": false,
+        "synthetic_voice": true,
+        "narration_provider": "edge_neural_id-ID-ArdiNeural",
+        "example": "Kegiatan_24",
+        "creative_policy": {
+          "version": 2,
+          "niche": "Digital sehari-hari untuk keluarga",
+          "pillar": "everyday",
+          "pillar_label": "Langkah digital yang memudahkan",
+          "basis": "editorial_hypothesis_not_measured_winner",
+          "format": "persistent_object_demonstration",
+          "reference_keys": [
+            "meta_original",
+            "meta_performance",
+            "meta_relevance",
+            "drive_search"
+          ],
+          "first_result_preview": null,
+          "captions_stable": true,
+          "source_clock_changed": false,
+          "views_guaranteed": false
+        },
+        "motion_version": 1,
+        "plan_sha256": "77cb24c708d3d639caca54de451440e86fac025e403efb2d20f64f2486d1e723",
+        "authoring": "fresh_grounded_ai_script_pending_independent_qc",
+        "script_sha256": "f11696868f6ee4b4acacc45a6e157ddcbaea2b23b8e75a4b45941696e4105b33",
+        "motion_timeline": {
+          "version": 1,
+          "fps": 30,
+          "alignment": "measured_tts_phrase_with_estimated_verb_position",
+          "select": 15.241,
+          "departure": 15.591,
+          "arrival": 18.791,
+          "search_reset": 22.022,
+          "complete": 18.991,
+          "compare": 18.891,
+          "inspect": 22.072,
+          "phase_order": [
+            "recognize",
+            "select",
+            "demonstrate",
+            "inspect_result"
+          ],
+          "label": "SIMULASI EDUKASI",
+          "source_clock_changed": false
+        },
+        "sound_design": {
+          "version": 1,
+          "author": "ClipForge procedural UI synthesis",
+          "third_party_audio": false,
+          "attribution_required": false,
+          "music": false,
+          "narration_priority": true,
+          "ducked_under_voice": true,
+          "limiter_peak_dbfs": -1.5,
+          "inserted_timeline_seconds": 0,
+          "events": [
+            {
+              "kind": "tap",
+              "start": 0.35,
+              "duration": 0.065,
+              "gain_db": -23,
+              "event": "opening_question"
+            },
+            {
+              "kind": "tap",
+              "start": 15.241,
+              "duration": 0.065,
+              "gain_db": -23,
+              "event": "object_selected"
+            },
+            {
+              "kind": "swoosh",
+              "start": 15.591,
+              "duration": 0.24,
+              "gain_db": -25,
+              "event": "object_travels"
+            },
+            {
+              "kind": "chime",
+              "start": 18.791,
+              "duration": 0.38,
+              "gain_db": -24,
+              "event": "object_arrives"
+            }
+          ],
+          "sha256": "6b87d35882fac1c4be2da8d10abe4e8e9bd51e7385d0651cfb7e0160cc9fe49f",
+          "sample_rate": 48000,
+          "generated_peak_dbfs": -23.0
+        }
+      },
+      "script_sha256": "f11696868f6ee4b4acacc45a6e157ddcbaea2b23b8e75a4b45941696e4105b33",
+      "last_qc_at": "2026-11-20T05:18:48.464286+00:00",
+      "rendered_at": "2026-11-20T05:18:48.464294+00:00",
+      "qc_decision": null,
+      "qc_evidence": [],
+      "qc_provider_http_status": 429,
+      "qc_provider_error": "Provider returned error inclusionai/ling-3.2-flash:free is temporarily rate-limited upstream. Please retry shortly, or add your own provider key to use your own limits: https://openrouter.ai/workspaces/default/byok"
+    },
+    {
+      "key": "2026-11-17:reel:1",
+      "kind": "reel",
+      "due_at": "2026-11-17T18:30:00+07:00",
+      "day": "2026-11-17",
+      "week_start": "2026-11-16",
+      "week_end": "2026-11-22",
+      "due": true,
+      "content_seed": "99e3af815d3dbd2303c775bdcbcc0f900c4b8ce388e74aa078bf32e7b2d0af86",
+      "title": "Salin dan pindah itu berbeda",
+      "topic": "copy",
+      "status": "completed",
+      "job_id": "1c9af7d86ac445da83e7020d3dcc78bb",
+      "created_at": "2026-11-17T15:04:05.475240+00:00",
+      "updated_at": "2026-11-17T23:11:47.556015+00:00",
+      "progress_percent": 100,
+      "message": "Reel terkonfirmasi pada akun target.",
+      "attempts": 4,
+      "authored_plan": {
+        "version": 1,
+        "seed": "99e3af815d3dbd2303c775bdcbcc0f900c4b8ce388e74aa078bf32e7b2d0af86",
+        "kind": "reel",
+        "topic": "copy",
+        "title": "Salin dan pindah itu berbeda",
+        "stages": [
+          {
+            "title": "Masalahnya",
+            "text": "File disalin, aslinya masih di folder mana?",
+            "start": 0.0,
+            "end": 3.528
+          },
+          {
+            "title": "Perhatikan contoh",
+            "text": "Contoh simulasi: Catatan_Kegiatan_26.txt ada di folder Asal, sementara Cadangan masih kosong sebelum operasi.",
+            "start": 3.528,
+            "end": 11.376
+          },
+          {
+            "title": "Coba langkahnya",
+            "text": "Gunakan operasi salin ke folder Cadangan pada contoh ini, lalu amati bahwa catatan tetap ada di Asal dan satu salinan baru muncul di tujuan tanpa menghapus aslinya yang terlihat.",
+            "start": 11.376,
+            "end": 20.904
+          },
+          {
+            "title": "Lihat hasilnya",
+            "text": "Kedua folder kini memiliki file yang sama; batasannya, contoh ini menampilkan keberadaan salinan, bukan pembukaan, isi, atau jaminan berhasil setelah tombol ditekan di dalam simulasi yang ditampilkan.",
+            "start": 20.904,
+            "end": 33.048
+          }
+        ],
+        "files": [
+          {
+            "id": "a",
+            "label": "Catatan_Kegiatan_26.txt",
+            "size": 2,
+            "type": "document"
+          },
+          {
+            "id": "b",
+            "label": "Foto_Kegiatan_26.jpg",
+            "size": 8,
+            "type": "photo"
+          },
+          {
+            "id": "c",
+            "label": "Foto_taman_26.jpg",
+            "size": 5,
+            "type": "photo"
+          }
+        ],
+        "caption": "Pada contoh ini, Catatan_Kegiatan_26.txt tetap di Asal dan satu salinannya muncul di Cadangan. Kedua folder kini memiliki file yang sama setelah operasi salin.\n\n#TipsDigital #TeknologiSehariHari",
+        "visual_type": "authored_animated_simulation",
+        "third_party_footage": false,
+        "third_party_music": false,
+        "synthetic_voice": true,
+        "narration_provider": "edge_neural_id-ID-ArdiNeural",
+        "example": "Kegiatan_26",
+        "creative_policy": {
+          "version": 2,
+          "niche": "Digital sehari-hari untuk keluarga",
+          "pillar": "everyday",
+          "pillar_label": "Langkah digital yang memudahkan",
+          "basis": "editorial_hypothesis_not_measured_winner",
+          "format": "persistent_object_demonstration",
+          "reference_keys": [
+            "meta_original",
+            "meta_performance",
+            "meta_relevance",
+            "drive_search"
+          ],
+          "first_result_preview": null,
+          "captions_stable": true,
+          "source_clock_changed": false,
+          "views_guaranteed": false
+        },
+        "motion_version": 1,
+        "plan_sha256": "838835a3baf37b6086dc35345e4644e4cd824b7cc4e86ef283bd2a0f20d01757",
+        "authoring": "fresh_grounded_ai_script_pending_independent_qc",
+        "script_sha256": "e7449da33595a690375a024fb4c5eb49a90d34287f57c56c97d46974566365a6",
+        "motion_timeline": {
+          "version": 1,
+          "fps": 30,
+          "alignment": "measured_tts_phrase_with_estimated_verb_position",
+          "select": 12.322,
+          "departure": 12.672,
+          "arrival": 15.872,
+          "search_reset": 21.254,
+          "complete": 16.072,
+          "compare": 15.972,
+          "inspect": 21.304,
+          "phase_order": [
+            "recognize",
+            "select",
+            "demonstrate",
+            "inspect_result"
+          ],
+          "label": "SIMULASI EDUKASI",
+          "source_clock_changed": false
+        },
+        "sound_design": {
+          "version": 1,
+          "author": "ClipForge procedural UI synthesis",
+          "third_party_audio": false,
+          "attribution_required": false,
+          "music": false,
+          "narration_priority": true,
+          "ducked_under_voice": true,
+          "limiter_peak_dbfs": -1.5,
+          "inserted_timeline_seconds": 0,
+          "events": [
+            {
+              "kind": "tap",
+              "start": 0.35,
+              "duration": 0.065,
+              "gain_db": -23,
+              "event": "opening_question"
+            },
+            {
+              "kind": "tap",
+              "start": 12.322,
+              "duration": 0.065,
+              "gain_db": -23,
+              "event": "object_selected"
+            },
+            {
+              "kind": "swoosh",
+              "start": 12.672,
+              "duration": 0.24,
+              "gain_db": -25,
+              "event": "object_travels"
+            },
+            {
+              "kind": "chime",
+              "start": 15.872,
+              "duration": 0.38,
+              "gain_db": -24,
+              "event": "object_arrives"
+            },
+            {
+              "kind": "tap",
+              "start": 21.304,
+              "duration": 0.065,
+              "gain_db": -25,
+              "event": "inspect_existing_copy"
+            }
+          ],
+          "sha256": "35d455eedbdd8cc6ebde6bc93634b17c70d5d5adb8e043e0e0f4e501b198d9a6",
+          "sample_rate": 48000,
+          "generated_peak_dbfs": -23.0
+        }
+      },
+      "script_sha256": "e7449da33595a690375a024fb4c5eb49a90d34287f57c56c97d46974566365a6",
+      "last_qc_at": "2026-11-17T23:07:43.354742+00:00",
+      "rendered_at": "2026-11-17T23:07:43.354925+00:00",
+      "qc_decision": null,
+      "qc_evidence": [],
+      "qc_provider_http_status": null,
+      "qc_provider_error": null,
+      "upload_id": "02208699d5364814b34f560fbbb5a2d6",
+      "upload_confirmed": true,
+      "video_url": "https://www.facebook.com/reel/1073545069061854/"
+    },
+    {
+      "key": "2026-11-17:story:0",
+      "kind": "story",
+      "due_at": "2026-11-17T15:00:00+07:00",
+      "day": "2026-11-17",
+      "week_start": "2026-11-16",
+      "week_end": "2026-11-22",
+      "due": true,
+      "content_seed": "3331ea86ef5d2e928dabee4c833d24ff022e1434aa366a52ceca556d018168d8",
+      "title": "Nomor file agar mudah diurutkan",
+      "topic": "number",
+      "status": "failed",
+      "job_id": "44a35eb5552a46528c3b8a78d259e89d",
+      "created_at": "2026-11-17T08:47:37.267643+00:00",
+      "updated_at": "2026-11-17T12:03:38.887565+00:00",
+      "progress_percent": 100,
+      "message": "Audiens publik Story belum terbukti; ditahan sebelum Bagikan.",
+      "attempts": 4,
+      "authored_plan": {
+        "version": 1,
+        "seed": "3331ea86ef5d2e928dabee4c833d24ff022e1434aa366a52ceca556d018168d8",
+        "kind": "story",
+        "topic": "number",
+        "title": "Nomor file agar mudah diurutkan",
+        "stages": [
+          {
+            "title": "Masalahnya",
+            "text": "Kenapa nomor sepuluh menyelip di antara satu dan dua?",
+            "start": 0.0,
+            "end": 3.384
+          },
+          {
+            "title": "Perhatikan contoh",
+            "text": "Contoh ini menunjukkan tiga nama catatan diurutkan sebagai teks, bukan sebagai angka.",
+            "start": 3.384,
+            "end": 8.736
+          },
+          {
+            "title": "Coba langkahnya",
+            "text": "Pada contoh, nama diubah menggunakan dua digit konsisten: nol satu, nol dua, sepuluh; lalu diurutkan lagi sebagai teks, menghasilkan urutan 01, 02, 10.",
+            "start": 8.736,
+            "end": 21.096
+          },
+          {
+            "title": "Lihat hasilnya",
+            "text": "Dalam contoh ini, angka pada nama jadi rapi dan mudah diikuti. Ini hanya pola penamaan; aplikasi lain dapat mengurutkan dengan cara berbeda.",
+            "start": 21.096,
+            "end": 30.48
+          }
+        ],
+        "files": [
+          {
+            "id": "a",
+            "label": "Catatan_1.txt",
+            "size": 2,
+            "type": "document"
+          },
+          {
+            "id": "b",
+            "label": "Catatan_10.txt",
+            "size": 8,
+            "type": "document"
+          },
+          {
+            "id": "c",
+            "label": "Catatan_2.txt",
+            "size": 5,
+            "type": "document"
+          }
+        ],
+        "caption": "Contoh ini mengurutkan Catatan_1, Catatan_10, dan Catatan_2 sebagai teks, lalu menamainya Catatan_01, Catatan_02, dan Catatan_10 sehingga urutannya menjadi 01, 02, 10. Ini hanya pola penamaan; aplikasi lain dapat mengurutkan dengan cara berbeda.\n\n#TipsDigital #TeknologiSehariHari",
+        "visual_type": "authored_animated_simulation",
+        "third_party_footage": false,
+        "third_party_music": false,
+        "synthetic_voice": true,
+        "narration_provider": "edge_neural_id-ID-ArdiNeural",
+        "example": "Kegiatan_21",
+        "creative_policy": {
+          "version": 2,
+          "niche": "Digital sehari-hari untuk keluarga",
+          "pillar": "everyday",
+          "pillar_label": "Langkah digital yang memudahkan",
+          "basis": "editorial_hypothesis_not_measured_winner",
+          "format": "persistent_object_demonstration",
+          "reference_keys": [
+            "meta_original",
+            "meta_performance",
+            "meta_relevance",
+            "drive_search"
+          ],
+          "first_result_preview": null,
+          "captions_stable": true,
+          "source_clock_changed": false,
+          "views_guaranteed": false
+        },
+        "motion_version": 1,
+        "plan_sha256": "f060cfaf9e1f3dd92a87cf13d04e1c0dec3298d1e719e55af9d72fcb8fec9e49",
+        "authoring": "fresh_grounded_ai_script_pending_independent_qc",
+        "script_sha256": "a21ace3b7d744f05b77f9b1bba4be26f076a5ae905a694fa92de3141709f458c",
+        "motion_timeline": {
+          "version": 1,
+          "fps": 30,
+          "alignment": "measured_tts_phrase_with_estimated_verb_position",
+          "select": 19.296,
+          "departure": 19.646,
+          "arrival": 20.846,
+          "search_reset": 21.446,
+          "complete": 21.046,
+          "compare": 20.946,
+          "inspect": 21.496,
+          "phase_order": [
+            "recognize",
+            "select",
+            "demonstrate",
+            "inspect_result"
+          ],
+          "label": "SIMULASI EDUKASI",
+          "source_clock_changed": false
+        },
+        "sound_design": {
+          "version": 1,
+          "author": "ClipForge procedural UI synthesis",
+          "third_party_audio": false,
+          "attribution_required": false,
+          "music": false,
+          "narration_priority": true,
+          "ducked_under_voice": true,
+          "limiter_peak_dbfs": -1.5,
+          "inserted_timeline_seconds": 0,
+          "events": [
+            {
+              "kind": "tap",
+              "start": 0.35,
+              "duration": 0.065,
+              "gain_db": -23,
+              "event": "opening_question"
+            },
+            {
+              "kind": "tap",
+              "start": 19.296,
+              "duration": 0.065,
+              "gain_db": -23,
+              "event": "object_selected"
+            },
+            {
+              "kind": "swoosh",
+              "start": 19.646,
+              "duration": 0.24,
+              "gain_db": -25,
+              "event": "object_travels"
+            },
+            {
+              "kind": "chime",
+              "start": 20.846,
+              "duration": 0.38,
+              "gain_db": -24,
+              "event": "object_arrives"
+            }
+          ],
+          "sha256": "ab3fdc3ccd5c11f4d595b753038d53cc169dccfe0db0964191be18caad5ec548",
+          "sample_rate": 48000,
+          "generated_peak_dbfs": -23.0
+        }
+      },
+      "script_sha256": "a21ace3b7d744f05b77f9b1bba4be26f076a5ae905a694fa92de3141709f458c",
+      "last_qc_at": "2026-11-17T11:53:01.888986+00:00",
+      "rendered_at": "2026-11-17T11:53:01.888992+00:00",
+      "qc_decision": null,
+      "qc_evidence": [],
+      "qc_provider_http_status": null,
+      "qc_provider_error": null,
+      "upload_id": "598034c5e9704041bc65c2af52c5249a",
+      "upload_confirmed": false,
+      "video_url": null
+    },
+    {
+      "key": "2026-11-17:reel:0",
+      "kind": "reel",
+      "due_at": "2026-11-17T11:30:00+07:00",
+      "day": "2026-11-17",
+      "week_start": "2026-11-16",
+      "week_end": "2026-11-22",
+      "due": true,
+      "content_seed": "9458667a5b4ebeb2d8b4a7f54c27906c6e922241a90fd8149999f6a8c514f2c7",
+      "title": "Nama sama belum tentu file yang sama",
+      "topic": "paths",
+      "status": "completed",
+      "job_id": "b1936133fd204666b68663bd2b208723",
+      "created_at": "2026-11-17T04:35:00.460128+00:00",
+      "updated_at": "2026-11-17T05:47:15.593367+00:00",
+      "progress_percent": 100,
+      "message": "Reel terkonfirmasi pada akun target.",
+      "attempts": 2,
+      "authored_plan": {
+        "version": 1,
+        "seed": "9458667a5b4ebeb2d8b4a7f54c27906c6e922241a90fd8149999f6a8c514f2c7",
+        "kind": "reel",
+        "topic": "paths",
+        "title": "Nama sama belum tentu file yang sama",
+        "stages": [
+          {
+            "title": "Masalahnya",
+            "text": "Dua file Catatan.txt, nama sama tapi isinya beda.",
+            "start": 0.0,
+            "end": 4.248
+          },
+          {
+            "title": "Perhatikan contoh",
+            "text": "Dalam contoh simulasi ini, keduanya tersimpan di folder Rumah dan folder Kerja.",
+            "start": 4.248,
+            "end": 9.384
+          },
+          {
+            "title": "Coba langkahnya",
+            "text": "Perhatikan nama folder sebelum memilih file. Catatan.txt di Rumah berisi daftar belanja, sedangkan Catatan.txt di Kerja berisi agenda rapat, meski namanya identik.",
+            "start": 9.384,
+            "end": 20.04
+          },
+          {
+            "title": "Lihat hasilnya",
+            "text": "Nama yang sama belum cukup untuk menyebut file duplikat. Contoh simulasi ini hanya menunjukkan pemeriksaan lokasi dan isi, bukan menghapus atau mengganti file.",
+            "start": 20.04,
+            "end": 29.735999999999997
+          }
+        ],
+        "files": [
+          {
+            "id": "a",
+            "label": "Catatan.txt",
+            "size": 2,
+            "type": "document",
+            "detail": "Daftar belanja"
+          },
+          {
+            "id": "b",
+            "label": "Catatan.txt",
+            "size": 8,
+            "type": "document",
+            "detail": "Agenda rapat"
+          }
+        ],
+        "caption": "Nama sama belum tentu file yang sama. Periksa folder dan isi Catatan.txt sebelum menghapus atau menggantinya.\n\n#TipsDigital #TeknologiSehariHari",
+        "visual_type": "authored_animated_simulation",
+        "third_party_footage": false,
+        "third_party_music": false,
+        "synthetic_voice": true,
+        "narration_provider": "edge_neural_id-ID-ArdiNeural",
+        "example": "Kegiatan_04",
+        "creative_policy": {
+          "version": 2,
+          "niche": "Digital sehari-hari untuk keluarga",
+          "pillar": "mistakes",
+          "pillar_label": "Hindari salah langkah",
+          "basis": "editorial_hypothesis_not_measured_winner",
+          "format": "persistent_object_demonstration",
+          "reference_keys": [
+            "meta_original",
+            "meta_performance",
+            "meta_relevance",
+            "drive_search"
+          ],
+          "first_result_preview": null,
+          "captions_stable": true,
+          "source_clock_changed": false,
+          "views_guaranteed": false
+        },
+        "motion_version": 1,
+        "plan_sha256": "d0540494375c8968358f0756d6bd66f13d2579b247d1246905cbc52d191161a6",
+        "authoring": "fresh_grounded_ai_script_pending_independent_qc",
+        "script_sha256": "0ef5bc2f2d2ede9418ba9a8080acf3beeaecebf5618185decce8c506969c64fd",
+        "motion_timeline": {
+          "version": 1,
+          "fps": 30,
+          "alignment": "measured_tts_phrase_with_estimated_verb_position",
+          "select": 9.484,
+          "departure": 9.834,
+          "arrival": 13.034,
+          "search_reset": 20.39,
+          "complete": 13.234,
+          "compare": 13.084,
+          "inspect": 20.44,
+          "phase_order": [
+            "recognize",
+            "select",
+            "demonstrate",
+            "inspect_result"
+          ],
+          "label": "SIMULASI EDUKASI",
+          "source_clock_changed": false
+        },
+        "sound_design": {
+          "version": 1,
+          "author": "ClipForge procedural UI synthesis",
+          "third_party_audio": false,
+          "attribution_required": false,
+          "music": false,
+          "narration_priority": true,
+          "ducked_under_voice": true,
+          "limiter_peak_dbfs": -1.5,
+          "inserted_timeline_seconds": 0,
+          "events": [
+            {
+              "kind": "tap",
+              "start": 0.35,
+              "duration": 0.065,
+              "gain_db": -23,
+              "event": "opening_question"
+            },
+            {
+              "kind": "tap",
+              "start": 9.484,
+              "duration": 0.065,
+              "gain_db": -23,
+              "event": "object_selected"
+            },
+            {
+              "kind": "swoosh",
+              "start": 9.834,
+              "duration": 0.24,
+              "gain_db": -25,
+              "event": "object_travels"
+            },
+            {
+              "kind": "chime",
+              "start": 13.034,
+              "duration": 0.38,
+              "gain_db": -24,
+              "event": "object_arrives"
+            }
+          ],
+          "sha256": "0f05eb43ce9878997f5665b04e7117135623780db90ae4c22f91b300d41575bf",
+          "sample_rate": 48000,
+          "generated_peak_dbfs": -23.0
+        }
+      },
+      "script_sha256": "0ef5bc2f2d2ede9418ba9a8080acf3beeaecebf5618185decce8c506969c64fd",
+      "last_qc_at": "2026-11-17T05:38:14.850015+00:00",
+      "rendered_at": "2026-11-17T05:38:14.850026+00:00",
+      "qc_decision": null,
+      "qc_evidence": [],
+      "qc_provider_http_status": 429,
+      "qc_provider_error": "Provider returned error inclusionai/ling-3.2-flash:free is temporarily rate-limited upstream. Please retry shortly, or add your own provider key to use your own limits: https://openrouter.ai/workspaces/default/byok",
+      "upload_id": "f223987331ab40b1966bb9e0c31ac281",
+      "upload_confirmed": true,
+      "video_url": "https://www.facebook.com/reel/2048859172463011/"
+    },
+    {
+      "key": "2026-11-16:story:0",
+      "kind": "story",
+      "due_at": "2026-11-16T15:00:00+07:00",
+      "day": "2026-11-16",
+      "week_start": "2026-11-16",
+      "week_end": "2026-11-22",
+      "due": true,
+      "content_seed": "41322c23ce13a1c6a987e7265e56e18c692bf7028061c493705fa873d136b217",
+      "title": "Nama file yang mudah dikenali",
+      "topic": "rename",
+      "status": "failed",
+      "job_id": "ea38928df7084765bc722090684cb994",
+      "created_at": "2026-11-16T14:37:55.779105+00:00",
+      "updated_at": "2026-11-16T14:50:41.931614+00:00",
+      "progress_percent": 100,
+      "message": "Audiens publik Story belum terbukti; ditahan sebelum Bagikan.",
+      "attempts": 1,
+      "authored_plan": {
+        "version": 1,
+        "seed": "41322c23ce13a1c6a987e7265e56e18c692bf7028061c493705fa873d136b217",
+        "kind": "story",
+        "topic": "rename",
+        "title": "Nama file yang mudah dikenali",
+        "stages": [
+          {
+            "title": "Masalahnya",
+            "text": "Nama cuma angka? Tambahkan konteks yang jelas.",
+            "start": 0.0,
+            "end": 4.32
+          },
+          {
+            "title": "Perhatikan contoh",
+            "text": "Di simulasi ini, sebuah catatan memakai nama umum. Dari daftar file saja, isi catatan sulit dibedakan.",
+            "start": 4.32,
+            "end": 12.456
+          },
+          {
+            "title": "Coba langkahnya",
+            "text": "Ubah bagian nama menjadi Catatan kegiatan, lalu tambahkan tanggal contoh. Pertahankan ekstensi file di bagian paling akhir.",
+            "start": 12.456,
+            "end": 20.88
+          },
+          {
+            "title": "Lihat hasilnya",
+            "text": "Hasilnya lebih mudah dikenali sebelum dibuka. Ini hanya mengganti nama, bukan mengubah isi atau format dokumennya.",
+            "start": 20.88,
+            "end": 28.584
+          }
+        ],
+        "files": [
+          {
+            "id": "a",
+            "label": "Dokumen_001.txt",
+            "size": 2,
+            "type": "document"
+          },
+          {
+            "id": "b",
+            "label": "Foto_Kegiatan_01.jpg",
+            "size": 8,
+            "type": "photo"
+          },
+          {
+            "id": "c",
+            "label": "Foto_taman_01.jpg",
+            "size": 5,
+            "type": "photo"
+          }
+        ],
+        "caption": "Nama file yang mudah dikenali. Hasilnya lebih mudah dikenali sebelum dibuka. Ini hanya mengganti nama, bukan mengubah isi atau format dokumennya.\n\n#TipsDigital #TeknologiSehariHari",
+        "visual_type": "authored_animated_simulation",
+        "third_party_footage": false,
+        "third_party_music": false,
+        "synthetic_voice": true,
+        "narration_provider": "edge_neural_id-ID-ArdiNeural",
+        "example": "Kegiatan_01",
+        "creative_policy": {
+          "version": 2,
+          "niche": "Digital sehari-hari untuk keluarga",
+          "pillar": "everyday",
+          "pillar_label": "Langkah digital yang memudahkan",
+          "basis": "editorial_hypothesis_not_measured_winner",
+          "format": "persistent_object_demonstration",
+          "reference_keys": [
+            "meta_original",
+            "meta_performance",
+            "meta_relevance",
+            "drive_search"
+          ],
+          "first_result_preview": null,
+          "captions_stable": true,
+          "source_clock_changed": false,
+          "views_guaranteed": false
+        },
+        "motion_version": 1,
+        "plan_sha256": "14a00728ca3416d4a71cfd470d9013f846e21bbd408d8ab8e2e7ee107ac547b8",
+        "script_sha256": "beda82df123e6182636e4fd115555c629ffb775085929e0a9ee62f3d66118177",
+        "motion_timeline": {
+          "version": 1,
+          "fps": 30,
+          "alignment": "measured_tts_phrase_with_estimated_verb_position",
+          "select": 12.556,
+          "departure": 12.906,
+          "arrival": 16.106,
+          "search_reset": 21.23,
+          "complete": 16.306,
+          "compare": 16.206,
+          "inspect": 21.28,
+          "phase_order": [
+            "recognize",
+            "select",
+            "demonstrate",
+            "inspect_result"
+          ],
+          "label": "SIMULASI EDUKASI",
+          "source_clock_changed": false
+        },
+        "sound_design": {
+          "version": 1,
+          "author": "ClipForge procedural UI synthesis",
+          "third_party_audio": false,
+          "attribution_required": false,
+          "music": false,
+          "narration_priority": true,
+          "ducked_under_voice": true,
+          "limiter_peak_dbfs": -1.5,
+          "inserted_timeline_seconds": 0,
+          "events": [
+            {
+              "kind": "tap",
+              "start": 0.35,
+              "duration": 0.065,
+              "gain_db": -23,
+              "event": "opening_question"
+            },
+            {
+              "kind": "tap",
+              "start": 12.556,
+              "duration": 0.065,
+              "gain_db": -23,
+              "event": "object_selected"
+            },
+            {
+              "kind": "swoosh",
+              "start": 12.906,
+              "duration": 0.24,
+              "gain_db": -25,
+              "event": "object_travels"
+            },
+            {
+              "kind": "chime",
+              "start": 16.106,
+              "duration": 0.38,
+              "gain_db": -24,
+              "event": "object_arrives"
+            }
+          ],
+          "sha256": "bd65958740589af1018789dc7c1fc5cd70cc7e37128cbc55c36503c93efe4d60",
+          "sample_rate": 48000,
+          "generated_peak_dbfs": -23.0
+        }
+      },
+      "script_sha256": "beda82df123e6182636e4fd115555c629ffb775085929e0a9ee62f3d66118177",
+      "last_qc_at": "2026-11-16T14:38:42.619220+00:00",
+      "rendered_at": "2026-11-16T14:38:42.619228+00:00",
+      "upload_id": "0ac30bc5d7b243c3ab2f81f23b51d775",
+      "upload_confirmed": false,
+      "video_url": null
+    },
+    {
+      "key": "2026-11-16:reel:1",
+      "kind": "reel",
+      "due_at": "2026-11-16T18:30:00+07:00",
+      "day": "2026-11-16",
+      "week_start": "2026-11-16",
+      "week_end": "2026-11-22",
+      "due": true,
+      "content_seed": "b2ef70b37cecef9296d526393826493b39a122b119234ed82d3dca7f153f5701",
+      "title": "Cari dengan kata yang spesifik",
+      "topic": "search",
+      "status": "completed",
+      "job_id": "af0a3163942840d2a474cff8f4f46313",
+      "created_at": "2026-11-16T11:30:04.062604+00:00",
+      "updated_at": "2026-11-16T11:37:30.582848+00:00",
+      "progress_percent": 100,
+      "message": "Reel terkonfirmasi pada akun target.",
+      "attempts": 1,
+      "authored_plan": {
+        "version": 1,
+        "seed": "b2ef70b37cecef9296d526393826493b39a122b119234ed82d3dca7f153f5701",
+        "kind": "reel",
+        "topic": "search",
+        "title": "Cari dengan kata yang spesifik",
+        "stages": [
+          {
+            "title": "Masalahnya",
+            "text": "File belum terlihat? Coba kata yang spesifik.",
+            "start": 0.0,
+            "end": 4.44
+          },
+          {
+            "title": "Perhatikan contoh",
+            "text": "Simulasi ini memiliki beberapa nama file yang berbeda. Kita hanya ingin melihat catatan yang berkaitan dengan kegiatan.",
+            "start": 4.44,
+            "end": 11.832
+          },
+          {
+            "title": "Coba langkahnya",
+            "text": "Ketik kata kegiatan pada kolom pencarian. Daftar menyaring nama yang cocok, sementara file lain tidak ditampilkan.",
+            "start": 11.832,
+            "end": 19.536
+          },
+          {
+            "title": "Lihat hasilnya",
+            "text": "File yang tidak tampil tetap ada. Kosongkan pencarian untuk melihat semuanya lagi; hasil pencarian bukan tanda bahwa file lain terhapus.",
+            "start": 19.536,
+            "end": 28.128
+          }
+        ],
+        "files": [
+          {
+            "id": "a",
+            "label": "Catatan_kegiatan_09.txt",
+            "size": 2,
+            "type": "document"
+          },
+          {
+            "id": "b",
+            "label": "Jadwal_taman.txt",
+            "size": 8,
+            "type": "document"
+          },
+          {
+            "id": "c",
+            "label": "Catatan_belanja.txt",
+            "size": 5,
+            "type": "document"
+          }
+        ],
+        "caption": "Cari dengan kata yang spesifik. File yang tidak tampil tetap ada. Kosongkan pencarian untuk melihat semuanya lagi; hasil pencarian bukan tanda bahwa file lain terhapus.\n\n#TipsDigital #TeknologiSehariHari",
+        "visual_type": "authored_animated_simulation",
+        "third_party_footage": false,
+        "third_party_music": false,
+        "synthetic_voice": true,
+        "narration_provider": "edge_neural_id-ID-ArdiNeural",
+        "example": "Kegiatan_09",
+        "creative_policy": {
+          "version": 2,
+          "niche": "Digital sehari-hari untuk keluarga",
+          "pillar": "storage",
+          "pillar_label": "File dan foto lebih rapi",
+          "basis": "editorial_hypothesis_not_measured_winner",
+          "format": "persistent_object_demonstration",
+          "reference_keys": [
+            "meta_original",
+            "meta_performance",
+            "meta_relevance",
+            "drive_search"
+          ],
+          "first_result_preview": null,
+          "captions_stable": true,
+          "source_clock_changed": false,
+          "views_guaranteed": false
+        },
+        "motion_version": 1,
+        "plan_sha256": "62e89785d2fca2522eb7ca3fc01696cd87c8cd5fdac7da79f0d2af5b07f5e070",
+        "script_sha256": "225d444bbb6381928210aa525d9d7eee0c6c93c3838aeee31257c6de8b81a65c",
+        "motion_timeline": {
+          "version": 1,
+          "fps": 30,
+          "alignment": "measured_tts_phrase_with_estimated_verb_position",
+          "select": 11.932,
+          "departure": 12.282,
+          "arrival": 15.482,
+          "search_reset": 22.133,
+          "complete": 15.682,
+          "compare": 15.582,
+          "inspect": 19.936,
+          "phase_order": [
+            "recognize",
+            "select",
+            "demonstrate",
+            "inspect_result"
+          ],
+          "label": "SIMULASI EDUKASI",
+          "source_clock_changed": false
+        },
+        "sound_design": {
+          "version": 1,
+          "author": "ClipForge procedural UI synthesis",
+          "third_party_audio": false,
+          "attribution_required": false,
+          "music": false,
+          "narration_priority": true,
+          "ducked_under_voice": true,
+          "limiter_peak_dbfs": -1.5,
+          "inserted_timeline_seconds": 0,
+          "events": [
+            {
+              "kind": "tap",
+              "start": 0.35,
+              "duration": 0.065,
+              "gain_db": -23,
+              "event": "opening_question"
+            },
+            {
+              "kind": "tap",
+              "start": 11.932,
+              "duration": 0.065,
+              "gain_db": -23,
+              "event": "object_selected"
+            },
+            {
+              "kind": "swoosh",
+              "start": 12.282,
+              "duration": 0.24,
+              "gain_db": -25,
+              "event": "object_travels"
+            },
+            {
+              "kind": "chime",
+              "start": 15.482,
+              "duration": 0.38,
+              "gain_db": -24,
+              "event": "object_arrives"
+            }
+          ],
+          "sha256": "5a4de19a30611bea990cf0497f53f5fd58ab4c2b52b3ca87a5b9f34f58f21217",
+          "sample_rate": 48000,
+          "generated_peak_dbfs": -23.0
+        }
+      },
+      "script_sha256": "225d444bbb6381928210aa525d9d7eee0c6c93c3838aeee31257c6de8b81a65c",
+      "last_qc_at": "2026-11-16T11:30:55.700414+00:00",
+      "rendered_at": "2026-11-16T11:30:55.700426+00:00",
+      "upload_id": "c4f2bf44c2fe4c2698cabfc0ba321f76",
+      "upload_confirmed": true,
+      "video_url": "https://www.facebook.com/reel/1413842854072433/"
+    },
+    {
+      "key": "2026-11-16:reel:0",
+      "kind": "reel",
+      "due_at": "2026-11-16T11:30:00+07:00",
+      "day": "2026-11-16",
+      "week_start": "2026-11-16",
+      "week_end": "2026-11-22",
+      "due": true,
+      "content_seed": "d00700a38c352ce6cdef25a36277eb8322f426005954a7a6f3ee91dcc7193258",
+      "title": "Periksa file besar sebelum merapikan",
+      "topic": "size",
+      "status": "dropped",
+      "job_id": "372a941bc2404fd4875db168ad9ce41f",
+      "created_at": "2026-11-16T04:30:24.710527+00:00",
+      "updated_at": "2026-11-16T04:35:09.432152+00:00",
+      "progress_percent": 90,
+      "message": "Rendered audio does not sufficiently match timed captions at output 12.000-18.000s",
+      "attempts": 1,
+      "authored_plan": {
+        "version": 1,
+        "seed": "d00700a38c352ce6cdef25a36277eb8322f426005954a7a6f3ee91dcc7193258",
+        "kind": "reel",
+        "topic": "size",
+        "title": "Periksa file besar sebelum merapikan",
+        "stages": [
+          {
+            "title": "Masalahnya",
+            "text": "Penyimpanan penuh padahal file belum dibuka?",
+            "start": 0.0,
+            "end": 3.12
+          },
+          {
+            "title": "Perhatikan contoh",
+            "text": "Contoh simulasi: satu dokumen kecil, dua video, ukuran tertera di samping nama.",
+            "start": 3.12,
+            "end": 9.216000000000001
+          },
+          {
+            "title": "Coba langkahnya",
+            "text": "Urutkan ukuran besar ke kecil; Video_Kegiatan_09.mp4 120 naik teratas, Video_taman_09.mp4 48 menyusul, Catatan_Kegiatan_09.txt 2 tetap di bawah, semua masih terdaftar utuh tanpa ada yang hilang dari daftar.",
+            "start": 9.216000000000001,
+            "end": 24.768
+          },
+          {
+            "title": "Lihat hasilnya",
+            "text": "Hasilnya urutan lebih jelas, bukan penghapusan; periksa file yang masih diperlukan, salin yang penting, baru rapatkan penyimpanan dengan tenang karena tampilan hanya mengurutkan.",
+            "start": 24.768,
+            "end": 34.848
+          }
+        ],
+        "files": [
+          {
+            "id": "a",
+            "label": "Catatan_Kegiatan_09.txt",
+            "size": 2,
+            "type": "document"
+          },
+          {
+            "id": "b",
+            "label": "Video_Kegiatan_09.mp4",
+            "size": 120,
+            "type": "video"
+          },
+          {
+            "id": "c",
+            "label": "Video_taman_09.mp4",
+            "size": 48,
+            "type": "video"
+          }
+        ],
+        "caption": "Mengurutkan ukuran besar ke kecil memindahkan Video_Kegiatan_09.mp4 ke atas tanpa menghapus. Periksa file yang masih diperlukan dan salin yang penting sebelum merapikan penyimpanan.\n\n#TipsDigital #TeknologiSehariHari",
+        "visual_type": "authored_animated_simulation",
+        "third_party_footage": false,
+        "third_party_music": false,
+        "synthetic_voice": true,
+        "narration_provider": "edge_neural_id-ID-ArdiNeural",
+        "example": "Kegiatan_09",
+        "creative_policy": {
+          "version": 2,
+          "niche": "Digital sehari-hari untuk keluarga",
+          "pillar": "storage",
+          "pillar_label": "File dan foto lebih rapi",
+          "basis": "editorial_hypothesis_not_measured_winner",
+          "format": "persistent_object_demonstration",
+          "reference_keys": [
+            "meta_original",
+            "meta_performance",
+            "meta_relevance",
+            "android_storage"
+          ],
+          "first_result_preview": null,
+          "captions_stable": true,
+          "source_clock_changed": false,
+          "views_guaranteed": false
+        },
+        "motion_version": 1,
+        "plan_sha256": "70c5f91a08c41a41d23846feb55b32418a8ff61f5c5f5a72b5760540c31ab87e",
+        "authoring": "fresh_grounded_ai_script_pending_independent_qc",
+        "script_sha256": "7274028fdc51b629f1198acff7888edeecafc71d72998690fb9e633188f416d8",
+        "motion_timeline": {
+          "version": 1,
+          "fps": 30,
+          "alignment": "measured_tts_phrase_with_estimated_verb_position",
+          "select": 9.316,
+          "departure": 9.666,
+          "arrival": 12.866,
+          "search_reset": 25.118,
+          "complete": 13.066,
+          "compare": 12.966,
+          "inspect": 27.558,
+          "phase_order": [
+            "recognize",
+            "select",
+            "demonstrate",
+            "inspect_result"
+          ],
+          "label": "SIMULASI EDUKASI",
+          "source_clock_changed": false
+        },
+        "sound_design": {
+          "version": 1,
+          "author": "ClipForge procedural UI synthesis",
+          "third_party_audio": false,
+          "attribution_required": false,
+          "music": false,
+          "narration_priority": true,
+          "ducked_under_voice": true,
+          "limiter_peak_dbfs": -1.5,
+          "inserted_timeline_seconds": 0,
+          "events": [
+            {
+              "kind": "tap",
+              "start": 0.35,
+              "duration": 0.065,
+              "gain_db": -23,
+              "event": "opening_question"
+            },
+            {
+              "kind": "tap",
+              "start": 9.316,
+              "duration": 0.065,
+              "gain_db": -23,
+              "event": "object_selected"
+            },
+            {
+              "kind": "swoosh",
+              "start": 9.666,
+              "duration": 0.24,
+              "gain_db": -25,
+              "event": "object_travels"
+            },
+            {
+              "kind": "chime",
+              "start": 12.866,
+              "duration": 0.38,
+              "gain_db": -24,
+              "event": "object_arrives"
+            }
+          ],
+          "sha256": "26b25ec5b58bc08ed440fc28ef8263db4a7fc61c89d1ac71ed9adde9e7811e73",
+          "sample_rate": 48000,
+          "generated_peak_dbfs": -23.0
+        }
+      },
+      "script_sha256": "7274028fdc51b629f1198acff7888edeecafc71d72998690fb9e633188f416d8",
+      "last_qc_at": "2026-11-16T04:34:27.224148+00:00",
+      "rendered_at": "2026-11-16T04:34:27.224172+00:00",
+      "qc_decision": "DROP_SOURCE",
+      "qc_evidence": [
+        "Rendered audio does not sufficiently match timed captions at output 12.000-18.000s"
+      ],
+      "qc_provider_http_status": null,
+      "qc_provider_error": null
+    }
+  ],
+  "next_slot": {
+    "key": "2026-11-20:reel:0",
+    "kind": "reel",
+    "due_at": "2026-11-20T11:30:00+07:00",
+    "day": "2026-11-20",
+    "week_start": "2026-11-16",
+    "week_end": "2026-11-22",
+    "due": true,
+    "content_seed": "11217c2c628ffdc97a561e9f35f1ba5ce1dd35a5b4d61bfd95cad28a6936d0c8"
+  },
+  "activity": {
+    "version": 1,
+    "account_verified": true,
+    "checked_at": "2026-11-20T00:22:00.430651+00:00",
+    "period_label": "15 Nov - 21 Nov",
+    "percent": 42,
+    "tasks": [
+      {
+        "key": "public_posts",
+        "label": "Postingan publik",
+        "completed": 3,
+        "target": 7
+      }
+    ],
+    "stories": null,
+    "source": "facebook_live",
+    "href": "https://www.facebook.com/professional_dashboard/status/",
+    "note": "Facebook menentukan progres tugas. Unggahan lokal tidak dihitung sebagai kredit tugas atau bonus."
+  },
+  "bonus_priority": {
+    "state": "refresh_required",
+    "priority": false,
+    "amount_usd": 1.0,
+    "required_reels": 3,
+    "facebook_completed_reels": null,
+    "minimum_duration_seconds": 10,
+    "minimum_qualified_views": 10,
+    "minimum_reels_with_qualified_views": 1,
+    "period_label": null,
+    "checked_at": "2026-11-20T00:22:47.914258+00:00",
+    "locally_confirmed_reels": 0,
+    "awarded": false,
+    "note": "Bonus hanya tercapai setelah Facebook mengonfirmasi. Tayangan yang memenuhi syarat harus berasal dari penonton nyata."
+  },
+  "plan_note": "Rencana Senin–Minggu: 13 Reel dan 7 cerita. Slot terlewat tidak ditumpuk. Hasil terkonfirmasi dihitung terpisah dari kredit tugas Facebook.",
+  "scheduler_running": true,
+  "heartbeat": "2026-11-20T05:55:39.187861+00:00",
+  "message": "Menunggu jadwal berikutnya atau hasil proses yang sedang berjalan.",
+  "activity_error": null
+}

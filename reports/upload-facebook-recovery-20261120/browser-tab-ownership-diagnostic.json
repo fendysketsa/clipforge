@@ -1,0 +1,7 @@
+{
+  "checked_at": "2026-11-20T06:51:40.689976+00:00",
+  "studio_pages_observed": 5,
+  "nonempty_ownership_markers": 0,
+  "tabs_closed": 0,
+  "reason": "Missing ownership evidence prevents closing borrowed tabs. A page-scoped initialization script now retains markers for future owned pages across navigation."
+}

@@ -1,0 +1,67 @@
+{
+  "job_id": "dea786e7bdad4e25aeb43d536f35efea",
+  "qc_record": {
+    "stage": "vision_review",
+    "provider_http_status": 422,
+    "provider_error": "{\"error\":{\"message\":\"Provider returned error\",\"code\":422,\"metadata\":{\"raw\":\"{\\\"error\\\": {\\\"message\\\": \\\"input rejected by content safety screening\\\"}}\",\"provider_name\":\"Nvidia\",\"is_byok\":false}},\"user_id\":\"user_3D6vLqnNu2pbYsF9qWbysUfrXed\"}",
+    "status": "reviewed",
+    "audit": {
+      "schema_version": 1,
+      "source_job_id": "dea786e7bdad4e25aeb43d536f35efea",
+      "source_clip_url": "/outputs/dea786e7bdad4e25aeb43d536f35efea/gta-6-bochor-rilis-di-pc-cepat-uncharted-baru-cyberpunk-ada-filmnya-tag-blast/clips/resume_cerita_5menit_tapi-mungkin-itu-jadi-alasan-kenapa-gta-katanya.mp4",
+      "repair_attempted": false,
+      "decision": "DROP_SOURCE",
+      "confidence": 1.0,
+      "hard_gates": {
+        "rights": true,
+        "media_integrity": true,
+        "meaning_preserved": true,
+        "context_safe": false
+      },
+      "ai_checks": {
+        "hook": null,
+        "standalone_clarity": null,
+        "payoff": null,
+        "caption": null,
+        "crop": null,
+        "visual_quality": null,
+        "audio_quality": null
+      },
+      "evidence": [
+        "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+      ],
+      "repair_instructions": [],
+      "delete_source": true,
+      "upload_allowed": false
+    },
+    "review_attempts": 1,
+    "fingerprint": "0531a16b1601461ddef1036ca8b951daca51f02dae1aac5823c7f6bf391c368d",
+    "source_job_id": "dea786e7bdad4e25aeb43d536f35efea",
+    "source_clip_url": "/outputs/dea786e7bdad4e25aeb43d536f35efea/gta-6-bochor-rilis-di-pc-cepat-uncharted-baru-cyberpunk-ada-filmnya-tag-blast/clips/resume_cerita_5menit_tapi-mungkin-itu-jadi-alasan-kenapa-gta-katanya.mp4",
+    "updated_at": "2026-11-20T07:14:05.925795+00:00"
+  },
+  "terminal_cleanup_records": [
+    {
+      "job_id": "dea786e7bdad4e25aeb43d536f35efea",
+      "clip_url": "/outputs/dea786e7bdad4e25aeb43d536f35efea/gta-6-bochor-rilis-di-pc-cepat-uncharted-baru-cyberpunk-ada-filmnya-tag-blast/clips/resume_cerita_5menit_tapi-mungkin-itu-jadi-alasan-kenapa-gta-katanya.mp4",
+      "reason": "long_qc_drop_source",
+      "status": "deleted",
+      "updated_at": "2026-11-20T07:14:15.012702+00:00",
+      "artifact_paths": [
+        "/app/outputs/dea786e7bdad4e25aeb43d536f35efea/gta-6-bochor-rilis-di-pc-cepat-uncharted-baru-cyberpunk-ada-filmnya-tag-blast/clips/resume_cerita_5menit_tapi-mungkin-itu-jadi-alasan-kenapa-gta-katanya.dynamic.ass",
+        "/app/outputs/dea786e7bdad4e25aeb43d536f35efea/gta-6-bochor-rilis-di-pc-cepat-uncharted-baru-cyberpunk-ada-filmnya-tag-blast/clips/resume_cerita_5menit_tapi-mungkin-itu-jadi-alasan-kenapa-gta-katanya.json",
+        "/app/outputs/dea786e7bdad4e25aeb43d536f35efea/gta-6-bochor-rilis-di-pc-cepat-uncharted-baru-cyberpunk-ada-filmnya-tag-blast/clips/resume_cerita_5menit_tapi-mungkin-itu-jadi-alasan-kenapa-gta-katanya.mp4",
+        "/app/outputs/dea786e7bdad4e25aeb43d536f35efea/gta-6-bochor-rilis-di-pc-cepat-uncharted-baru-cyberpunk-ada-filmnya-tag-blast/clips/resume_cerita_5menit_tapi-mungkin-itu-jadi-alasan-kenapa-gta-katanya.srt",
+        "/app/outputs/dea786e7bdad4e25aeb43d536f35efea/gta-6-bochor-rilis-di-pc-cepat-uncharted-baru-cyberpunk-ada-filmnya-tag-blast/clips/resume_cerita_5menit_tapi-mungkin-itu-jadi-alasan-kenapa-gta-katanya_ai_qc.json",
+        "/app/outputs/dea786e7bdad4e25aeb43d536f35efea/gta-6-bochor-rilis-di-pc-cepat-uncharted-baru-cyberpunk-ada-filmnya-tag-blast/clips/resume_cerita_5menit_tapi-mungkin-itu-jadi-alasan-kenapa-gta-katanya_caption.txt",
+        "/app/outputs/dea786e7bdad4e25aeb43d536f35efea/gta-6-bochor-rilis-di-pc-cepat-uncharted-baru-cyberpunk-ada-filmnya-tag-blast/clips/resume_cerita_5menit_tapi-mungkin-itu-jadi-alasan-kenapa-gta-katanya_thumb.jpg",
+        "/app/outputs/dea786e7bdad4e25aeb43d536f35efea/gta-6-bochor-rilis-di-pc-cepat-uncharted-baru-cyberpunk-ada-filmnya-tag-blast/clips/resume_cerita_5menit_tapi-mungkin-itu-jadi-alasan-kenapa-gta-katanya_thumb.txt",
+        "/app/outputs/dea786e7bdad4e25aeb43d536f35efea/gta-6-bochor-rilis-di-pc-cepat-uncharted-baru-cyberpunk-ada-filmnya-tag-blast/clips/resume_cerita_5menit_tapi-mungkin-itu-jadi-alasan-kenapa-gta-katanya_thumb_b.jpg",
+        "/app/outputs/dea786e7bdad4e25aeb43d536f35efea/gta-6-bochor-rilis-di-pc-cepat-uncharted-baru-cyberpunk-ada-filmnya-tag-blast/clips/resume_cerita_5menit_tapi-mungkin-itu-jadi-alasan-kenapa-gta-katanya_thumb_c.jpg",
+        "/app/outputs/dea786e7bdad4e25aeb43d536f35efea/gta-6-bochor-rilis-di-pc-cepat-uncharted-baru-cyberpunk-ada-filmnya-tag-blast/clips/resume_cerita_5menit_tapi-mungkin-itu-jadi-alasan-kenapa-gta-katanya_thumbnail_ideas.json",
+        "/app/outputs/dea786e7bdad4e25aeb43d536f35efea/gta-6-bochor-rilis-di-pc-cepat-uncharted-baru-cyberpunk-ada-filmnya-tag-blast/clips/resume_cerita_5menit_tapi-mungkin-itu-jadi-alasan-kenapa-gta-katanya_tiktok_caption.txt"
+      ],
+      "retained_upload_ids": []
+    }
+  ]
+}

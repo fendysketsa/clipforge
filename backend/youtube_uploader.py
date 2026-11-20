@@ -2120,7 +2120,13 @@ def close_upload_tab(page, *, force: bool = False) -> None:
 
 def mark_fendy_clipper_upload_tab(page) -> None:
     try:
-        page.evaluate(f"window.name = {json.dumps(FENDY_CLIPPER_UPLOAD_PAGE_NAME)}")
+        script = f"window.name = {json.dumps(FENDY_CLIPPER_UPLOAD_PAGE_NAME)}"
+        # Chromium clears window.name on cross-site navigation. Scope the
+        # persistent marker to this owned page, never the borrowed context.
+        initialize = getattr(page, 'add_init_script', None)
+        if initialize is not None:
+            initialize(f"if (window === window.top) {{ {script}; }}")
+        page.evaluate(script)
     except Exception:
         pass
 
@@ -3821,7 +3827,8 @@ def click_playlist_named(page, playlist_name: str, timeout_ms: int = 8000) -> bo
           ? Array.from(root.querySelectorAll('ytcp-playlist-dialog'))
           : [];
         for (const dialog of dialogs) {
-          const surface = dialog.querySelector('tp-yt-paper-dialog[role="dialog"], #dialog') || dialog;
+          const surface = dialog.querySelector('tp-yt-paper-dialog[role="dialog"]')
+            || dialog.querySelector('#dialog') || dialog;
           if (surface.getAttribute?.('aria-hidden') === 'true' || !isVisible(surface)) continue;
           const rows = Array.from(surface.querySelectorAll?.(rowSelector) || []);
           for (const row of rows) {
@@ -3975,7 +3982,8 @@ def playlist_is_selected(page, playlist_name: str, timeout_ms: int = 3000) -> bo
           ? Array.from(root.querySelectorAll('ytcp-playlist-dialog'))
           : [];
         for (const dialog of dialogs) {
-          const surface = dialog.querySelector('tp-yt-paper-dialog[role="dialog"], #dialog') || dialog;
+          const surface = dialog.querySelector('tp-yt-paper-dialog[role="dialog"]')
+            || dialog.querySelector('#dialog') || dialog;
           if (surface.getAttribute?.('aria-hidden') === 'true') continue;
           const rows = Array.from(surface.querySelectorAll?.(rowSelector) || []);
           for (const row of rows) {
@@ -4190,7 +4198,8 @@ def click_playlist_checkbox(page, playlist_name: str, timeout_ms: int = 8000) ->
           ? Array.from(root.querySelectorAll('ytcp-playlist-dialog'))
           : [];
         for (const dialog of dialogs) {
-          const surface = dialog.querySelector('tp-yt-paper-dialog[role="dialog"], #dialog') || dialog;
+          const surface = dialog.querySelector('tp-yt-paper-dialog[role="dialog"]')
+            || dialog.querySelector('#dialog') || dialog;
           if (surface.getAttribute?.('aria-hidden') === 'true' || !isVisible(surface)) continue;
           const rows = Array.from(surface.querySelectorAll?.(rowSelector) || []);
           for (const row of rows) {
@@ -4459,7 +4468,8 @@ def playlist_dialog_open(page, timeout_ms: int = 1500) -> bool:
       for (const root of roots) {
         const dialogs = root.querySelectorAll ? Array.from(root.querySelectorAll('ytcp-playlist-dialog')) : [];
         for (const dialog of dialogs) {
-          const surface = dialog.querySelector('tp-yt-paper-dialog[role="dialog"], #dialog') || dialog;
+          const surface = dialog.querySelector('tp-yt-paper-dialog[role="dialog"]')
+            || dialog.querySelector('#dialog') || dialog;
           if (surface.getAttribute?.('aria-hidden') !== 'true' && isVisible(surface)) return true;
         }
       }
@@ -4669,6 +4679,12 @@ def create_missing_playlist(page, playlist_name: str) -> None:
         # Current Studio opens a menu that also offers Podcast and Course.
         # Some variants open the creation form directly.
         form = page.locator("ytcp-playlist-creation-dialog").last
+        # Studio's custom host can use display:contents and has no bounding
+        # box, even while its inner dialog is visible. Observe the actual
+        # editable field for readiness and dismissal instead of the host.
+        title = form.locator(
+            '#title-textarea [contenteditable="true"], #title-textarea textarea'
+        ).first
         # Studio renders the dropdown outside ytcp-playlist-dialog (inside a
         # global ytcp-text-menu). Restrict only by test-id/role so the new
         # form still opens when the menu is portalled away from the dialog.
@@ -4684,7 +4700,7 @@ def create_missing_playlist(page, playlist_name: str) -> None:
         menu_deadline = time.monotonic() + 6
         while time.monotonic() < menu_deadline:
             try:
-                if form.is_visible(timeout=300):
+                if title.is_visible(timeout=300):
                     break
             except Exception:
                 pass
@@ -4706,18 +4722,14 @@ def create_missing_playlist(page, playlist_name: str) -> None:
                     break
                 if clicked:
                     try:
-                        form.wait_for(state="visible", timeout=4000)
+                        title.wait_for(state="visible", timeout=4000)
                         break
                     except Exception:
                         pass
             except Exception:
                 pass
             time.sleep(0.2)
-        form.wait_for(state="visible", timeout=8000)
-
-        title = form.locator(
-            '#title-textarea [contenteditable="true"], #title-textarea textarea'
-        ).first
+        title.wait_for(state="visible", timeout=8000)
         title.fill(playlist_name, timeout=5000)
         def title_value():
             return title.evaluate("e => e.value ?? e.innerText ?? ''").strip()
@@ -4754,7 +4766,7 @@ def create_missing_playlist(page, playlist_name: str) -> None:
             raise UploadError("Tombol Buat playlist belum aktif setelah judul diisi.")
         # One submission only; disappearance of the form alone is not proof.
         submit.click(timeout=5000)
-        form.wait_for(state="hidden", timeout=20000)
+        title.wait_for(state="hidden", timeout=20000)
 
         if not playlist_dialog_open(page, timeout_ms=1000):
             if not open_playlist_dropdown(page, timeout_ms=5000):
@@ -6733,10 +6745,15 @@ def saved_video_edit_snapshot(page, expected_title: str, visibility: str) -> dic
                 }
               }
               const exactTitleText = normalize(titleValues.filter(Boolean).join('\n'));
+              let savedVisibility = '';
+              for (const root of roots) {
+                const field = root.querySelector?.('ytcp-video-metadata-visibility #visibility-text');
+                if (field) { savedVisibility = normalize(field.textContent); break; }
+              }
               return {
                 titleOk: Boolean(wanted && (exactTitleText.includes(wanted) || text.includes(wanted))),
                 visibilityOk: visibilityWords.some(
-                  (word) => text.includes(word) || selectedVisibility.includes(word)
+                  (word) => (savedVisibility || selectedVisibility) === normalize(word)
                 ),
                 uploadFailed: /(?:upload|mengupload|mengunggah).{0,30}(?:failed|gagal)|(?:failed|gagal).{0,30}(?:upload|mengupload|mengunggah)/i.test(text),
                 uploading: /(?:uploading|mengupload|mengunggah)\s*\d{1,3}\s*%|upload(?:ing)? (?:is )?(?:still )?in progress|upload sedang berlangsung/i.test(text),
@@ -6960,11 +6977,31 @@ def resume_saved_draft_and_finalize(
     page.goto(edit_url, wait_until="domcontentloaded", timeout=min(30000, timeout_ms))
     ensure_logged_in(page)
 
-    deadline = time.monotonic() + timeout_ms / 1000
+    observed_visibility = ''
+    try:
+        observed_visibility = page.locator(
+            'ytcp-video-metadata-visibility #visibility-text'
+        ).first.inner_text(timeout=1500).strip().casefold()
+    except Exception:
+        pass
+    if visibility != 'public' and observed_visibility in {'public', 'publik'}:
+        raise UploadError(
+            f'Video {video_id} sudah Publik, sedangkan catatan lokal meminta {visibility}. '
+            'Perlu rekonsiliasi visibilitas; tidak mengubah publikasi, metadata, atau mengirim file ulang.'
+        )
+
+    # The full upload budget includes slow processing/checks. An absent draft
+    # dialog must not consume that budget or silently hold the shared browser
+    # until the parent watchdog kills verification.
+    deadline = time.monotonic() + min(timeout_ms, 30000) / 1000
+    progress_at = time.monotonic() + 10
     edit_clicked = False
     direct_draft_route_opened = False
     draft_route_fallback_at = time.monotonic() + 5
     while time.monotonic() < deadline:
+        if time.monotonic() >= progress_at:
+            log(f"Menunggu dialog draft dengan ID yang cocok: {video_id}; metadata belum diubah.")
+            progress_at = time.monotonic() + 10
         restore_saved_draft_dialog_surface(page, video_id, expected_title)
         step = get_upload_workflow_step(page)
         if (step in UPLOAD_WORKFLOW_STEP_ORDER and active_upload_dialog_text(page, timeout_ms=500)
@@ -6987,7 +7024,8 @@ def resume_saved_draft_and_finalize(
             if channel_id:
                 page.goto(
                     f"https://studio.youtube.com/channel/{channel_id}/videos/upload?d=ud&udvid={video_id}",
-                    wait_until="domcontentloaded", timeout=min(30000, timeout_ms),
+                    wait_until="domcontentloaded",
+                    timeout=max(1000, min(30000, int((deadline-time.monotonic())*1000))),
                 )
                 direct_draft_route_opened = True
         time.sleep(0.5)
@@ -7656,6 +7694,8 @@ def run_verify_upload(args: argparse.Namespace) -> None:
             contexts = browser.contexts or [browser.new_context()]
             for existing_context in contexts:
                 install_context_dialog_guard(existing_context)
+            close_idle_fendy_clipper_upload_tabs(
+                item for existing_context in contexts for item in existing_context.pages)
             studio_pages = [
                 item
                 for existing_context in contexts

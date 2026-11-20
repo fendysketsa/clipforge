@@ -1,0 +1,29 @@
+{
+  "examined_rows": 176,
+  "matches": {
+    "aa74925221124368950f80e8a39c2f6a": [],
+    "bb703c319e214b138f84da924623dba1": [],
+    "2a33fd0790944ee986d4188247f6a2f0": [
+      {
+        "video_url": "https://www.tiktok.com/@titikbalikislami/video/7706909029460708629",
+        "exact_caption": true,
+        "visibility_evidence": [
+          "Everyone"
+        ]
+      }
+    ],
+    "aee89716f6b040ccab195408c1fa65d2": [],
+    "33e5b5252c594db3845ca4868222fd57": [],
+    "ed43a656ef494c6198ee72112532493d": [
+      {
+        "video_url": "https://www.tiktok.com/@titikbalikislami/video/7707620674516307221",
+        "exact_caption": false,
+        "visibility_evidence": [
+          "Everyone"
+        ]
+      }
+    ]
+  },
+  "file_transfers": 0,
+  "post_clicks": 0
+}

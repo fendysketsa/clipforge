@@ -1,0 +1,30 @@
+{
+  "job_id": "be2751e7001f499bbfafdf32dcb33fd5",
+  "media_sha256": "4b36446724758dd15e3d5e4f830c19b7112709d22b7646a1ccb92d9714ae368a",
+  "media_matches_sidecar": true,
+  "source_plan_matches_sidecar": true,
+  "full_decode_ok": true,
+  "duration_seconds": 31.536,
+  "streams": [
+    {
+      "codec_type": "video",
+      "codec_name": "h264",
+      "width": 1080,
+      "height": 1920,
+      "sample_rate": null,
+      "channels": null
+    },
+    {
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "width": null,
+      "height": null,
+      "sample_rate": "48000",
+      "channels": 1
+    }
+  ],
+  "local_visual_review": "Opening, middle, payoff, ending and deterministic warning frames inspected in three contact sheets. Source dates sort from 23/04/15 to 04/15/23; visible captions remain inside frame. Independent audit remains pending.",
+  "provider_http_status": 429,
+  "automatic_upload_allowed": false,
+  "external_media_sent_by_this_audit": false
+}

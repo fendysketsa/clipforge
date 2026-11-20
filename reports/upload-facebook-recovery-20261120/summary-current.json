@@ -1,0 +1,43 @@
+{
+  "checked_at": "2026-11-20T07:19:56.874964+00:00",
+  "platform_status_counts": {
+    "youtube": {
+      "completed": 686,
+      "failed": 57
+    },
+    "tiktok": {
+      "completed": 129,
+      "failed": 6
+    },
+    "facebook": {
+      "completed": 5,
+      "failed": 3
+    }
+  },
+  "youtube_confirmed_recoveries": 9,
+  "youtube_recovery_pending": 0,
+  "youtube_recovery_held": 8,
+  "tiktok_exact_remote_reconciled": {
+    "id": "2a33fd0790944ee986d4188247f6a2f0",
+    "status": "completed",
+    "profile_url": "https://www.tiktok.com/@titikbalikislami/video/7706909029460708629",
+    "upload_confirmed": true,
+    "error": null,
+    "visibility": "public",
+    "submission_started": true,
+    "submission_accepted": true
+  },
+  "facebook_bonus": {
+    "amount_usd": 2.0,
+    "required_reels": 6,
+    "minimum_duration_seconds": 10,
+    "minimum_qualified_views": 10,
+    "minimum_reels_with_qualified_views": 1,
+    "completed_reels": 0,
+    "days_remaining_at_check": 7,
+    "period_label": "19 Nov - 26 Nov",
+    "awarded": false
+  },
+  "tests_passed": 450,
+  "new_fixes_deployed": false
+}

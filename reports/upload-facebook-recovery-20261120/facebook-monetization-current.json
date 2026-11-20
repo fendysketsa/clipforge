@@ -1,0 +1,40 @@
+{
+  "checked_at": "2026-11-20T05:58:25.373837+00:00",
+  "account_verified": true,
+  "program": {
+    "state": "active",
+    "evidence": "Profil Anda menghasilkan uang"
+  },
+  "policy": {
+    "state": "clear"
+  },
+  "earnings": {
+    "estimated_usd": 0.0,
+    "period": "November",
+    "qualified_views": 12,
+    "rate_usd_per_1000": 0.0,
+    "non_qualified_reasons": [
+      {
+        "label": "Durasi tayangan terlalu singkat",
+        "percent": 97.0
+      }
+    ]
+  },
+  "bonus": {
+    "amount_usd": 2.0,
+    "required_reels": 6,
+    "minimum_duration_seconds": 10,
+    "minimum_qualified_views": 10,
+    "minimum_reels_with_qualified_views": 1,
+    "completed_reels": 0,
+    "days_remaining_at_check": 7,
+    "period_label": "19 Nov - 26 Nov",
+    "awarded": false
+  },
+  "payout": {
+    "state": "unknown",
+    "issues": [],
+    "message": "Kesiapan pencairan belum terverifikasi. Buka pembayaran dan periksa metode, identitas, serta pajak bila diminta."
+  },
+  "unavailable_sections": []
+}

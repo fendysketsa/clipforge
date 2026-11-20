@@ -1,0 +1,798 @@
+{
+  "youtube": [
+    {
+      "id": "aa1618d3ae3c44dca8c12e925af4c0ac",
+      "source_job_id": "1f8a5ad134e04154ae60bc41183cdc26",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=_CejE0u0Nhc",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Pembuatan playlist 'Keluarga dan Rumah Tangga' belum terkonfirmasi: Locator.wait_for: Timeout 8000ms exceeded.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "45bad16613b04727b3420862403c5c59",
+      "source_job_id": "9bd0b6f2a29c45558a0a29a5a3a00057",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=vZY655l5HSU",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Pembuatan playlist 'Keluarga dan Rumah Tangga' belum terkonfirmasi: Locator.wait_for: Timeout 8000ms exceeded.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "ca894e248243459e9f0c19757554943f",
+      "source_job_id": "f813ead4a0dd41bdb5212c2fa552719d",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=ON5RPHp2mFY",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Pembuatan playlist 'Keluarga dan Rumah Tangga' belum terkonfirmasi: Locator.wait_for: Timeout 8000ms exceeded.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "fdc1f5199c2c40f2bef1ded2fd715b20",
+      "source_job_id": "51b43ada75ba451686e7f833a49cbaa1",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=BSfrtwAVttg",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Chrome CDP belum aktif. Jalur utama sekarang Playwright storage-state; klik Login Sekali, atau pakai Ambil Cookies CDP hanya jika ingin mengambil session dari Chrome CDP.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "ac5be3d2802d467d97dd795804e67369",
+      "source_job_id": "04adb1f542f949d1a03f37c2a45eb44d",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=K8Kt3qKZ_Xw",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Verifikasi Content YouTube tidak mengirim progres.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "d5841c84d1f54b5eb0c20c90860dc61e",
+      "source_job_id": "bd0bc8d1b2614c9fb759171a75a0dec5",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=le-kao5zNxY",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Pembuatan playlist 'Keluarga dan Rumah Tangga' belum terkonfirmasi: Locator.wait_for: Timeout 8000ms exceeded.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "3d7910ba73534958af2b7a3b117739a8",
+      "source_job_id": "0089f12b00354187a04b12fc8ccfde59",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=uQJB_5e7Qw0",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Verifikasi Content YouTube tidak mengirim progres.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "c8550f5019de4040a8ea0047f8fa96e8",
+      "source_job_id": "334a1f8435934ece8bdc936548747edd",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=V_SitOyPadM",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Chrome CDP belum aktif. Jalur utama sekarang Playwright storage-state; klik Login Sekali, atau pakai Ambil Cookies CDP hanya jika ingin mengambil session dari Chrome CDP.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "40c6f08fa17f45168d2403754acc9e5b",
+      "source_job_id": "068a3109cc6a49f69d40e0770718093d",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=IcM64SoGKIM",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Pembuatan playlist 'Animasi' belum terkonfirmasi: Locator.wait_for: Timeout 8000ms exceeded.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "e44afe0122534e299301e4eef077bcd5",
+      "source_job_id": "54b2ad627d794c138cc07a8d9087be53",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=Okv2OMQjE5U",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Pembuatan playlist 'Animasi' belum terkonfirmasi: Locator.wait_for: Timeout 8000ms exceeded.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "54b15f4a9b3249748e577892875c2eb9",
+      "source_job_id": "f73d7456928946a79f2b8b7a40667cd6",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=MyUKNUt0v90",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Pembuatan playlist 'Sejarah, Geografi & Budaya Nusantara' belum terkonfirmasi: Locator.wait_for: Timeout 8000ms exceeded.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "8f40c366b9d64f7f979210e78f1c6eec",
+      "source_job_id": "c5fa6b7a07604ff785277b0f5354cdb1",
+      "category": "confirmed_duplicate",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": [
+        {
+          "id": "bb1bb66d100c4289ac473ccf613ccd61",
+          "url": "https://www.youtube.com/watch?v=tDJJdaoxxPI",
+          "visibility": "public"
+        }
+      ]
+    },
+    {
+      "id": "35d277321b534beeae916460a9e87f66",
+      "source_job_id": "ba8226bb1e104699a20b36a285001d24",
+      "category": "confirmed_duplicate",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Upload YouTube gagal: Locator.set_input_files: Cannot transfer files larger than 50Mb to a browser not co-located with the server",
+      "confirmed_duplicates": [
+        {
+          "id": "e4adc0f1fd4a4dcc8ff35826f5f3a465",
+          "url": "https://www.youtube.com/watch?v=R7yQx8bchUY",
+          "visibility": "public"
+        }
+      ]
+    },
+    {
+      "id": "63787b5957ff4d639d1099e8c3865c4c",
+      "source_job_id": "d96655e1b1914bfa8464a376c642c221",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=n78PT_rFml8",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Verifikasi Content YouTube tidak mengirim progres.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "c69482081a87471ba50124436644f2b5",
+      "source_job_id": "1fe4bceba66e497cbe533557f2ab1917",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=y5_Wt18PKdI",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Verifikasi Content YouTube tidak mengirim progres.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "186c011c48684c3dacb13423475fab1d",
+      "source_job_id": "82cf9657a36e4dcea341cfbb86cd7cbd",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=NdEKBl4Xfrg",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Tombol Berikutnya/Next modal upload tidak ditemukan atau masih disabled. Terakhir: dialog-not-found",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "5b955f4d82024dbca7e77966352aa2e0",
+      "source_job_id": "e09f658360544a76a5d8ac5e6859f69c",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=rBnYOlkFzMM",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Upload YouTube gagal: Locator.click: Timeout 30000ms exceeded.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "4afc65dce0ed48a7b32fcf8f93fab377",
+      "source_job_id": "c3f49748f77f45e5a943066c9225c82e",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=Bm_2k3iKD2k",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Session YouTube Studio belum login. Jalankan Login Sekali untuk menyimpan ulang cookies/storage-state atau pakai Ambil Cookies CDP jika memang ingin mengambil session dari Chrome CDP.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "c9e987c2ade94f08b351fb0fd2eda6c8",
+      "source_job_id": "12becc7cd0a14d929072e571caa1512a",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=X51zOpHOhnM",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Session YouTube Studio belum login. Jalankan Login Sekali untuk menyimpan ulang cookies/storage-state atau pakai Ambil Cookies CDP jika memang ingin mengambil session dari Chrome CDP.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "65aa5518fdc74333867cff3fa858ef8d",
+      "source_job_id": "ccf3b77ab67645aa84ee70daf08b5d98",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=cLDsgoinAq4",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Session YouTube Studio belum login. Jalankan Login Sekali untuk menyimpan ulang cookies/storage-state atau pakai Ambil Cookies CDP jika memang ingin mengambil session dari Chrome CDP.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "6adcc935953740a69da422e343167d78",
+      "source_job_id": "c57bfc07e3b44830902e17098a27fb83",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=8NYkHgYutgg",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Upload YouTube gagal: Locator.wait_for: Timeout 30000ms exceeded.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "970b779413694ab9864946a3e622048c",
+      "source_job_id": "77cfc5410f854c8992c441a8f445d160",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=TaceZjq3jkw",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Verifikasi Content YouTube tidak mengirim progres.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "b515282b5c0c4ceaaf743af7ffdeafc2",
+      "source_job_id": "7beb0df9c7374fb78eb4d06ed4f0510b",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=hHkwP61Y7KU",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Verifikasi Content YouTube tidak mengirim progres.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "5381fb36dbbb43ff9b13e9fdac287a6e",
+      "source_job_id": "7084ab4f06eb4dcda1c09c8485fb8e7e",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=IW7-a1Y8EK4",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Verifikasi Content YouTube tidak mengirim progres.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "0ae6eb1f1d25488cab5494c65e60505d",
+      "source_job_id": "4b0b5d7bdb3a418caeb7e8aefba337c2",
+      "category": "submission_uncertain",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Verifikasi Content YouTube tidak mengirim progres.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "04b67d1823e348bea2778b4efcb99532",
+      "source_job_id": "bc4914dbabfe461196ef00b75b357c87",
+      "category": "confirmed_duplicate",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": [
+        {
+          "id": "0098e4cf20c8456bb33096e21e6a006b",
+          "url": "https://www.youtube.com/watch?v=L-mh66DPmZc",
+          "visibility": "public"
+        }
+      ]
+    },
+    {
+      "id": "f6ac04ac10dd456a89c52457bdbd5079",
+      "source_job_id": "ad27cf0c0c984e9090bbb43149ab0bf8",
+      "category": "confirmed_duplicate",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": [
+        {
+          "id": "36c3851b3b19470e91f9dacad22747a9",
+          "url": "https://www.youtube.com/watch?v=NniQbh-E9ds",
+          "visibility": "public"
+        }
+      ]
+    },
+    {
+      "id": "eee849aa23384fa7af2c5892f24a3d3f",
+      "source_job_id": "0dbbc47b5b994262bec0e818769f56a0",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "6cc8dcb7e3874fae9aae34b0168ef1fb",
+      "source_job_id": "0dbbc47b5b994262bec0e818769f56a0",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "d7d9be3be323447da4d19a39b5e4aaac",
+      "source_job_id": "4bea007987ff468fb35c3bd14f73cf32",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "dc7b5eb40f09448bb14edc32fadde9b7",
+      "source_job_id": "0dbbc47b5b994262bec0e818769f56a0",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Browser Playwright tidak bisa membuka YouTube Studio dari beberapa URL awal. Backend akan mencoba halaman upload langsung jika fallback diaktifkan. Detail: Page.goto: net::ERR_NAME_NOT_RESOLVED at https://studio.youtube.com/",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "1977ccb5fc1242d989462ab6fdce65d4",
+      "source_job_id": "4bea007987ff468fb35c3bd14f73cf32",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "37af283cf7b14218a060e0f7c6612ccf",
+      "source_job_id": "0dbbc47b5b994262bec0e818769f56a0",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Browser Playwright tidak bisa membuka YouTube Studio dari beberapa URL awal. Backend akan mencoba halaman upload langsung jika fallback diaktifkan. Detail: Page.goto: net::ERR_NAME_NOT_RESOLVED at https://studio.youtube.com/",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "3015c55beeec4a9f89523bfb71f7a39c",
+      "source_job_id": "4bea007987ff468fb35c3bd14f73cf32",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "53b97351ce154047a92a6f7ac06d1029",
+      "source_job_id": "0dbbc47b5b994262bec0e818769f56a0",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Tag bawaan channel masih menempel setelah dibersihkan; upload dihentikan agar metadata tidak salah.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "ef4f174015b74e2c865ccbd4df66e1ba",
+      "source_job_id": "4bea007987ff468fb35c3bd14f73cf32",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "8a9c8d6e7e074a3ba0532362823ab5f1",
+      "source_job_id": "0dbbc47b5b994262bec0e818769f56a0",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Tag bawaan channel masih menempel setelah dibersihkan; upload dihentikan agar metadata tidak salah.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "07e078f8c0d74bcbb35b9f9b22a76a04",
+      "source_job_id": "4bea007987ff468fb35c3bd14f73cf32",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "ba570981124d4d7495f42fd4edf33c0b",
+      "source_job_id": "0dbbc47b5b994262bec0e818769f56a0",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Tag bawaan channel masih menempel setelah dibersihkan; upload dihentikan agar metadata tidak salah.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "8a15c0a21dff426095628344cc9656d3",
+      "source_job_id": "4bea007987ff468fb35c3bd14f73cf32",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "b84cc9a3469f43cf90baf19b38ccc874",
+      "source_job_id": "0dbbc47b5b994262bec0e818769f56a0",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Tag bawaan channel masih menempel setelah dibersihkan; upload dihentikan agar metadata tidak salah.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "55d003a8bbdd4c9aa97e6dd8673a7367",
+      "source_job_id": "4bea007987ff468fb35c3bd14f73cf32",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "5cb2bda38dd64e959c13233c497f88c9",
+      "source_job_id": "0dbbc47b5b994262bec0e818769f56a0",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Tag bawaan channel masih menempel setelah dibersihkan; upload dihentikan agar metadata tidak salah.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "040b38891b504232bd54e192cdabcbfc",
+      "source_job_id": "0dbbc47b5b994262bec0e818769f56a0",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Tag bawaan channel masih menempel setelah dibersihkan; upload dihentikan agar metadata tidak salah.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "4e8b77692579403b9bbf181071998752",
+      "source_job_id": "4bea007987ff468fb35c3bd14f73cf32",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "f9bb25ed266a40bcab9b33b8eeacf127",
+      "source_job_id": "4bea007987ff468fb35c3bd14f73cf32",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "f79d2b548bb140998db24bd777f55306",
+      "source_job_id": "0dbbc47b5b994262bec0e818769f56a0",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Tag bawaan channel masih menempel setelah dibersihkan; upload dihentikan agar metadata tidak salah.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "d232ccd9c7bd4c59a32fc08f96e2b4fb",
+      "source_job_id": "4bea007987ff468fb35c3bd14f73cf32",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "73ecf9ebf5b34b818e6773ce58da509d",
+      "source_job_id": "4bea007987ff468fb35c3bd14f73cf32",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "8499d540f5554a34bd023874ff11f00f",
+      "source_job_id": "0c030039c54c481a8f26436cd30d9416",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Tag bawaan channel masih menempel setelah dibersihkan; upload dihentikan agar metadata tidak salah.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "2ae5dfaa66d6455da4e9133795414b1b",
+      "source_job_id": "0c030039c54c481a8f26436cd30d9416",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Tag bawaan channel masih menempel setelah dibersihkan; upload dihentikan agar metadata tidak salah.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "9aae9796b57a4121880809d317a1014b",
+      "source_job_id": "2f0b95e0914945019f41f8ef243e46eb",
+      "category": "submission_uncertain",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Upload dihentikan oleh kebijakan nol-klaim. Pilih sumber yang hak audio dan visualnya benar-benar Anda miliki/izinkan; klaim tidak disimpan sebagai Private.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "9332975dac33445aa9d6e9635e8633ae",
+      "source_job_id": "2a30422978bc4e3194e0933a93115a7e",
+      "category": "submission_uncertain",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Upload dihentikan oleh kebijakan nol-klaim. Pilih sumber yang hak audio dan visualnya benar-benar Anda miliki/izinkan; klaim tidak disimpan sebagai Private.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "834ab9b44ead4fa4a4bf1f09880ed8eb",
+      "source_job_id": "394b7dea031f44ea90e20fd864cc457b",
+      "category": "confirmed_duplicate",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Kolom subtitle ditemukan tetapi teks 'FCN' belum berhasil diisi dan diverifikasi.",
+      "confirmed_duplicates": [
+        {
+          "id": "ab05ba491b554c9c954ef821f26ef277",
+          "url": "https://www.youtube.com/watch?v=fxQicTLeg-Q",
+          "visibility": "private"
+        }
+      ]
+    },
+    {
+      "id": "233713cdbe7646428eadfc9b5b18145c",
+      "source_job_id": "36e14546fb374a7bb2389eeec4b0a89e",
+      "category": "confirmed_duplicate",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Dropdown playlist tidak terbuka. Upload tidak dilanjutkan agar playlist tidak terlewati.",
+      "confirmed_duplicates": [
+        {
+          "id": "586d259f054647788cb3b9d2650e3b80",
+          "url": "https://www.youtube.com/watch?v=GwtBK7oWWbg",
+          "visibility": "private"
+        }
+      ]
+    },
+    {
+      "id": "7c43e6ffdd5144c6a7ed28c800e87678",
+      "source_job_id": "aa99d35ad2454648b9fa71af58d7a26a",
+      "category": "confirmed_duplicate",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Dropdown playlist tidak terbuka. Upload tidak dilanjutkan agar playlist tidak terlewati.",
+      "confirmed_duplicates": [
+        {
+          "id": "27584c45524e4dfb85bdff8b83b74552",
+          "url": "https://www.youtube.com/watch?v=A2U2SrwXI9U",
+          "visibility": "private"
+        }
+      ]
+    },
+    {
+      "id": "c62a3a771edf47549916f9ae4a613349",
+      "source_job_id": "fa43a3b20cbe406795c4903afc1c4ba5",
+      "category": "submission_uncertain",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Upload dihentikan oleh kebijakan nol-klaim. Pilih sumber yang hak audio dan visualnya benar-benar Anda miliki/izinkan; klaim tidak disimpan sebagai Private.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "ee0a833c1ae641269baee1a4e0e39a10",
+      "source_job_id": "9c7adfff0e924568a688ba9aec1e1aae",
+      "category": "confirmed_duplicate",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": [
+        {
+          "id": "39c8c933437f4b1196396cc10cdd51c7",
+          "url": "https://www.youtube.com/watch?v=d66kTeAL4II",
+          "visibility": "private"
+        }
+      ]
+    },
+    {
+      "id": "40c2323682da4b1293b8f3b49f4daf56",
+      "source_job_id": "5d2d97894083436f89d7dd14641bef1a",
+      "category": "confirmed_duplicate",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Visibilitas 'private' belum tercentang sebelum aksi final.",
+      "confirmed_duplicates": [
+        {
+          "id": "f61dbd43ba6f47eaa1d50677dafcac25",
+          "url": "https://www.youtube.com/watch?v=vrCRIkHKSFo",
+          "visibility": "private"
+        }
+      ]
+    },
+    {
+      "id": "060631d088474061a6fe6c330fb71bff",
+      "source_job_id": "fa727869c9664c4fb7a20e9a4705696f",
+      "category": "confirmed_duplicate",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Tombol Berikutnya/Next modal upload tidak ditemukan atau masih disabled.",
+      "confirmed_duplicates": [
+        {
+          "id": "044df9f18fb140b2a07f6311c5cac625",
+          "url": "https://www.youtube.com/watch?v=GmAJOaD2ZTw",
+          "visibility": "private"
+        }
+      ]
+    },
+    {
+      "id": "2c21eca6641c43239fc1b94df076354c",
+      "source_job_id": "3c7500f23eac4bd59809740f5fff8fdf",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=lelcpmm6Xxc",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "99e296fb69d2416e85785e4a57f0badb",
+      "source_job_id": "130e77e50b454581b6da05b49bbad2ef",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum dapat diverifikasi di YouTube Studio; file lokal dipertahankan.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "4c84c042d3f04d6790923bc6724edd8c",
+      "source_job_id": "130e77e50b454581b6da05b49bbad2ef",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=xJH98mFTjzA",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Verifikasi Content YouTube tidak mengirim progres.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "40858cb272b745e8a686613f77cbf7d2",
+      "source_job_id": "130e77e50b454581b6da05b49bbad2ef",
+      "category": "known_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": "https://www.youtube.com/watch?v=qBr4jJb2ILM",
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Verifikasi Content YouTube tidak mengirim progres.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "ff1839d8b3554648a83cf353b078c4f0",
+      "source_job_id": "f8b398aa9fa14139814a09952d7c2fdb",
+      "category": "no_remote_identity",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Video yang sudah difinalkan belum ditemukan sebagai baris tersimpan di halaman Content; file lokal dipertahankan.",
+      "confirmed_duplicates": []
+    }
+  ],
+  "tiktok": [
+    {
+      "id": "42a723bb0ec84a41a6ee41492abde1f6",
+      "source_job_id": "46e06aa4d42345b0b12075d1f22f4f38",
+      "category": "no_remote_identity",
+      "local_media": true,
+      "job_present": true,
+      "remote": null,
+      "error": "TikTok tidak dapat dibuka: Page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at https://www.tiktok.com/@titikbalikislami",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "aa74925221124368950f80e8a39c2f6a",
+      "source_job_id": "9f5f74edf66b4c21bcab151719dbb971",
+      "category": "submission_uncertain",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Backend restart saat upload TikTok berlangsung. Periksa TikTok Studio sebelum retry agar tidak membuat posting duplikat.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "bb703c319e214b138f84da924623dba1",
+      "source_job_id": "7d06f803ca9b415dadc68cf4015a815a",
+      "category": "submission_uncertain",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "TikTok tidak menampilkan video baru di Studio Posts setelah tombol Post diklik. Status tidak ditandai berhasil; periksa daftar Posts sebelum mencoba ulang.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "2a33fd0790944ee986d4188247f6a2f0",
+      "source_job_id": "57e1e264a9c44759a3c15d422f34f6cf",
+      "category": "submission_uncertain",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "TikTok tidak menampilkan video baru di Studio Posts setelah tombol Post diklik. Status tidak ditandai berhasil; periksa daftar Posts sebelum mencoba ulang.",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "aee89716f6b040ccab195408c1fa65d2",
+      "source_job_id": "b9f424ca5a364685b39c807d47d0b70d",
+      "category": "submission_uncertain",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Uploader TikTok gagal: Page.wait_for_timeout: Target page, context or browser has been closed",
+      "confirmed_duplicates": []
+    },
+    {
+      "id": "33e5b5252c594db3845ca4868222fd57",
+      "source_job_id": "fad974d18c6b47138917d7b06e08d400",
+      "category": "confirmed_duplicate",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Kontrol TikTok tidak dapat diklik karena halaman belum siap. Video belum diposting; coba ulang setelah halaman Studio selesai dimuat.",
+      "confirmed_duplicates": [
+        {
+          "id": "8c6a17ff099e44189b7704ce9fed44f7",
+          "url": "https://www.tiktok.com/@titikbalikislami/video/7706778926332251393",
+          "visibility": "only_you"
+        }
+      ]
+    },
+    {
+      "id": "ed43a656ef494c6198ee72112532493d",
+      "source_job_id": "3eb2e7d1947347a198cfb66299d7589d",
+      "category": "confirmed_duplicate",
+      "local_media": false,
+      "job_present": false,
+      "remote": null,
+      "error": "Kontrol TikTok tidak dapat diklik karena halaman belum siap. Video belum diposting; coba ulang setelah halaman Studio selesai dimuat.",
+      "confirmed_duplicates": [
+        {
+          "id": "cfd628e633f5494aa8ae260c9f383e1c",
+          "url": "https://www.tiktok.com/@titikbalikislami/video/7706416266482896148",
+          "visibility": "only_you"
+        }
+      ]
+    }
+  ]
+}

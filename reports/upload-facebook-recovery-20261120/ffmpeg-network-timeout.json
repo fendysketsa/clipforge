@@ -1,0 +1,8 @@
+{
+  "scope": "Local stalled HTTP read; no third-party request or media export",
+  "rw_timeout_microseconds": 25000000,
+  "elapsed_seconds": 25.29,
+  "exit_code": 146,
+  "timed_out_read_confirmed": true,
+  "stderr": "[in#0 @ 0x564c7d4c5140] Error opening input: Connection timed out\nError opening input file http://127.0.0.1:42369/stalled.mp4.\nError opening input files: Connection timed out\n"
+}

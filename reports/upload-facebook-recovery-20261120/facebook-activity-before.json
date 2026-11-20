@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "account_verified": true,
+  "checked_at": "2026-11-20T00:22:00.430651+00:00",
+  "period_label": "15 Nov - 21 Nov",
+  "percent": 42,
+  "tasks": [
+    {
+      "key": "public_posts",
+      "label": "Postingan publik",
+      "completed": 3,
+      "target": 7
+    }
+  ],
+  "stories": null,
+  "source": "facebook_live",
+  "href": "https://www.facebook.com/professional_dashboard/status/",
+  "note": "Facebook menentukan progres tugas. Unggahan lokal tidak dihitung sebagai kredit tugas atau bonus."
+}

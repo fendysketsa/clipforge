@@ -1,0 +1,184 @@
+{
+  "checked_at": "2026-11-20T07:17:18.131423+00:00",
+  "channel_id": "UCAOZF9Qzj6DYoXKtLnP4UUQ",
+  "file_transfers": 0,
+  "publication_changes": 0,
+  "videos": [
+    {
+      "upload_id": "471a73739a9c4daf99bda76781b5ebdb",
+      "video_url": "https://www.youtube.com/watch?v=IBSgcUTKQsM",
+      "visibility": "public",
+      "publish_at": "2026-11-30T03:00:00+00:00",
+      "playlist": "Keluarga dan Rumah Tangga",
+      "metadata_confirmed": true,
+      "native_visibility": "Dijadwalkan",
+      "strict_visibility_snapshot": {
+        "titleOk": "True",
+        "visibilityOk": "True",
+        "uploadFailed": "False",
+        "uploading": "False"
+      },
+      "visibility_confirmed": true,
+      "native_playlist_text": "Keluarga dan Rumah Tangga",
+      "playlist_confirmed": true
+    },
+    {
+      "upload_id": "aa1618d3ae3c44dca8c12e925af4c0ac",
+      "video_url": "https://www.youtube.com/watch?v=_CejE0u0Nhc",
+      "visibility": "public",
+      "publish_at": "2026-11-30T00:00:00+00:00",
+      "playlist": "Keluarga dan Rumah Tangga",
+      "metadata_confirmed": true,
+      "native_visibility": "Dijadwalkan",
+      "strict_visibility_snapshot": {
+        "titleOk": "True",
+        "visibilityOk": "True",
+        "uploadFailed": "False",
+        "uploading": "False"
+      },
+      "visibility_confirmed": true,
+      "native_playlist_text": "Pilih",
+      "playlist_confirmed": true,
+      "native_checked_playlist_confirmed": true,
+      "playlist_verification_method": "Read checked state of exact native playlist row; no checkbox toggle or Save"
+    },
+    {
+      "upload_id": "45bad16613b04727b3420862403c5c59",
+      "video_url": "https://www.youtube.com/watch?v=vZY655l5HSU",
+      "visibility": "public",
+      "publish_at": "2026-11-29T12:00:00+00:00",
+      "playlist": "Keluarga dan Rumah Tangga",
+      "metadata_confirmed": true,
+      "native_visibility": "Dijadwalkan",
+      "strict_visibility_snapshot": {
+        "titleOk": "True",
+        "visibilityOk": "True",
+        "uploadFailed": "False",
+        "uploading": "False"
+      },
+      "visibility_confirmed": true,
+      "native_playlist_text": "Keluarga dan Rumah Tangga",
+      "playlist_confirmed": true
+    },
+    {
+      "upload_id": "ca894e248243459e9f0c19757554943f",
+      "video_url": "https://www.youtube.com/watch?v=ON5RPHp2mFY",
+      "visibility": "public",
+      "publish_at": "2026-11-29T09:00:00+00:00",
+      "playlist": "Keluarga dan Rumah Tangga",
+      "metadata_confirmed": true,
+      "native_visibility": "Dijadwalkan",
+      "strict_visibility_snapshot": {
+        "titleOk": "True",
+        "visibilityOk": "True",
+        "uploadFailed": "False",
+        "uploading": "False"
+      },
+      "visibility_confirmed": true,
+      "native_playlist_text": "Pilih",
+      "playlist_confirmed": true,
+      "native_checked_playlist_confirmed": true,
+      "playlist_verification_method": "Read checked state of exact native playlist row; no checkbox toggle or Save"
+    },
+    {
+      "upload_id": "fdc1f5199c2c40f2bef1ded2fd715b20",
+      "video_url": "https://www.youtube.com/watch?v=BSfrtwAVttg",
+      "visibility": "public",
+      "publish_at": null,
+      "playlist": "Sejarah, Geografi & Budaya Nusantara",
+      "metadata_confirmed": true,
+      "native_visibility": "Publik",
+      "strict_visibility_snapshot": {
+        "titleOk": "True",
+        "visibilityOk": "True",
+        "uploadFailed": "False",
+        "uploading": "False"
+      },
+      "visibility_confirmed": true,
+      "native_playlist_text": "2 playlist",
+      "playlist_confirmed": true,
+      "native_checked_playlist_confirmed": true,
+      "playlist_verification_method": "Read checked state of exact native playlist row; no checkbox toggle or Save"
+    },
+    {
+      "upload_id": "d5841c84d1f54b5eb0c20c90860dc61e",
+      "video_url": "https://www.youtube.com/watch?v=le-kao5zNxY",
+      "visibility": "public",
+      "publish_at": "2026-11-24T09:00:00+00:00",
+      "playlist": "Keluarga dan Rumah Tangga",
+      "metadata_confirmed": true,
+      "native_visibility": "Dijadwalkan",
+      "strict_visibility_snapshot": {
+        "titleOk": "True",
+        "visibilityOk": "True",
+        "uploadFailed": "False",
+        "uploading": "False"
+      },
+      "visibility_confirmed": true,
+      "native_playlist_text": "Pilih",
+      "playlist_confirmed": true,
+      "native_checked_playlist_confirmed": true,
+      "playlist_verification_method": "Read checked state of exact native playlist row; no checkbox toggle or Save"
+    },
+    {
+      "upload_id": "3d7910ba73534958af2b7a3b117739a8",
+      "video_url": "https://www.youtube.com/watch?v=uQJB_5e7Qw0",
+      "visibility": "public",
+      "publish_at": null,
+      "playlist": "Podcast",
+      "metadata_confirmed": true,
+      "native_visibility": "Publik",
+      "strict_visibility_snapshot": {
+        "titleOk": "True",
+        "visibilityOk": "True",
+        "uploadFailed": "False",
+        "uploading": "False"
+      },
+      "visibility_confirmed": true,
+      "native_playlist_text": "2 playlist",
+      "playlist_confirmed": true,
+      "native_checked_playlist_confirmed": true,
+      "playlist_verification_method": "Read checked state of exact native playlist row; no checkbox toggle or Save"
+    },
+    {
+      "upload_id": "40c6f08fa17f45168d2403754acc9e5b",
+      "video_url": "https://www.youtube.com/watch?v=IcM64SoGKIM",
+      "visibility": "public",
+      "publish_at": "2026-11-24T00:00:00+00:00",
+      "playlist": "Animasi",
+      "metadata_confirmed": true,
+      "native_visibility": "Dijadwalkan",
+      "strict_visibility_snapshot": {
+        "titleOk": "True",
+        "visibilityOk": "True",
+        "uploadFailed": "False",
+        "uploading": "False"
+      },
+      "visibility_confirmed": true,
+      "native_playlist_text": "Pilih",
+      "playlist_confirmed": true,
+      "native_checked_playlist_confirmed": true,
+      "playlist_verification_method": "Read checked state of exact native playlist row; no checkbox toggle or Save"
+    },
+    {
+      "upload_id": "e44afe0122534e299301e4eef077bcd5",
+      "video_url": "https://www.youtube.com/watch?v=Okv2OMQjE5U",
+      "visibility": "public",
+      "publish_at": "2026-11-23T12:00:00+00:00",
+      "playlist": "Animasi",
+      "metadata_confirmed": true,
+      "native_visibility": "Dijadwalkan",
+      "strict_visibility_snapshot": {
+        "titleOk": "True",
+        "visibilityOk": "True",
+        "uploadFailed": "False",
+        "uploading": "False"
+      },
+      "visibility_confirmed": true,
+      "native_playlist_text": "Pilih",
+      "playlist_confirmed": true,
+      "native_checked_playlist_confirmed": true,
+      "playlist_verification_method": "Read checked state of exact native playlist row; no checkbox toggle or Save"
+    }
+  ]
+}

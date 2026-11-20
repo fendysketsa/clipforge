@@ -152,7 +152,7 @@ def actions(snapshot: dict) -> list[dict]:
     bonus = snapshot.get('bonus')
     rows.append({'key':'original_reels', 'priority':'Produksi otomatis',
                  'title':'Jalankan demonstrasi asli yang berbeda',
-                 'detail':('Ikuti syarat bonus yang ditampilkan Facebook; tiga upload lokal belum berarti bonus tercapai. ' if bonus else '') +
+                 'detail':('Ikuti syarat bonus yang ditampilkan Facebook; unggahan lokal belum berarti bonus tercapai. ' if bonus else '') +
                  'FB Pro menyiapkan naskah dan demonstrasi digital asli sesuai jadwal, kemudian memeriksa hasil sebelum publikasi. '
                  'Rekaman sendiri dapat ditambahkan sebagai bahan opsional.',
                  'href':URLS['content']})

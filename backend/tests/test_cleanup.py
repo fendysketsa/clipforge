@@ -501,6 +501,18 @@ def test_ytdlp_base_options_does_not_pin_a_stale_browser_user_agent():
     assert "cookiefile" not in options
 
 
+def test_external_ffmpeg_network_reads_are_bounded_before_each_input():
+    from yt_dlp.downloader.external import FFmpegFD
+    options = ytdlp_base_options()
+    # Check yt-dlp's actual argument resolver instead of only mirroring a dict:
+    # ffmpeg_i applies to all inputs; a wrong key silently loses the timeout.
+    from yt_dlp import YoutubeDL
+    downloader = FFmpegFD(YoutubeDL(options), options)
+    assert downloader._configuration_args(('_i1', '_i')) == ['-rw_timeout', '25000000']
+    assert downloader._configuration_args(('_i2', '_i')) == ['-rw_timeout', '25000000']
+    assert '-rw_timeout' not in downloader._configuration_args(('_o1', '_o', ''))
+
+
 def test_machine_progress_is_never_wrapped_into_fake_log_lines(capsys):
     detail = (
         "Mengunduh video sumber 50% · 450.0 MB/900 MB · 5.0 MB/dtk · "

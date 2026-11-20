@@ -2639,6 +2639,10 @@ def ytdlp_base_options(*, use_youtube_auth: bool = False, **overrides) -> dict:
         "quiet": True,
         "no_warnings": True,
         "socket_timeout": 25,
+        # Ranged/HLS downloads run in external FFmpeg; socket_timeout alone
+        # does not bound its protocol reads. Keep every input finite without
+        # limiting the duration or quality of a healthy source download.
+        "external_downloader_args": {"ffmpeg_i": ["-rw_timeout", "25000000"]},
         "retries": 5,
         "fragment_retries": 5,
         "extractor_retries": 3,

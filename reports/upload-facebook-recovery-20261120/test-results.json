@@ -1,0 +1,42 @@
+[
+  {
+    "file": "clipforge-playlist-final.xml",
+    "tests": "107",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "297.747"
+  },
+  {
+    "file": "clipforge-social-recovery-final.xml",
+    "tests": "141",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "5.551"
+  },
+  {
+    "file": "clipforge-facebook-monetization-final.xml",
+    "tests": "19",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "1.592"
+  },
+  {
+    "file": "clipforge-media-qc-final.xml",
+    "tests": "179",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "10.004"
+  },
+  {
+    "file": "clipforge-native-browser-guards.xml",
+    "tests": "4",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "5.664"
+  }
+]

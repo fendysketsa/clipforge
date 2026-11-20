@@ -1,0 +1,34 @@
+[
+  {
+    "playlist": "Animasi",
+    "state": "exists",
+    "channel_id": "UCAOZF9Qzj6DYoXKtLnP4UUQ",
+    "file_uploaded": false,
+    "video_visibility_changed": false,
+    "video_metadata_saved": false
+  },
+  {
+    "playlist": "Podcast",
+    "state": "exists",
+    "channel_id": "UCAOZF9Qzj6DYoXKtLnP4UUQ",
+    "file_uploaded": false,
+    "video_visibility_changed": false,
+    "video_metadata_saved": false
+  },
+  {
+    "playlist": "Lucu",
+    "state": "exists",
+    "channel_id": "UCAOZF9Qzj6DYoXKtLnP4UUQ",
+    "file_uploaded": false,
+    "video_visibility_changed": false,
+    "video_metadata_saved": false
+  },
+  {
+    "playlist": "Sejarah, Geografi & Budaya Nusantara",
+    "state": "exists",
+    "channel_id": "UCAOZF9Qzj6DYoXKtLnP4UUQ",
+    "file_uploaded": false,
+    "video_visibility_changed": false,
+    "video_metadata_saved": false
+  }
+]

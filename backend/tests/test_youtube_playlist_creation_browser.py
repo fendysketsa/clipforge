@@ -80,6 +80,67 @@ def test_portalled_menu_item_creates_missing_playlist(studio_page):
     assert studio_page.evaluate('chosen') == 'Keluarga dan Rumah Tangga'
 
 
+def test_owned_tab_marker_survives_navigation_and_never_marks_user_pages(studio_page):
+    context = studio_page.context.browser.new_context()
+    try:
+        owned_page, user_page = context.new_page(), context.new_page()
+        owned_page.route('https://owned-tab.test/**', lambda route: route.fulfill(
+            status=200, content_type='text/html',
+            body='<title>Owned upload tab</title><iframe name="studio-frame" srcdoc="Frame content"></iframe>'))
+        uploader.mark_fendy_clipper_upload_tab(owned_page)
+        owned_page.goto('https://owned-tab.test/upload')
+        assert uploader.is_fendy_clipper_upload_tab(owned_page)
+        owned_page.reload()
+        assert uploader.is_fendy_clipper_upload_tab(owned_page)
+        assert owned_page.frame_locator('iframe').locator('body').evaluate('() => window.name') == 'studio-frame'
+        user_page.route('https://user-tab.test/**', lambda route: route.fulfill(
+            status=200, content_type='text/html', body='<title>User tab</title>'))
+        user_page.goto('https://user-tab.test/dashboard')
+        assert user_page.evaluate('window.name') == ''
+        assert uploader.close_idle_fendy_clipper_upload_tabs([owned_page, user_page]) == 1
+        assert owned_page.is_closed() and not user_page.is_closed()
+    finally:
+        context.close()
+
+
+def test_creation_host_without_geometry_uses_the_visible_title_field(studio_page):
+    studio_page.add_style_tag(content='ytcp-playlist-creation-dialog:not([hidden]) {display:contents}')
+    studio_page.evaluate("() => document.body.appendChild(document.querySelector('#action-menu'))")
+    uploader.select_playlist(studio_page, 'Keluarga dan Rumah Tangga', create_missing=True)
+    assert studio_page.evaluate('creates') == 1
+    assert studio_page.evaluate('chosen') == 'Keluarga dan Rumah Tangga'
+    uploader.select_playlist(studio_page, 'Keluarga dan Rumah Tangga', create_missing=True)
+    assert studio_page.evaluate('creates') == 1
+
+
+@pytest.mark.parametrize('native,expected', [('Tidak publik', False), ('Pribadi', False), ('Publik', True)])
+def test_public_verification_uses_exact_native_visibility_not_description(studio_page, native, expected):
+    studio_page.set_content(f'''<div id="title-textarea"><div contenteditable="true">Reviewed title</div></div>
+        <p>Description mentions public, publik, private and scheduled, which are not the saved visibility.</p>
+        <ytcp-video-metadata-visibility><div id="visibility-text">{native}</div></ytcp-video-metadata-visibility>''')
+    snapshot = uploader.saved_video_edit_snapshot(studio_page, 'Reviewed title', 'public')
+    assert snapshot['titleOk'] == 'True'
+    assert snapshot['visibilityOk'] == str(expected)
+
+
+def test_playlist_dialog_uses_inner_surface_before_contents_wrapper(studio_page):
+    studio_page.evaluate('''() => {
+      const surface=document.querySelector('ytcp-playlist-dialog tp-yt-paper-dialog');
+      surface.setAttribute('role','dialog');
+      const wrapper=document.createElement('ytcp-dialog');
+      wrapper.id='dialog';wrapper.style.display='contents';
+      surface.replaceWith(wrapper);wrapper.appendChild(surface);
+      document.querySelector('#dropdown').onclick=()=>{surface.hidden=false};
+      document.querySelector('.done-button button').onclick=()=>{
+        surface.hidden=true;document.querySelector('#dropdown').textContent=chosen;
+      };
+      addPlaylist('Gaming');
+    }''')
+    uploader.select_playlist(studio_page, 'Gaming')
+    assert studio_page.evaluate('chosen') == 'Gaming'
+    assert studio_page.evaluate('creates') == 0
+
+
 def test_existing_playlist_is_reused_without_creation(studio_page):
     studio_page.evaluate("addPlaylist('Gaming')")
     uploader.select_playlist(studio_page, 'Gaming')

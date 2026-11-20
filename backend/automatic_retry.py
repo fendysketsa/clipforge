@@ -1,5 +1,6 @@
 """Conservative retries for proven pre-submission failures, never unknown posts."""
 from __future__ import annotations
+import re
 from tiktok_dialogs import is_cancel_upload_confirmation
 
 MAX_RETRIES = 3
@@ -83,6 +84,19 @@ def retry_count(upload):
 def tiktok_verified_session_recovery_reason(error, logs, *, started=False, accepted=False):
     """An old isolated-browser rejection is recoverable only after live validation."""
     if tiktok_submission_possible(logs, started=started, accepted=accepted):
+        return ''
+    profile_failure = re.fullmatch(
+        r'TikTok tidak dapat dibuka: Page\.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at '
+        r'https://www\.tiktok\.com/@([A-Za-z0-9_.]+)', str(error or ''))
+    if profile_failure:
+        # This navigation runs before the file picker. Require the same
+        # previously confirmed account and a fresh session check by the caller;
+        # never treat arbitrary network, login or Post failures as retryable.
+        expected = 'TARGET_ACCOUNT_CONFIRMED:@' + profile_failure[1].casefold()
+        file_evidence = ('Video dipilih:', 'DRAFT_FILE_RECOVERED:', 'CDP_FILE_TRANSFER_')
+        if (any(str(line).casefold() == expected.casefold() for line in logs)
+                and not any(str(line).startswith(file_evidence) for line in logs)):
+            return 'profile_navigation_revalidated_before_file'
         return ''
     if str(error or '') == 'Backend restart saat upload TikTok berlangsung. Periksa TikTok Studio sebelum retry agar tidak membuat posting duplikat.':
         if (any(str(line).startswith('TARGET_ACCOUNT_CONFIRMED:') for line in logs)

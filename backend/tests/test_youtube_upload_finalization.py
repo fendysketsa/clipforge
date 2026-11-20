@@ -1427,6 +1427,49 @@ def test_final_confirmation_verifies_assigned_url_even_when_studio_keeps_modal_o
     assert calls == [{"video_url": video_url, "timeout_ms": 1000}]
 
 
+@pytest.mark.parametrize('observed', ['Public', 'Publik'])
+@pytest.mark.parametrize('requested', ['private', 'unlisted'])
+def test_already_public_video_cannot_be_reopened_as_a_private_draft(monkeypatch, observed, requested):
+    from types import SimpleNamespace
+    field = SimpleNamespace(inner_text=lambda **kwargs: observed)
+    page = SimpleNamespace(goto=lambda *args, **kwargs: None,
+        locator=lambda _: SimpleNamespace(first=field))
+    monkeypatch.setattr(youtube_uploader, 'ensure_logged_in', lambda _: None)
+    monkeypatch.setattr(youtube_uploader, 'get_upload_workflow_step', lambda *args:
+        pytest.fail('Published video must not enter draft workflow'))
+    with pytest.raises(UploadError, match='sudah Publik.*rekonsiliasi visibilitas'):
+        resume_saved_draft_and_finalize(page, 'Reviewed title', requested,
+            video_url='https://www.youtube.com/watch?v=abcDEF12345', description='Reviewed description')
+
+
+def test_missing_draft_dialog_does_not_consume_full_upload_budget(monkeypatch):
+    from types import SimpleNamespace
+    clock = [0.0]
+    routes, messages = [], []
+    page = SimpleNamespace(goto=lambda url, **kwargs: routes.append((url, kwargs)))
+    monkeypatch.setattr(youtube_uploader.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(youtube_uploader.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0]+seconds))
+    monkeypatch.setattr(youtube_uploader, 'ensure_logged_in', lambda _: None)
+    monkeypatch.setattr(youtube_uploader, 'restore_saved_draft_dialog_surface', lambda *args: False)
+    monkeypatch.setattr(youtube_uploader, 'get_upload_workflow_step', lambda _: '')
+    monkeypatch.setattr(youtube_uploader, 'click_text', lambda *args, **kwargs: False)
+    monkeypatch.setattr(youtube_uploader, 'effective_channel_id', lambda _: 'UCtest')
+    monkeypatch.setattr(youtube_uploader, 'save_debug_artifacts', lambda *args: None)
+    monkeypatch.setattr(youtube_uploader, 'log', messages.append)
+    monkeypatch.setattr(youtube_uploader, 'ensure_upload_metadata_fields', lambda *args:
+        pytest.fail('Missing draft cannot change metadata'))
+    monkeypatch.setattr(youtube_uploader, 'click_final_upload_action', lambda *args, **kwargs:
+        pytest.fail('Missing draft cannot be published'))
+    with pytest.raises(UploadError, match='Dialog draft .* ID yang cocok'):
+        resume_saved_draft_and_finalize(page, 'Reviewed title', 'private',
+            video_url='https://www.youtube.com/watch?v=abcDEF12345',
+            description='Reviewed description', timeout_ms=5400000)
+    assert clock[0] == 30
+    assert len(routes) == 2 and 'udvid=abcDEF12345' in routes[1][0]
+    assert routes[1][1]['timeout'] <= 25000
+    assert any('metadata belum diubah' in message for message in messages)
+
+
 def test_studio_verification_uses_exact_video_edit_page_before_content_list(monkeypatch):
     source_page = StudioSourcePage()
     video_url = "https://www.youtube.com/watch?v=abcDEF12345"
