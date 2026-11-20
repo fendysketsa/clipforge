@@ -4,6 +4,14 @@ from __future__ import annotations
 import re
 
 PROFILES = {
+    "practical_knowledge": {
+        "label": "Sains, Teknologi & Pengetahuan Praktis",
+        "tone": "penasaran, jelas dan berbasis sumber; bedakan demonstrasi, hasil uji, opini dan janji; jangan mengarang statistik atau klaim kesehatan/keuntungan",
+        "short_role": "jawab satu masalah sains atau teknologi dengan contoh atau demonstrasi yang tersedia dan satu hasil atau batasan utuh",
+        "long_role": "susun pertanyaan, mekanisme atau langkah, bukti yang tersedia, keterbatasan dan kesimpulan yang membantu penonton memahami topik",
+        "duration_filter": "any",
+        "queries": ["sains teknologi indonesia penjelasan praktis", "inovasi kecerdasan buatan indonesia contoh dan batasan", "eksperimen pengetahuan praktis indonesia cara kerja"],
+    },
     "moral_animation_story": {
         "label": "Animasi Cerita Moral & Konsekuensi Pilihan",
         "tone": "cerita fiksi Indonesia yang hangat dan menarik; bedakan fiksi dari kejadian nyata, ikuti pilihan tokoh dan akibatnya; istilah azab dalam judul sumber bukan bukti hukuman Tuhan dan bukan dasar klaim agama; jangan meniru suara, karakter, atau desain kreator",
@@ -83,6 +91,7 @@ PROFILES = {
 }
 
 SIGNALS = {
+    "practical_knowledge": {"sains", "teknologi", "kecerdasan buatan", "eksperimen", "astronomi", "inovasi", "produktivitas", "cara kerja", "keterampilan"},
     "moral_animation_story": {"cerita moral", "animasi azab", "kartun acing", "cerita fiksi", "pedagang curang", "keserakahan", "kejujuran"},
     "nostalgia_indonesia": {"nostalgia", "tempo dulu", "zaman dulu", "jaman dulu", "1980", "1980 an", "arsip", "permainan tradisional", "kehidupan masa lalu"},
     "legend_folklore": {"legenda", "cerita rakyat", "folklor", "folklore", "dongeng", "asal usul"},
@@ -92,6 +101,7 @@ SIGNALS = {
 }
 
 HASHTAGS = {
+    "practical_knowledge": ["PengetahuanPraktis", "SainsTeknologi", "BelajarBersama"],
     "moral_animation_story": ["CeritaMoral", "AnimasiIndonesia", "CeritaFiksi"],
     "nostalgia_indonesia": ["NostalgiaIndonesia", "IndonesiaTempoDulu", "SejarahKehidupan"],
     "legend_folklore": ["LegendaNusantara", "CeritaRakyat", "BudayaNusantara"],

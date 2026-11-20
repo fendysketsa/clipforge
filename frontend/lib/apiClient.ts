@@ -19,9 +19,11 @@ import type {
 } from "../types/clip.type";
 import { createQueueSubmitter, uploadApiBases } from "./queueSubmission";
 import type { LongProductionSnapshot } from "./longAutomation";
+import { createReadRequest } from "./readRequest";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8010";
 const CLIENT_API_BASE = API_BASE;
+const readRequest = createReadRequest((...args) => fetch(...args));
 
 export const getLongProductionStatus = async (): Promise<LongProductionSnapshot> => {
   const response = await fetch(`${CLIENT_API_BASE}/api/automation/viral-cc/long-production`, {
@@ -171,11 +173,7 @@ export const getSourceUsageLog = async () => {
 };
 
 export const getJobs = async () => {
-  const response = await fetch(`${CLIENT_API_BASE}/api/jobs`, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error("Failed to load jobs");
-  }
-  return (await response.json()) as ClipJob[];
+  return readRequest<ClipJob[]>(`${CLIENT_API_BASE}/api/jobs`, "Failed to load jobs");
 };
 
 export const deleteJobs = async () => {
@@ -253,35 +251,19 @@ export const cancelJob = async (jobId: string) => {
 };
 
 export const getJob = async (jobId: string) => {
-  const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}`, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error("Failed to load job");
-  }
-  return (await response.json()) as ClipJob;
+  return readRequest<ClipJob>(`${CLIENT_API_BASE}/api/jobs/${jobId}`, "Failed to load job");
 };
 
 export const getYouTubeConfig = async () => {
-  const response = await fetch(`${CLIENT_API_BASE}/api/youtube/config`, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(await responseErrorMessage(response, "Failed to load YouTube config"));
-  }
-  return (await response.json()) as YouTubeConfig;
+  return readRequest<YouTubeConfig>(`${CLIENT_API_BASE}/api/youtube/config`, "Failed to load YouTube config");
 };
 
 export const getTikTokConfig = async () => {
-  const response = await fetch(`${CLIENT_API_BASE}/api/tiktok/config`, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(await responseErrorMessage(response, "Gagal memuat konfigurasi TikTok"));
-  }
-  return (await response.json()) as TikTokConfig;
+  return readRequest<TikTokConfig>(`${CLIENT_API_BASE}/api/tiktok/config`, "Gagal memuat konfigurasi TikTok");
 };
 
 export const getTikTokUploads = async () => {
-  const response = await fetch(`${CLIENT_API_BASE}/api/tiktok/uploads`, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(await responseErrorMessage(response, "Gagal memuat upload TikTok"));
-  }
-  return (await response.json()) as TikTokUploadJob[];
+  return readRequest<TikTokUploadJob[]>(`${CLIENT_API_BASE}/api/tiktok/uploads?dashboard=true`, "Gagal memuat upload TikTok");
 };
 
 export const updateTikTokUploadPerformance = async (
@@ -352,11 +334,7 @@ export const enableYouTubeDirectProfileUpload = async () => {
 };
 
 export const getYouTubeUploads = async () => {
-  const response = await fetch(`${CLIENT_API_BASE}/api/youtube/uploads`, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(await responseErrorMessage(response, "Failed to load YouTube uploads"));
-  }
-  return (await response.json()) as YouTubeUploadJob[];
+  return readRequest<YouTubeUploadJob[]>(`${CLIENT_API_BASE}/api/youtube/uploads?dashboard=true`, "Failed to load YouTube uploads");
 };
 
 export const deleteYouTubeUpload = async (uploadId: string) => {
@@ -583,13 +561,8 @@ export const getAutoViralCampaigns = async () => {
 };
 
 export const getAutoViralSchedule = async () => {
-  const response = await fetch(`${CLIENT_API_BASE}/api/automation/viral-cc/schedule`, {
-    cache: "no-store", signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) {
-    throw new Error(await responseErrorMessage(response, "Failed to load auto viral schedule"));
-  }
-  return (await response.json()) as import("../types/clip.type").AutoViralScheduleStatus;
+  return readRequest<import("../types/clip.type").AutoViralScheduleStatus>(
+    `${CLIENT_API_BASE}/api/automation/viral-cc/schedule`, "Failed to load auto viral schedule", 10_000);
 };
 
 export const setAutoViralScheduleEnabled = async (enabled: boolean) => {

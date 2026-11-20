@@ -1,0 +1,57 @@
+[
+  {
+    "endpoint": "health",
+    "http": 200,
+    "seconds": 0.197,
+    "bytes": 15
+  },
+  {
+    "endpoint": "jobs",
+    "http": 200,
+    "seconds": 3.659,
+    "bytes": 128721,
+    "count": 13,
+    "active": [
+      {
+        "id": "e1d886b6975f447d80fcb5f2c050977f",
+        "status": "running",
+        "progress_percent": 81
+      }
+    ]
+  },
+  {
+    "endpoint": "youtube/uploads",
+    "http": 200,
+    "seconds": 0.486,
+    "bytes": 10485909
+  },
+  {
+    "endpoint": "tiktok/uploads",
+    "http": 200,
+    "seconds": 0.116,
+    "bytes": 514374
+  },
+  {
+    "endpoint": "automation/viral-cc/schedule",
+    "http": 200,
+    "seconds": 1.407,
+    "bytes": 2927,
+    "enabled": true,
+    "scheduler_running": true,
+    "activity": {
+      "state": "running",
+      "label": "Cron sedang bekerja",
+      "detail": "Kandidat API 2/45; menjalankan fallback terbatas",
+      "progress_percent": 10,
+      "stage": "fallback_discovery",
+      "updated_at": "2026-11-20T04:19:26.440129+00:00",
+      "source_title": null
+    }
+  },
+  {
+    "endpoint": "automation/viral-cc/editorial-policy",
+    "error": "HTTPError",
+    "http": 404,
+    "seconds": 0.007
+  }
+]

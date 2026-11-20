@@ -15,7 +15,7 @@ ROOT=Path(__file__).resolve().parents[2]
 @pytest.fixture
 def project(tmp_path):
     root=tmp_path/'image';root.mkdir()
-    for name in ('api.py','telegram_bot.py','cron_long_strategy.py','ryuundy_editorial_themes.py','ryuundy_reference_catalog.py',
+    for name in ('api.py','telegram_bot.py','cron_long_strategy.py','ryuundy_editorial_themes.py','ryuundy_reference_catalog.py','cron_editorial.py',
                  'requirements.txt','docker-entrypoint.sh','Dockerfile'):
         (root/name).write_text('# deployment fixture\n')
     (root/'remotion/src').mkdir(parents=True)
@@ -30,7 +30,7 @@ def project(tmp_path):
 def test_image_manifest_covers_bot_backend_and_renderer(project):
     result=deploy.verify_manifest(project)
     assert {'api.py','telegram_bot.py','cron_long_strategy.py','ryuundy_editorial_themes.py',
-            'ryuundy_reference_catalog.py','remotion/src/index.jsx','motlab/scene.mjs',
+            'ryuundy_reference_catalog.py','cron_editorial.py','remotion/src/index.jsx','motlab/scene.mjs',
             'motlab/package-lock.json'} <= result['files'].keys()
 
 
@@ -126,10 +126,15 @@ def test_bot_preparation_requires_verified_frontend(project,tmp_path,monkeypatch
 
 def test_backend_contract_does_not_resume_disabled_cron(monkeypatch):
     payloads={'/api/health':{'status':'ok'},'/api/tiktok/config':{'duplicate_guard_version':2,'cron_draft_policy':'discard'},
+      '/api/runtime/optimization':{'version':1,'dashboard_upload_view':True,
+          'full_upload_evidence_preserved':True,'owned_render_sessions':True,
+          'native_checkpoint_json':True,'daily_plan_projection':True},
       '/api/facebook/config':{'version':1,'monetization_version':1,'autopilot_version':1,'activity_version':1,'bonus_priority_version':1,'creative_policy_version':2,'local_cleanup_version':1,'educational_motion_version':1,'originals_request_version':1,'max_seconds':55,'target_email':'fendysketsa@gmail.com'},
       '/api/facebook/autopilot':{'version':1,'scheduler_running':True},
       '/api/generation/rendering':{'version':1,'motlab_version':'0.3.0','motlab_installed':True,
           'caption_plane':'outside_picture_transitions','motion_policy_version':1,'default_engine':'motlab'},
+      '/api/automation/viral-cc/editorial-policy':{'version':1,'scope':'cron_only',
+          'all_channel_search':True,'monthly_refresh':True,'manual_requests_modified':False},
       '/api/automation/viral-cc/schedule':{'short_schedule_policy_version':1,'short_schedule_daily_limit':5,'short_schedule_timezone':'Asia/Jakarta','daily_plan_version':1,'activity_version':1,'activity':{'state':'disabled'},'cron_director_effects_policy_version':4,'cron_source_process_limit':2,'enabled':False,'scheduler_running':False},
       '/api/automation/viral-cc/long-strategy':{'version':2,'semantic_story_review_required':True,
           'reference_catalog_version':1,'reference_count':4,

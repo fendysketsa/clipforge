@@ -27,3 +27,4 @@ yt-dlp[default]==2026.8.19
 # robotic espeak fallback.
 edge-tts>=7.3.1,<8.0.0
 pytest==8.3.4
+hijridate==2.5.0

@@ -1,0 +1,40 @@
+{
+  "backend_test_suites": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "716",
+      "time": "27.525",
+      "timestamp": "2026-11-20T11:32:06.605158+07:00",
+      "hostname": "fendycnugraha"
+    }
+  ],
+  "frontend_tests": {
+    "read_and_poll": 7,
+    "queue_submission": 21,
+    "studio_queue": 6,
+    "passed": 34
+  },
+  "production_frontend_build": "passed",
+  "strict_unused_typescript": "passed",
+  "backend_modules_compiled": 63,
+  "runtime_activation_verified": false,
+  "deployment_attempted": false,
+  "deployment_blockers": [
+    "active Long render",
+    "sudo requires a password"
+  ],
+  "source_sha256": {
+    "backend/api.py": "ab770091dc3c3e53ab4332336cef291a6c464155785c01f285c79a8d1ee5e2c3",
+    "backend/dashboard_payload.py": "5031bf4a3c2bd46d7aed971e9db9b57ab9890526ac90a441e9926ae15977daac",
+    "backend/model_json.py": "2371dc8fba9ef3043005adbe49db1d2b47cf09cad711e187da5a10fbf2703a3e",
+    "backend/render_process.py": "2a12e7c9eff5e07196b134e23ac9aa2cebf8ac4ac5001ea90b5cab39968482f4",
+    "backend/deployment_runtime.py": "d33781a329f6711ee962451d1c1807266c870521d6d9b9afd8f9e4fcdd410280",
+    "frontend/app/page.tsx": "94dc89773f5e918631307b76f6a53240bb298f252dac9c40bd908b7412b7aaf7",
+    "frontend/lib/apiClient.ts": "22fa4a88204482588fb84d3018dd7f17b0d590c7db64dc1bfde55478909ab669",
+    "frontend/lib/readRequest.ts": "b5b5a7c8bad713b5407eacb304efd775f79a4f138c4888e75cf7b0b1704ab198",
+    "frontend/lib/pollTask.ts": "84cf63560dd034dcbc28908ca10dbd9dce30d879cf41ddabc0fb1a5c06d8e400"
+  }
+}

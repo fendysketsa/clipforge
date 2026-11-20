@@ -78,6 +78,8 @@ def verify_manifest(root: Path, source: Path | None = None) -> dict:
 
 
 def verify_dependencies() -> None:
+    from hijridate import Gregorian
+    Gregorian(2027, 2, 8).to_hijri()
     from PIL import Image, ImageDraw, ImageFont  # noqa: F401
     from playwright.sync_api import BrowserType
     import cv2
@@ -106,6 +108,11 @@ def get_json(url: str) -> dict:
 def backend_contract(base: str) -> dict:
     if get_json(base + '/api/health').get('status') != 'ok':
         raise RuntimeError('Backend is not healthy')
+    optimization = get_json(base + '/api/runtime/optimization')
+    if (optimization.get('version') != 1 or any(optimization.get(key) is not True for key in (
+            'dashboard_upload_view', 'full_upload_evidence_preserved', 'owned_render_sessions',
+            'native_checkpoint_json', 'daily_plan_projection'))):
+        raise RuntimeError('Runtime optimization policy is stale')
     config = get_json(base + '/api/tiktok/config')
     schedule = get_json(base + '/api/automation/viral-cc/schedule')
     if schedule.get('activity_version') != 1 or not schedule.get('activity', {}).get('state'):
@@ -160,7 +167,14 @@ def backend_contract(base: str) -> dict:
             or rendering.get('caption_plane') != 'outside_picture_transitions'
             or rendering.get('motion_policy_version') != 1):
         raise RuntimeError('Generated-video Motlab rendering policy is stale')
-    return {**expected, 'facebook_workspace_version': facebook['version'], 'cron_enabled': schedule.get('enabled'),
+    editorial = get_json(base + '/api/automation/viral-cc/editorial-policy')
+    if (editorial.get('version') != 1 or editorial.get('scope') != 'cron_only'
+            or editorial.get('all_channel_search') is not True
+            or editorial.get('monthly_refresh') is not True
+            or editorial.get('manual_requests_modified') is not False):
+        raise RuntimeError('Cron seasonal/monthly editorial policy is stale')
+    return {**expected, 'optimization_version': optimization['version'],
+            'facebook_workspace_version': facebook['version'], 'cron_enabled': schedule.get('enabled'),
             'scheduler_running': schedule.get('scheduler_running'),
             'director_policy': 4, 'source_process_limit': 2, 'facebook_autopilot_version': 1,
             'long_strategy_version': 2, 'long_compilation_fallback_version': 1, 'long_theme_count': len(themes),

@@ -55,6 +55,37 @@ def test_automatic_orphan_resume_is_once_and_keeps_saved_publication_target(draf
     assert api.queue_youtube_draft_recoveries_once() == 0
 
 
+def test_playlist_only_failure_resumes_exact_video_once_without_file(draft, monkeypatch):
+    draft.playlist = 'Keluarga dan Rumah Tangga'
+    draft.playlist_confirmed = False
+    draft.error = "Video pasca-restart belum terverifikasi; file lokal tetap aman dan tidak diupload ulang. Pembuatan playlist 'Keluarga dan Rumah Tangga' belum terkonfirmasi: Locator.wait_for: Timeout 8000ms exceeded."
+    queued = []
+    monkeypatch.setattr(api, "queue_youtube_upload_jobs", lambda rows: queued.extend(rows))
+    assert api.queue_youtube_draft_recoveries_once() == 1
+    assert len(queued) == 1 and queued[0].id == draft.id
+    assert queued[0].publish_at == draft.publish_at
+    assert queued[0].playlist == draft.playlist
+    assert any(line.startswith("PLAYLIST_DRAFT_RECOVERY_ONCE:") for line in queued[0].logs)
+    assert draft.clip_url not in api.build_youtube_restart_verification_command(queued[0])
+    api.set_youtube_upload(draft.id, status="failed")
+    assert api.queue_youtube_draft_recoveries_once() == 0
+
+
+@pytest.mark.parametrize('risk', ['claimed', 'confirmed', 'dry_run', 'final_saved', 'old', 'already_attempted'])
+def test_playlist_retry_preserves_unsafe_remote_states(draft, monkeypatch, risk):
+    draft.playlist = 'Keluarga dan Rumah Tangga'
+    draft.playlist_confirmed = False
+    draft.error = "Pembuatan playlist 'Keluarga dan Rumah Tangga' belum terkonfirmasi: Timeout."
+    if risk == 'claimed': draft.logs.append(api.YOUTUBE_CLAIM_ABORT_PREFIX + ' Content ID')
+    if risk == 'confirmed': draft.upload_confirmed = True
+    if risk == 'dry_run': draft.dry_run = True
+    if risk == 'final_saved': draft.logs.extend(['FINAL_VISIBILITY: public', 'Tombol final diklik dan diterima: Simpan'])
+    if risk == 'old': draft.updated_at = '2020-01-01T00:00:00+00:00'
+    if risk == 'already_attempted': draft.logs.append('PLAYLIST_DRAFT_RECOVERY_ONCE:v1')
+    monkeypatch.setattr(api, 'queue_youtube_upload_jobs', lambda rows: pytest.fail('unsafe retry queued'))
+    assert api.queue_youtube_draft_recoveries_once() == 0
+
+
 def test_missing_job_prefers_active_duplicate_over_old_failed_draft(draft):
     active = draft.model_copy(update={"id": "active", "status": "running"})
     api.youtube_uploads[active.id] = active

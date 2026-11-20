@@ -3,7 +3,6 @@
 import {
   Archive,
   CalendarDays,
-  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -17,7 +16,6 @@ import {
   Film,
   Folder,
   FolderOpen,
-  HardDrive,
   Layers3,
   ListFilter,
   Loader2,

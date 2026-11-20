@@ -71,6 +71,15 @@ def test_missing_niche_is_created_selected_and_confirmed_once(studio_page):
     assert studio_page.evaluate('creates') == 1
 
 
+def test_portalled_menu_item_creates_missing_playlist(studio_page):
+    # Studio renders the "New playlist" item in a global ytcp-text-menu, not
+    # inside ytcp-playlist-dialog. Creation must still open the form.
+    studio_page.evaluate("() => document.body.appendChild(document.querySelector('#action-menu'))")
+    uploader.select_playlist(studio_page, 'Keluarga dan Rumah Tangga')
+    assert studio_page.evaluate('creates') == 1
+    assert studio_page.evaluate('chosen') == 'Keluarga dan Rumah Tangga'
+
+
 def test_existing_playlist_is_reused_without_creation(studio_page):
     studio_page.evaluate("addPlaylist('Gaming')")
     uploader.select_playlist(studio_page, 'Gaming')

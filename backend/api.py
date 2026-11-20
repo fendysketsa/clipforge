@@ -68,8 +68,12 @@ import long_video_qc
 import cron_source_policy
 from cron_activity import summarize_activity
 import daily_cron_plan
+import dashboard_payload
+import render_process
+import model_json
 import cron_long_strategy
 import ryuundy_editorial_themes
+import cron_editorial
 import ryuundy_reference_catalog
 from motlab_story_renderer import rendering_capabilities
 import automatic_retry
@@ -561,6 +565,7 @@ class ClipJobRequest(BaseModel):
     scheduled_public_source_credit: bool = False
     scheduled_news_hot: bool = False
     scheduled_theme_key: str = Field(default="", max_length=64)
+    scheduled_editorial_context: dict[str, Any] = Field(default_factory=dict)
     # Internal scheduler-only switches. Manual/API jobs keep both disabled, so
     # cron can request a more human editorial pass and licensed contextual
     # audio without silently changing operator-led renders.
@@ -1680,6 +1685,7 @@ CRON_TREND_TOPIC_SIGNALS = {
 }
 CRON_TREND_TOPIC_SIGNALS.update(marker for signals in DRAMA_THEME_SIGNALS.values() for marker in signals)
 CRON_TREND_TOPIC_SIGNALS.update(marker for signals in ryuundy_editorial_themes.SIGNALS.values() for marker in signals)
+CRON_TREND_TOPIC_SIGNALS.update(marker for signals in cron_editorial.SEASONAL_SIGNALS.values() for marker in signals)
 CRON_TREND_UNSAFE_SIGNALS = {
     "18+", "adegan berdarah", "bunuh diri", "darah nyata", "eksploitasi",
     "gore", "judi online", "kekerasan nyata", "pelecehan", "pornografi",
@@ -1699,6 +1705,7 @@ DEFAULT_CRON_GAMING_CHANNEL_QUERY = "reaction game populer indonesia lucu cerita
 # news, sport, politics, or generic entertainment.  Humour is an interlude,
 # while faith remains available only when that is what the source discusses.
 RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
+    **cron_editorial.SEASONAL_PROFILES,
     **ryuundy_editorial_themes.PROFILES,
     **DRAMA_THEME_PROFILES,
     "love_betrayal": {
@@ -1932,6 +1939,7 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
 }
 
 RYUUNDY_CRON_THEME_SIGNALS: dict[str, set[str]] = {
+    **cron_editorial.SEASONAL_SIGNALS,
     **ryuundy_editorial_themes.SIGNALS,
     **DRAMA_THEME_SIGNALS,
     "love_betrayal": {
@@ -2041,7 +2049,7 @@ CRON_ISLAMIC_ANIMATION_THEME_KEYS = frozenset(
     {"islamic_animation_kids", "islamic_animation_general"}
 )
 CRON_ISLAMIC_THEME_KEYS = frozenset(
-    {"faith_life", "lecture_wisdom", *CRON_ISLAMIC_ANIMATION_THEME_KEYS}
+    {"faith_life", "lecture_wisdom", *CRON_ISLAMIC_ANIMATION_THEME_KEYS, *cron_editorial.SEASONAL_PROFILES}
 )
 CRON_ISLAMIC_ANIMATION_VISUAL_SIGNALS = frozenset(
     {
@@ -2608,6 +2616,12 @@ class AutoViralRequest(BaseModel):
     niche: IslamicContentNiche = "auto"
     theme_focus: str = Field(default="", max_length=240)
     cron_theme_key: str = Field(default="", max_length=64)
+    cron_editorial_slot: int = Field(default=-1, ge=-1)
+    cron_editorial_month: str = Field(default="", max_length=7)
+    cron_season_key: str = Field(default="", max_length=64)
+    cron_monthly_niche_id: str = Field(default="", max_length=64)
+    cron_speaker_seed: str = Field(default="", max_length=160)
+    cron_editorial_queries: list[str] = Field(default_factory=list, max_length=20)
     # Honoured only when the owning run has trigger="schedule".  Keeping the
     # marker durable lets an interrupted cron run resume with the same gate.
     cron_trend_lane: bool = False
@@ -2710,7 +2724,12 @@ class AutoViralRequest(BaseModel):
         self.cron_theme_key = re.sub(
             r"[^a-z0-9_]+", "", self.cron_theme_key.casefold()
         )
-        if self.cron_theme_key in DRAMA_THEME_PROFILES:
+        if self.cron_editorial_slot >= 0 and self.cron_editorial_queries:
+            # Persist the selected monthly/seasonal query intent verbatim;
+            # legacy field validation injects unrelated evergreen seeds.
+            self.queries = merge_unique_queries([self.theme_focus] if self.theme_focus else [],
+                [query[:240] for query in self.cron_editorial_queries])[:20]
+        elif self.cron_theme_key in DRAMA_THEME_PROFILES:
             # Query field validation may inject legacy niche seeds. Keep the
             # drama lane stable across durable run reloads and trend toggles.
             self.queries = merge_unique_queries(
@@ -3275,8 +3294,7 @@ def backfill_source_usage_archives(history: dict[str, dict[str, Any]]) -> None:
 def save_jobs_unlocked() -> None:
     jobs_list = sorted(jobs.values(), key=lambda job: job.created_at, reverse=True)
     # High-frequency runtime telemetry is ephemeral and must never churn jobs.json.
-    payload = [job.model_dump(exclude={"telemetry"}) for job in jobs_list]
-    data = json.dumps(payload, indent=2, ensure_ascii=False)
+    data = model_json.encode_records(jobs_list, ClipJob, exclude={"__all__": {"telemetry"}})
     JOBS_PATH.parent.mkdir(parents=True, exist_ok=True)
     try:
         temp_path = JOBS_PATH.with_suffix(".json.tmp")
@@ -3304,9 +3322,8 @@ def save_auto_viral_runs_unlocked() -> None:
         run for run in auto_viral_runs.values()
         if run.id not in retained and news_hot_run_reserved_on_date(run, current)
     )
-    payload = [run.model_dump() for run in runs_list]
     AUTO_VIRAL_RUNS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    data = json.dumps(payload, indent=2, ensure_ascii=False)
+    data = model_json.encode_records(runs_list, AutoViralRun)
     try:
         temp_path = AUTO_VIRAL_RUNS_PATH.with_suffix(".json.tmp")
         temp_path.write_text(data, encoding="utf-8")
@@ -3756,8 +3773,7 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
 
 def save_youtube_uploads_unlocked() -> None:
     uploads_list = sorted(youtube_uploads.values(), key=lambda item: item.created_at, reverse=True)
-    payload = [item.model_dump() for item in uploads_list]
-    data = json.dumps(payload, indent=2, ensure_ascii=False)
+    data = model_json.encode_records(uploads_list, YouTubeUploadJob)
     YOUTUBE_UPLOADS_PATH.parent.mkdir(parents=True, exist_ok=True)
     try:
         temp_path = YOUTUBE_UPLOADS_PATH.with_suffix(".json.tmp")
@@ -3818,7 +3834,7 @@ def load_tiktok_uploads() -> dict[str, TikTokUploadJob]:
 
 def save_tiktok_uploads_unlocked() -> None:
     items = sorted(tiktok_uploads.values(), key=lambda item: item.created_at, reverse=True)
-    data = json.dumps([item.model_dump() for item in items], indent=2, ensure_ascii=False)
+    data = model_json.encode_records(items, TikTokUploadJob)
     TIKTOK_UPLOADS_PATH.parent.mkdir(parents=True, exist_ok=True)
     try:
         temp_path = TIKTOK_UPLOADS_PATH.with_suffix(".json.tmp")
@@ -9298,13 +9314,40 @@ def queue_youtube_draft_recoveries_once(*, source_job_ids: set[str] | None = Non
                 return 1
             if (row.status != "failed" or not youtube_upload_has_remote_checkpoint(row)
                     or youtube_upload_was_claimed(row) or youtube_restart_verification_released(row)
-                    or YOUTUBE_RESTART_VERIFY_MARKER in row.logs
-                    or any(line.startswith("CHECKS_DRAFT_RECOVERY_ONCE:") for line in row.logs)):
+                    or row.upload_confirmed
+                    or youtube_upload_has_final_save_checkpoint(row)
+                    or any(str(line).startswith("UPLOAD_CONFIRMED:") for line in row.logs)):
                 continue
             age = (now - parse_utc_datetime(row.updated_at)).total_seconds()
-            if not 0 <= age <= 86400 or not any(text in (row.error or "") for text in (
-                "Step 3 Checks belum selesai", "CHECKS_STATUS_UNREADABLE", "Checks tidak terbaca",
-            )):
+            playlist_marker = "PLAYLIST_DRAFT_RECOVERY_ONCE:v1"
+            playlist_retry = (
+                bool(row.playlist)
+                and not row.playlist_confirmed
+                and (playlist_marker not in row.logs)
+                and 0 <= age <= 30 * 86400
+                and any(text in (row.error or "") for text in (
+                    "Pembuatan playlist",
+                    "Playlist video tersimpan belum terverifikasi",
+                ))
+            )
+            if playlist_retry:
+                set_youtube_upload(
+                    row.id, status="queued", started_at=None, finished_at=None,
+                    duration_seconds=None, error=None,
+                    logs=[*row.logs, playlist_marker, YOUTUBE_RESTART_VERIFY_MARKER,
+                        "REMOTE_DRAFT_RESUME: playlist belum tersimpan; video-id, metadata dan target publikasi semula dipakai ulang; file tidak dikirim ulang."][-160:],
+                )
+                with youtube_uploads_lock:
+                    queued = youtube_uploads[row.id]
+                queue_youtube_upload_jobs([queued])
+                return 1
+            checks_marker = "CHECKS_DRAFT_RECOVERY_ONCE:"
+            if (YOUTUBE_RESTART_VERIFY_MARKER in row.logs
+                    or any(line.startswith(checks_marker) for line in row.logs)
+                    or not 0 <= age <= 86400
+                    or not any(text in (row.error or "") for text in (
+                        "Step 3 Checks belum selesai", "CHECKS_STATUS_UNREADABLE", "Checks tidak terbaca",
+                    ))):
                 continue
             queued = reuse_youtube_remote_draft(row.source_job_id, YouTubeUploadRequest(
                 clip_url=row.clip_url, visibility=row.visibility, publish_at=row.publish_at,
@@ -15446,15 +15489,11 @@ def cancel_process(job_id: str) -> bool:
     with process_lock:
         process = job_processes.get(job_id)
 
-    if process is None or process.poll() is not None:
+    if process is None or (process.poll() is not None
+            and getattr(process, "_clipforge_process_group", None) is None):
         return False
 
-    process.terminate()
-    try:
-        process.wait(timeout=CANCEL_GRACE_SECONDS)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=CANCEL_GRACE_SECONDS)
+    render_process.terminate(process, CANCEL_GRACE_SECONDS)
     return True
 
 
@@ -16152,7 +16191,9 @@ def run_job(job_id: str) -> None:
             encoding="utf-8",
             errors="replace",
             bufsize=1,
+            start_new_session=True,
         )
+        render_process.track_session(process)
     except cron_source_policy.SourceProcessLimitReached as exc:
         set_job(job_id,status='cancelled',started_at=None,**finish_job_updates(started_perf),
             progress_stage='skipped_source_limit',progress_detail='Sumber dilewati; batas dua proses tercapai.',
@@ -16202,6 +16243,7 @@ def run_job(job_id: str) -> None:
                 set_job(job_id, logs=logs[-120:])
 
         code = process.wait()
+        render_process.terminate(process, CANCEL_GRACE_SECONDS)
         if job_id in cancelled_job_ids:
             preserve_files = job_id in preserve_job_files_on_cancel
             removed = 0 if preserve_files else cleanup_job_artifacts(output_root)
@@ -16425,13 +16467,7 @@ def run_job(job_id: str) -> None:
             )
             discard_failed_targeted_repair_job(job_id, failure_reason)
     except Exception as exc:
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=CANCEL_GRACE_SECONDS)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=CANCEL_GRACE_SECONDS)
+        render_process.terminate(process, CANCEL_GRACE_SECONDS)
         preserve_director_recovery_evidence(job_id, output_root)
         preserve_partial_render = (
             any(output_root.rglob("clips/*.mp4"))
@@ -16464,6 +16500,7 @@ def run_job(job_id: str) -> None:
     finally:
         telemetry_stop.set()
         telemetry_thread.join(timeout=2.0)
+        render_process.terminate(process, CANCEL_GRACE_SECONDS)
         with process_lock:
             job_processes.pop(job_id, None)
         job_secrets.pop(job_id, None)
@@ -19010,8 +19047,13 @@ def search_youtube_data_api_viral_sources(
                     studio_trend_queries,
                     limit=max_api_queries,
                 )
-    preferred_specs = [] if director_lane else cron_gaming_channel_query_specs(request, run_id)
-    reference_specs = [] if director_lane else cron_reference_channel_query_specs(request, run_id)
+    open_cron = cron_editorial_enabled() and scheduled_auto_viral_discovery_active(run_id)
+    if open_cron and not director_lane and (request.cron_season_key or request.cron_monthly_niche_id or request.cron_speaker_seed):
+        # Current seasonal/monthly briefs get the query budget before unrelated
+        # chart seeds. The selected videos still pass all ordinary source gates.
+        api_queries = merge_unique_queries(request.queries, api_queries)[:max_api_queries]
+    preferred_specs = [] if director_lane or open_cron else cron_gaming_channel_query_specs(request, run_id)
+    reference_specs = [] if director_lane or open_cron else cron_reference_channel_query_specs(request, run_id)
     # Reserve room for discovery across other channels within the same budget.
     if reference_specs and max_api_queries > 1:
         preferred_specs = [*preferred_specs, *reference_specs[:max_api_queries - 1]]
@@ -20321,6 +20363,9 @@ def source_theme_hashtags(
     if theme_key in ryuundy_editorial_themes.HASHTAGS:
         return [*ryuundy_editorial_themes.HASHTAGS[theme_key],
                 "VideoPanjang" if long_form else "ShortsIndonesia"]
+    if theme_key in cron_editorial.SEASONAL_HASHTAGS:
+        return [*cron_editorial.SEASONAL_HASHTAGS[theme_key],
+                "VideoPanjang" if long_form else "ShortsIndonesia"]
     if theme_key == "mystery_story":
         return ["CeritaMisteri", "MisteriNusantara", "VideoPanjang" if long_form else "ShortsIndonesia"]
     if theme_key == "history_geography_nusantara":
@@ -20494,6 +20539,9 @@ def create_auto_viral_clip_job(
         scheduled_director_effects=scheduled,
         scheduled_news_hot=news_hot,
         scheduled_theme_key=request.cron_theme_key if scheduled else "",
+        scheduled_editorial_context=({"slot":request.cron_editorial_slot,
+            "month":request.cron_editorial_month, "season":request.cron_season_key,
+            "monthly_niche_id":request.cron_monthly_niche_id, "speaker_seed":request.cron_speaker_seed} if scheduled else {}),
         scheduled_human_editor=bool(
             scheduled
             and env_bool("AUTO_VIRAL_SCHEDULE_HUMAN_EDITOR_ENABLED", True)
@@ -20618,6 +20666,7 @@ def create_auto_viral_paired_long_job(
         auto_upload_youtube=False,
         scheduled_public_source_credit=short_job.request.scheduled_public_source_credit,
         scheduled_theme_key=short_job.request.scheduled_theme_key or request.cron_theme_key,
+        scheduled_editorial_context=dict(short_job.request.scheduled_editorial_context),
         scheduled_director_effects=bool(short_job.request.scheduled_director_effects or short_job.request.scheduled_public_source_credit),
         scheduled_human_editor=short_job.request.scheduled_human_editor,
         scheduled_contextual_audio=short_job.request.scheduled_contextual_audio,
@@ -21503,9 +21552,18 @@ def daily_cron_plan_status(now: datetime | None = None) -> dict[str, Any]:
     if not daily_cron_plan_enabled():
         return {"enabled": False}
     with auto_viral_lock:
-        runs = [run.model_dump(include={"id", "created_at", "trigger", "processed", "request"}) for run in auto_viral_runs.values()]
+        runs = [run.model_dump(include={
+            "id": True, "created_at": True, "trigger": True,
+            "request": {"cron_daily_lane", "cron_production_day"},
+            "processed": {"__all__": {"job_id": True, "repair_job_id": True,
+                "long_job_id": True, "status": True, "paired_short_snapshot": {"created_at"}}},
+        }) for run in auto_viral_runs.values()]
     with jobs_lock:
-        current_jobs = [job.model_dump(include={"id", "created_at", "status", "request", "clips"}) for job in jobs.values()]
+        current_jobs = [job.model_dump(include={
+            "id": True, "created_at": True, "status": True,
+            "request": {"cron_daily_lane", "cron_production_day", "top"},
+            "clips": {"__all__": {"url", "render_qc_blocking"}},
+        }) for job in jobs.values()]
     with youtube_uploads_lock:
         records = list(youtube_uploads.values())
     uploads = []
@@ -24248,6 +24306,11 @@ def create_and_start_auto_viral_campaign(
         if secret:
             auto_viral_secrets[run_id] = secret
         save_auto_viral_runs_unlocked()
+    if trigger == "schedule" and cron_editorial_enabled() and request.cron_editorial_slot >= 0:
+        try:
+            cron_editorial.record_selection(cron_editorial_state_path(), run_id, request.cron_editorial_slot)
+        except (OSError, ValueError, TypeError) as exc:
+            print(f"Checkpoint rotasi editorial ditunda: {type(exc).__name__}", flush=True)
     threading.Thread(target=run_auto_viral_campaign, args=(run_id,), daemon=True).start()
     return run
 
@@ -24383,10 +24446,10 @@ def scheduled_ryuundy_theme_profile() -> tuple[str, dict[str, Any]]:
     if animation_trial is not None:
         return animation_trial
     winner = scheduled_performance_winner_profile()
-    if winner is not None and drama_lane_enabled(winner[0]):
+    if winner is not None and drama_lane_enabled(winner[0]) and winner[0] not in cron_editorial.SEASONAL_PROFILES:
         return winner
     demand_winner = scheduled_search_term_winner_profile()
-    if demand_winner is not None and drama_lane_enabled(demand_winner[0]):
+    if demand_winner is not None and drama_lane_enabled(demand_winner[0]) and demand_winner[0] not in cron_editorial.SEASONAL_PROFILES:
         return demand_winner
     cooldown_days = max(
         1, min(14, env_int("AUTO_VIRAL_THEME_COOLDOWN_DAYS", 7))
@@ -24407,11 +24470,14 @@ def scheduled_ryuundy_theme_profile() -> tuple[str, dict[str, Any]]:
     used = {run.request.cron_theme_key for run in recent_runs}
     choices = [
         key for key in RYUUNDY_CRON_THEME_PROFILES if key not in used and drama_lane_enabled(key)
+        and key not in cron_editorial.SEASONAL_PROFILES
     ]
     if not choices:
         most_recent = recent_runs[0].request.cron_theme_key if recent_runs else ""
-        choices = [key for key in RYUUNDY_CRON_THEME_PROFILES if key != most_recent and drama_lane_enabled(key)]
-    key = random.SystemRandom().choice(choices or [key for key in RYUUNDY_CRON_THEME_PROFILES if drama_lane_enabled(key)])
+        choices = [key for key in RYUUNDY_CRON_THEME_PROFILES if key != most_recent and drama_lane_enabled(key)
+                   and key not in cron_editorial.SEASONAL_PROFILES]
+    key = random.SystemRandom().choice(choices or [key for key in RYUUNDY_CRON_THEME_PROFILES
+        if drama_lane_enabled(key) and key not in cron_editorial.SEASONAL_PROFILES])
     return key, dict(RYUUNDY_CRON_THEME_PROFILES[key])
 
 
@@ -24563,6 +24629,129 @@ def scheduled_news_hot_request() -> AutoViralRequest:
     return request.model_copy(update={"queries": list(NEWS_HOT_QUERIES)})
 
 
+_cron_editorial_refresh_lock = threading.Lock()
+_cron_editorial_refresh_thread: threading.Thread | None = None
+
+
+def cron_editorial_enabled() -> bool:
+    return env_bool("AUTO_VIRAL_SCHEDULE_DYNAMIC_EDITORIAL_ENABLED", True)
+
+
+def cron_editorial_state_path() -> Path:
+    return AUTO_VIRAL_SCHEDULE_CONTROL_PATH.with_name("cron_editorial_policy.json")
+
+
+def collect_cron_editorial_signals() -> tuple[list[dict], list[dict]]:
+    """Bounded live/cached discovery; never loads a browser or grants rights."""
+    records, diagnostics = [], []
+    for label, getter, field in (
+        ("youtube_channel_search_terms", load_youtube_search_term_cache, "term"),
+        ("youtube_studio_trends", load_youtube_studio_trend_cache, "title"),
+    ):
+        cached = getter(max_age_seconds=7 * 86400)
+        for item in cached[:30]:
+            text = item.get(field) or item.get("query") or item.get("search_term") or ""
+            if text:
+                records.append({"text":str(text), "source":label,
+                    "url":"https://studio.youtube.com", "weight":item.get("score", item.get("views", 1))})
+    try:
+        titles, _ = google_trends_rss_signals("__cron_monthly_editorial__")
+        records.extend({"text":title, "source":"google_trends_rss",
+            "url":"https://trends.google.com/trending/rss?geo=ID", "weight":1} for title in titles)
+    except Exception as exc:
+        diagnostics.append({"source":"google_trends_rss", "status":"unavailable", "error_type":type(exc).__name__})
+    if os.environ.get("YOUTUBE_DATA_API_KEY", "").strip():
+        local = cron_editorial.local_now()
+        month_start = local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        context = cron_editorial.season_context(local)
+        lecture_query = (cron_editorial.season_queries(context)[0] if context["theme_key"] in cron_editorial.SEASONAL_PROFILES
+            else "kajian ustadz indonesia nasihat kehidupan keluarga -politik -pemilu -pilkada")
+        # Popular charts can be dominated by gaming/music. Two monthly-only
+        # open searches also sample Indonesian teaching and practical knowledge.
+        search_options = {"part":"snippet", "type":"video", "maxResults":8,
+            "regionCode":"ID", "relevanceLanguage":"id", "order":"viewCount",
+            "publishedAfter":month_start.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")}
+        feeds = [
+            ("youtube_most_popular_id", "videos", {"part":"snippet,statistics", "chart":"mostPopular", "regionCode":"ID", "maxResults":50}),
+            ("youtube_monthly_kajian_id", "search", {**search_options, "q":lecture_query}),
+            ("youtube_monthly_knowledge_id", "search", {**search_options, "q":"sains teknologi pengetahuan indonesia penjelasan"}),
+        ]
+        for label, resource, options in feeds:
+            try:
+                payload = youtube_data_api_get(resource, options)
+                for item in payload.get("items", []):
+                    if not isinstance(item, dict):
+                        continue
+                    snippet = item.get("snippet") or {}
+                    if not isinstance(snippet, dict):
+                        continue
+                    identity = item.get("id") or ""
+                    if isinstance(identity, dict):
+                        identity = identity.get("videoId") or ""
+                    video_id = re.sub(r"[^A-Za-z0-9_-]", "", str(identity))
+                    records.append({"text":str(snippet.get("title") or ""), "source":label,
+                        "url":f"https://www.youtube.com/watch?v={video_id}",
+                        "category_id":str(snippet.get("categoryId") or ""),
+                        "live_broadcast_content":str(snippet.get("liveBroadcastContent") or "none"),
+                        "supporting_text":clean_topic_text(str(snippet.get("description") or ""))[:500],
+                        "weight":int((item.get("statistics") or {}).get("viewCount") or 0)})
+            except Exception as exc:
+                diagnostics.append({"source":label, "status":"unavailable", "error_type":type(exc).__name__})
+    else:
+        diagnostics.append({"source":"youtube_most_popular_id", "status":"api_key_not_configured"})
+    return records, diagnostics
+
+
+def refresh_cron_editorial_once(now: datetime | None = None) -> bool:
+    if not cron_editorial_enabled():
+        return False
+    if not _cron_editorial_refresh_lock.acquire(blocking=False):
+        return False
+    try:
+        path = cron_editorial_state_path()
+        if not cron_editorial.claim_refresh(path, now):
+            return False
+        records, diagnostics = collect_cron_editorial_signals()
+        plan = cron_editorial.build_monthly_plan(records,
+            {key:profile for key,profile in RYUUNDY_CRON_THEME_PROFILES.items() if drama_lane_enabled(key)},
+            RYUUNDY_CRON_THEME_SIGNALS, CRON_TREND_UNSAFE_SIGNALS, now)
+        cron_editorial.finish_refresh(path, plan, diagnostics)
+        return True
+    except Exception as exc:
+        print(f"Riset niche bulanan cron ditunda: {type(exc).__name__}", flush=True)
+        return False
+    finally:
+        _cron_editorial_refresh_lock.release()
+
+
+def start_cron_editorial_refresh_if_due() -> None:
+    global _cron_editorial_refresh_thread
+    if not cron_editorial_enabled():
+        return
+    if _cron_editorial_refresh_thread is not None and _cron_editorial_refresh_thread.is_alive():
+        return
+    try:
+        if not cron_editorial.refresh_due(cron_editorial.read_state(cron_editorial_state_path())):
+            return
+    except (OSError, ValueError, TypeError):
+        return
+    _cron_editorial_refresh_thread = threading.Thread(target=refresh_cron_editorial_once,
+        name="cron-monthly-editorial", daemon=True)
+    _cron_editorial_refresh_thread.start()
+
+
+@app.get("/api/automation/viral-cc/editorial-policy")
+def get_cron_editorial_policy() -> dict[str, Any]:
+    try:
+        report = cron_editorial.status(cron_editorial_state_path())
+    except (OSError, ValueError, TypeError):
+        report = dict(version=1, scope="cron_only", all_channel_search=True,
+            monthly_refresh=True, state_error="editorial_state_unavailable",
+            manual_requests_modified=False, speaker_whitelist=False)
+    report["enabled"] = cron_editorial_enabled()
+    return report
+
+
 def scheduled_auto_viral_request() -> AutoViralRequest:
     if scheduled_news_hot_due():
         request = scheduled_news_hot_request()
@@ -24626,6 +24815,14 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         auto_viral_daily_long_upload_target() - youtube_counts["long"],
     )
     theme_key, theme_profile = scheduled_ryuundy_theme_profile()
+    editorial_context = {}
+    if cron_editorial_enabled():
+        try:
+            theme_key, theme_profile, editorial_context = cron_editorial.select_profile(
+                cron_editorial.read_state(cron_editorial_state_path()), theme_key, theme_profile,
+                {key:profile for key,profile in RYUUNDY_CRON_THEME_PROFILES.items() if drama_lane_enabled(key)})
+        except (OSError, ValueError, TypeError) as exc:
+            print(f"Pemilihan niche dinamis ditunda: {type(exc).__name__}", flush=True)
     if theme_key == "podcast_conversation":
         clips_per_video = max(
             1,
@@ -24687,7 +24884,7 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
     ).strip()
     if duration_filter not in {"any", "under_3", "between_3_20", "over_20"}:
         duration_filter = "over_20"
-    theme_focus = random.SystemRandom().choice(theme_queries) if theme_queries else ""
+    theme_focus = str(theme_profile.get("theme_focus") or (random.SystemRandom().choice(theme_queries) if theme_queries else ""))
     editorial_tone = str(
         theme_profile.get("tone")
         or "story-first, hangat, relevan untuk penonton Indonesia, dengan humor yang tidak merendahkan"
@@ -24711,6 +24908,12 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         cron_production_day=plan.get("day", ""),
         theme_focus=theme_focus,
         cron_theme_key=theme_key,
+        cron_editorial_slot=editorial_context.get("slot", -1),
+        cron_editorial_month=editorial_context.get("month_key", ""),
+        cron_season_key=editorial_context.get("season_key", ""),
+        cron_monthly_niche_id=editorial_context.get("monthly_niche_id", ""),
+        cron_speaker_seed=editorial_context.get("speaker_seed", ""),
+        cron_editorial_queries=theme_queries[:20] if editorial_context else [],
         cron_trend_lane=trend_expansion_enabled,
         cron_humor_lane=humor_theme,
         cron_editorial_tone=editorial_tone,
@@ -24759,7 +24962,7 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
         ),
     )
     if (theme_key in DRAMA_THEME_PROFILES or theme_key in ryuundy_editorial_themes.PROFILES
-            or theme_profile.get("performance_winner")):
+            or theme_profile.get("performance_winner") or theme_profile.get("dynamic_editorial")):
         request = request.model_copy(update={'queries': merge_unique_queries([theme_focus], theme_queries)})
     elif trend_expansion_enabled:
         request = request.model_copy(
@@ -25813,6 +26016,7 @@ def auto_viral_scheduler_loop() -> None:
         while auto_viral_schedule_enabled():
             try:
                 now = datetime.now(timezone.utc)
+                start_cron_editorial_refresh_if_due()
                 with auto_viral_scheduler_lock:
                     auto_viral_scheduler_health.update(last_tick_at=now.isoformat(), phase="checking")
                 queue_scheduled_upload_recoveries_once()
@@ -26170,16 +26374,24 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/runtime/optimization")
+def runtime_optimization() -> dict[str, Any]:
+    return {"version": 1, "dashboard_upload_view": True,
+            "full_upload_evidence_preserved": True, "owned_render_sessions": True,
+            "native_checkpoint_json": True, "daily_plan_projection": True}
+
+
 @app.get("/api/tiktok/config", response_model=TikTokConfig)
 def get_tiktok_config() -> TikTokConfig:
     return tiktok_config_payload()
 
 
 @app.get("/api/tiktok/uploads", response_model=list[TikTokUploadJob])
-def list_tiktok_uploads() -> list[TikTokUploadJob]:
+def list_tiktok_uploads(dashboard: bool = False) -> list[TikTokUploadJob]:
     with tiktok_uploads_lock:
         items = list(tiktok_uploads.values())
-    return sorted(tiktok_uploads_with_queue_positions(items), key=lambda item: item.created_at, reverse=True)
+    positioned = sorted(tiktok_uploads_with_queue_positions(items), key=lambda item: item.created_at, reverse=True)
+    return [dashboard_payload.compact_upload(item) for item in positioned] if dashboard else positioned
 
 
 @app.post(
@@ -26558,11 +26770,12 @@ def enable_youtube_storage_state_upload_mode() -> None:
 
 
 @app.get("/api/youtube/uploads", response_model=list[YouTubeUploadJob])
-def list_youtube_uploads() -> list[YouTubeUploadJob]:
+def list_youtube_uploads(dashboard: bool = False) -> list[YouTubeUploadJob]:
     with youtube_uploads_lock:
         uploads = list(youtube_uploads.values())
     positioned = youtube_uploads_with_queue_positions(uploads)
-    return sorted(positioned, key=lambda item: item.created_at, reverse=True)
+    ordered = sorted(positioned, key=lambda item: item.created_at, reverse=True)
+    return [dashboard_payload.compact_upload(item) for item in ordered] if dashboard else ordered
 
 
 @app.get("/api/youtube/uploads/{upload_id}", response_model=YouTubeUploadJob)

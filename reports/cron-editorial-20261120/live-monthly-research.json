@@ -1,0 +1,865 @@
+{
+  "observed_at": "2026-11-20T11:13:45.502542+07:00",
+  "diagnostics": [],
+  "plan": {
+    "month_key": "2026-11",
+    "refreshed_at": "2026-11-20T11:13:45.502542+07:00",
+    "status": "ready",
+    "niches": [
+      {
+        "id": "monthly_202611_d56df4551b",
+        "theme_key": "famous_game_reaction",
+        "topic": "🔴PLAYING GTA 6 EARLY ACCESS GAMEPLAY GET IN HERE!",
+        "queries": [
+          "🔴PLAYING GTA 6 EARLY ACCESS GAMEPLAY GET IN HERE! penjelasan indonesia",
+          "🔴PLAYING GTA 6 EARLY ACCESS GAMEPLAY GET IN HERE! cerita konteks indonesia"
+        ],
+        "discovery_score": 37.984,
+        "evidence": {
+          "source": "youtube_most_popular_id",
+          "url": "https://www.youtube.com/watch?v=qSyo5d-dVzA",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_42e6709d3c",
+        "theme_key": "gaming_story",
+        "topic": "Mio & Baby Celine Ubah Yuta Jadi Penjaga Telur Di Steal An Egg! | ROBLOX",
+        "queries": [
+          "Mio & Baby Celine Ubah Yuta Jadi Penjaga Telur Di Steal An Egg! | ROBLOX penjelasan indonesia",
+          "Mio & Baby Celine Ubah Yuta Jadi Penjaga Telur Di Steal An Egg! | ROBLOX cerita konteks indonesia"
+        ],
+        "discovery_score": 33.076,
+        "evidence": {
+          "source": "youtube_most_popular_id",
+          "url": "https://www.youtube.com/watch?v=i3KTCDoG7x0",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_a59c884759",
+        "theme_key": "mystery_story",
+        "topic": "Yuta Mio Buat Benteng Raksasa Paling Aman Dari Mahluk Punah, Hantu Si Samsul Di Kota Sakura😱",
+        "queries": [
+          "Yuta Mio Buat Benteng Raksasa Paling Aman Dari Mahluk Punah, Hantu Si Samsul Di Kota Sakura😱 penjelasan indonesia",
+          "Yuta Mio Buat Benteng Raksasa Paling Aman Dari Mahluk Punah, Hantu Si Samsul Di Kota Sakura😱 cerita konteks indonesia"
+        ],
+        "discovery_score": 22.419,
+        "evidence": {
+          "source": "youtube_most_popular_id",
+          "url": "https://www.youtube.com/watch?v=WYJ4OgSKLXY",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_8683bf9895",
+        "theme_key": "love_betrayal",
+        "topic": "MIPAN & ZUZUZU SEDIH! Harus Berpisah Sama Sahabat Nya! ROBLOX",
+        "queries": [
+          "MIPAN & ZUZUZU SEDIH! Harus Berpisah Sama Sahabat Nya! ROBLOX penjelasan indonesia",
+          "MIPAN & ZUZUZU SEDIH! Harus Berpisah Sama Sahabat Nya! ROBLOX cerita konteks indonesia"
+        ],
+        "discovery_score": 22.067,
+        "evidence": {
+          "source": "youtube_most_popular_id",
+          "url": "https://www.youtube.com/watch?v=CcjmXcWPicg",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_bc81638c90",
+        "theme_key": "practical_knowledge",
+        "topic": "Konvensi Sains 2026: Inovasi RI Wajib Cuan, Bukan Cuma Pamer",
+        "queries": [
+          "Konvensi Sains 2026: Inovasi RI Wajib Cuan, Bukan Cuma Pamer penjelasan indonesia",
+          "Konvensi Sains 2026: Inovasi RI Wajib Cuan, Bukan Cuma Pamer cerita konteks indonesia"
+        ],
+        "discovery_score": 20.0,
+        "evidence": {
+          "source": "youtube_monthly_knowledge_id",
+          "url": "https://www.youtube.com/watch?v=fnpica7wEEQ",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_ba5b4a467d",
+        "theme_key": "domestic_politics",
+        "topic": "Gibran Bongkar Hubungan Prabowo-Jokowi Usai Mundur dari Wapres: Pak Presiden Sayang Banget Ayah Saya",
+        "queries": [
+          "Gibran Bongkar Hubungan Prabowo-Jokowi Usai Mundur dari Wapres: Pak Presiden Sayang Banget Ayah Saya penjelasan indonesia",
+          "Gibran Bongkar Hubungan Prabowo-Jokowi Usai Mundur dari Wapres: Pak Presiden Sayang Banget Ayah Saya cerita konteks indonesia"
+        ],
+        "discovery_score": 16.179,
+        "evidence": {
+          "source": "youtube_channel_search_terms",
+          "url": "https://studio.youtube.com",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_2afd58d01c",
+        "theme_key": "football_story",
+        "topic": "selisih gol",
+        "queries": [
+          "selisih gol penjelasan indonesia",
+          "selisih gol cerita konteks indonesia"
+        ],
+        "discovery_score": 10.693,
+        "evidence": {
+          "source": "google_trends_rss",
+          "url": "https://trends.google.com/trending/rss?geo=ID",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_8b0b6fb44e",
+        "theme_key": "famous_game_reaction",
+        "topic": "I Survived 100 Hours In GTA 6",
+        "queries": [
+          "I Survived 100 Hours In GTA 6 penjelasan indonesia",
+          "I Survived 100 Hours In GTA 6 cerita konteks indonesia"
+        ],
+        "discovery_score": 26.264,
+        "evidence": {
+          "source": "youtube_most_popular_id",
+          "url": "https://www.youtube.com/watch?v=ymCHX_Dcc-U",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_ce08bff659",
+        "theme_key": "gaming_story",
+        "topic": "Yuta, Mio Dan Baby Celine Berjualan Pizza Tapi Yang Beli Anomaly || ROBLOX",
+        "queries": [
+          "Yuta, Mio Dan Baby Celine Berjualan Pizza Tapi Yang Beli Anomaly || ROBLOX penjelasan indonesia",
+          "Yuta, Mio Dan Baby Celine Berjualan Pizza Tapi Yang Beli Anomaly || ROBLOX cerita konteks indonesia"
+        ],
+        "discovery_score": 30.869,
+        "evidence": {
+          "source": "youtube_most_popular_id",
+          "url": "https://www.youtube.com/watch?v=4fVbD0VFSOw",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_a2f8bb18b9",
+        "theme_key": "practical_knowledge",
+        "topic": "Sains dan Inovasi Indonesia: Produksi Pengetahuan Lintas Bidang Ilmu",
+        "queries": [
+          "Sains dan Inovasi Indonesia: Produksi Pengetahuan Lintas Bidang Ilmu penjelasan indonesia",
+          "Sains dan Inovasi Indonesia: Produksi Pengetahuan Lintas Bidang Ilmu cerita konteks indonesia"
+        ],
+        "discovery_score": 20.0,
+        "evidence": {
+          "source": "youtube_monthly_knowledge_id",
+          "url": "https://www.youtube.com/watch?v=beuBdZwwScc",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_2ace2ec20e",
+        "theme_key": "famous_game_reaction",
+        "topic": "GTA VI 60 FPS ??? APAKAH INI BINTANG 6 PERTAMAAAAAA - EP. 2",
+        "queries": [
+          "GTA VI 60 FPS ??? APAKAH INI BINTANG 6 PERTAMAAAAAA - EP. 2 penjelasan indonesia",
+          "GTA VI 60 FPS ??? APAKAH INI BINTANG 6 PERTAMAAAAAA - EP. 2 cerita konteks indonesia"
+        ],
+        "discovery_score": 23.684,
+        "evidence": {
+          "source": "youtube_most_popular_id",
+          "url": "https://www.youtube.com/watch?v=VbpauhOGs3U",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      },
+      {
+        "id": "monthly_202611_24777de828",
+        "theme_key": "gaming_story",
+        "topic": "Encontramos un TRANSFORMER BAJO EL AGUA en Minecraft!",
+        "queries": [
+          "Encontramos un TRANSFORMER BAJO EL AGUA en Minecraft! penjelasan indonesia",
+          "Encontramos un TRANSFORMER BAJO EL AGUA en Minecraft! cerita konteks indonesia"
+        ],
+        "discovery_score": 24.257,
+        "evidence": {
+          "source": "youtube_most_popular_id",
+          "url": "https://www.youtube.com/watch?v=0MSGP-xdIM0",
+          "observed_at": "2026-11-20T11:13:45.502542+07:00"
+        },
+        "verified_facts": false,
+        "grants_source_rights": false
+      }
+    ],
+    "signal_count": 80,
+    "source_count": 4,
+    "all_channel_search": true,
+    "automatic_publication_authorized": false
+  },
+  "discovery_records": [
+    {
+      "text": "Gibran Bongkar Hubungan Prabowo-Jokowi Usai Mundur dari Wapres: Pak Presiden Sayang Banget Ayah Saya",
+      "source": "youtube_channel_search_terms",
+      "url": "https://studio.youtube.com",
+      "weight": 481.75
+    },
+    {
+      "text": "prabowo jokowi",
+      "source": "youtube_channel_search_terms",
+      "url": "https://studio.youtube.com",
+      "weight": 22.642
+    },
+    {
+      "text": "macet",
+      "source": "youtube_channel_search_terms",
+      "url": "https://studio.youtube.com",
+      "weight": 14.707
+    },
+    {
+      "text": "prabowo",
+      "source": "youtube_channel_search_terms",
+      "url": "https://studio.youtube.com",
+      "weight": 13.489
+    },
+    {
+      "text": "berita indonesia terbaru",
+      "source": "youtube_channel_search_terms",
+      "url": "https://studio.youtube.com",
+      "weight": 11.562
+    },
+    {
+      "text": "kosidahan terbaru 2025",
+      "source": "youtube_channel_search_terms",
+      "url": "https://studio.youtube.com",
+      "weight": 11.562
+    },
+    {
+      "text": "rizal fadilah sakit",
+      "source": "youtube_channel_search_terms",
+      "url": "https://studio.youtube.com",
+      "weight": 11.562
+    },
+    {
+      "text": "kereta api",
+      "source": "youtube_channel_search_terms",
+      "url": "https://studio.youtube.com",
+      "weight": 6.766
+    },
+    {
+      "text": "sakura sama taiga pacaran",
+      "source": "youtube_channel_search_terms",
+      "url": "https://studio.youtube.com",
+      "weight": 5.348
+    },
+    {
+      "text": "gugugaga",
+      "source": "youtube_channel_search_terms",
+      "url": "https://studio.youtube.com",
+      "weight": 4.51
+    },
+    {
+      "text": "cewek",
+      "source": "youtube_channel_search_terms",
+      "url": "https://studio.youtube.com",
+      "weight": 4.457
+    },
+    {
+      "text": "falsity",
+      "source": "youtube_channel_search_terms",
+      "url": "https://studio.youtube.com",
+      "weight": 3.608
+    },
+    {
+      "text": "verity",
+      "source": "youtube_channel_search_terms",
+      "url": "https://studio.youtube.com",
+      "weight": 3.608
+    },
+    {
+      "text": "bantengan",
+      "source": "youtube_channel_search_terms",
+      "url": "https://studio.youtube.com",
+      "weight": 3.157
+    },
+    {
+      "text": "dunia farash roblox",
+      "source": "youtube_channel_search_terms",
+      "url": "https://studio.youtube.com",
+      "weight": 3.12
+    },
+    {
+      "text": "jhon pork",
+      "source": "youtube_channel_search_terms",
+      "url": "https://studio.youtube.com",
+      "weight": 3.12
+    },
+    {
+      "text": "ump jakarta 2027",
+      "source": "google_trends_rss",
+      "url": "https://trends.google.com/trending/rss?geo=ID",
+      "weight": 1
+    },
+    {
+      "text": "donald trump",
+      "source": "google_trends_rss",
+      "url": "https://trends.google.com/trending/rss?geo=ID",
+      "weight": 1
+    },
+    {
+      "text": "selisih gol",
+      "source": "google_trends_rss",
+      "url": "https://trends.google.com/trending/rss?geo=ID",
+      "weight": 1
+    },
+    {
+      "text": "direktorat jenderal bea dan cukai",
+      "source": "google_trends_rss",
+      "url": "https://trends.google.com/trending/rss?geo=ID",
+      "weight": 1
+    },
+    {
+      "text": "bbca saham",
+      "source": "google_trends_rss",
+      "url": "https://trends.google.com/trending/rss?geo=ID",
+      "weight": 1
+    },
+    {
+      "text": "bucks vs trail blazers",
+      "source": "google_trends_rss",
+      "url": "https://trends.google.com/trending/rss?geo=ID",
+      "weight": 1
+    },
+    {
+      "text": "niko bellic gta 6",
+      "source": "google_trends_rss",
+      "url": "https://trends.google.com/trending/rss?geo=ID",
+      "weight": 1
+    },
+    {
+      "text": "jj gabriel",
+      "source": "google_trends_rss",
+      "url": "https://trends.google.com/trending/rss?geo=ID",
+      "weight": 1
+    },
+    {
+      "text": "friderica widyasari dewi",
+      "source": "google_trends_rss",
+      "url": "https://trends.google.com/trending/rss?geo=ID",
+      "weight": 1
+    },
+    {
+      "text": "sounders vs real salt lake",
+      "source": "google_trends_rss",
+      "url": "https://trends.google.com/trending/rss?geo=ID",
+      "weight": 1
+    },
+    {
+      "text": "Robi DA7 - Mustahil | Official Music Video",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=BBJYrW_U3cw",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "#robimusitahil #robida7 #3dentertainment   nama robi aryanto mulai dikenal luas publik setelah berhasil meraih posisi juara 8 dalam ajang pencarian bakat dangdut academy 7. penyanyi muda kelahiran jakarta, 16 mei 2002 ini tidak hanya dikenal lewat kemampuan bernyanyinya, tetapi juga memiliki kepribadian yang ramah dan supel sehingga mudah membangun kedekatan dengan orang-orang di sekitarnya, termasuk para penggemarnya yang akrab disapa robivers. kedekatan tersebut juga terlihat melalui aktivitas",
+      "weight": 637567
+    },
+    {
+      "text": "TERBAIK ITU KAMU TRAILER: BERHASILKAH RENCANA SERA & KENZI TUK MENJATUHKAN PRAYOGA⁉️  - Jefri Nichol",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=sAjnf9Y5TN8",
+      "category_id": "1",
+      "live_broadcast_content": "none",
+      "supporting_text": "tonton video menarik lainnya dari sinetron terbaik itu kamu:         #terbaikitukamu #jefrinichol #salshabillaadriani #aryavasco #rcti #sinetronrcti #layardramarcti   streaming sekarang di rctiplus.com/tv/rcti",
+      "weight": 31258
+    },
+    {
+      "text": "GTA VI 60 FPS ??? APAKAH INI BINTANG 6 PERTAMAAAAAA - EP. 2",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=VbpauhOGs3U",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "  -    --------- join membership disini deck jangan banyak tanya   ---------- top up dm super imba gelo hoki murah di   ----------   ---------- join discord imba gelo community keren   ---------- endorsement: wa - +62 878 18133400 / email -   -----------------------------------  bgm music: 🎈song : daystar - lemon cake /    •     ----",
+      "weight": 877182
+    },
+    {
+      "text": "MIMPI MANIS - Jeyma Monica (Official Live Music Video) Bak Serumpun Sumpah Janji Berdua",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=2RFN2BAiNTk",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "official music video dari jeyma monica - mimpi manis dengarkan mimpi manis di digital platform lainnya :    artist          : jeyma monica  judul          : mimpi manis composer : fazal dath arranger    : mufly key video         : mufly key management genre         :koplo  masih banyak video dari artis proaktif lainnya yang wajib kamu tonton! cek video  duo zizi - helikopter turun ke padang :   fida ap - sebelas duabelas :   fira cantika - rela :   fira cantika - yang penting happy :   fira cant",
+      "weight": 310950
+    },
+    {
+      "text": "Avengers: Doomsday | The Return | In Theaters December 18",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=Fg0jyss_YnU",
+      "category_id": "24",
+      "live_broadcast_content": "none",
+      "supporting_text": "new mask. same task. robert downey jr. returns as victor von doom.   in one month, avengers: doomsday arrives in theaters everywhere. get tickets now:    ► subscribe to the channel to get notified when new marvel videos are posted:    ► subscribe to disney+ to stream all of your favorite marvel shows and movies:     tiktok:   instagram:   facebook:   x:    experience more stories by subscribing:             ",
+      "weight": 7060286
+    },
+    {
+      "text": "🔴PLAYING GTA 6 EARLY ACCESS GAMEPLAY GET IN HERE!",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=qSyo5d-dVzA",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "tts donations here/    merch 👕 -    memberships ✅  -    for donations tts/ media request here      ig:   x:   snap :   discord:    join my other channels yt live speedy:   yt speedy boykins:   yt speeduniverse :  ",
+      "weight": 64602830
+    },
+    {
+      "text": "Shinta Gisul - GORESAN LUKA (Live Dangdut Lembayung Music)",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=IRkrHgIal90",
+      "category_id": "24",
+      "live_broadcast_content": "none",
+      "supporting_text": "video terbaru goresan luka dari shinta gisul versi live dangdut lembayung music hadir lengkapi harimu, tolong di support ya rek! hapuslah sudah semua tentang kita yang dulu pernah kita bina🎶  bantu support konten-kontenku yang lain, nonton, subscribes, like, komen, share, dan aktifkan lonceng notiifkasinya yoo rek!   *playlist song shinta gisul* top videos :    full album shinta gisul :   shinta gisul trending :   lyrics videos :   dj remix :    listen on all dsp :   ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬",
+      "weight": 54939
+    },
+    {
+      "text": "PETUALANGAN UPIN IPIN - LIVE BANTU AKU PECAHKAN MISTERI NENEK GAYUNG#upinipin #shorts #horror #live",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=KUDS5KxgQbE",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "hay aku tantra,aku senang bermain game horor,kalian ada yang suka horor juga gak? kalau kalian suka di share di like dan di subscribe ya....  #trending #viral #funny #fyp",
+      "weight": 2216487
+    },
+    {
+      "text": "RAFIQ FEAT CINDY - SINARENGAN (OFFICIAL LIVE MUSIC VIDEO) | DC MUSIK",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=hvUrOe4OCHU",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "#dcmusik #dcproduction  title: sinarengan voc : rafiq ft cindy cipt : denny caknan ====================  prod. denny caknan   all team :                                                     ========================================================= dukung terus channel       production    agar kita semangat  dan produktif membuat vlog atau konten - konten terbaik dan eksklusif dengan konsep  berbeda yang hanya ada di channel ini.   silakan  subscribe dan aktifkan tombol lonceng  supaya tidak ketin",
+      "weight": 1276629
+    },
+    {
+      "text": "Katanya Nggak Boleh Bar Bar Main Game Grand Theft Auto VI #GTAVI",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=PgZIejhVg8I",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "kemarin sih kacau banget pertama kali main gta 6 ini yah, tetapi tenang sekarang kita coba main pelan pelan dan jalanin misinya lebih tenang dan terstruktur, kita liat bakal seperti apa next gameplay miawaug #miawaug #grandtheftautovi #gtavi  be a member :     kumpulan horror game :    mau kepoin gw di social media ? kesini aja, ada link ig fb tiktok dll    untuk email bisnis kalian bisa masukan di email ► miawaug@ gmail [.]com  thanks guys.... intro music :  - mark g - never let you go - suppor",
+      "weight": 908639
+    },
+    {
+      "text": "DJ BANYUNE PASANG NGANTEM BANTER WATU KARANG - LAUT KIDUL SLOW VIRAL TIKTOK MAMAN FVNDY 2026",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=S4_JD3J6djY",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "dj banyune pasang ngantem banter watu karang - laut kidul slow viral tiktok maman fvndy 2026  bebas reupload!!!",
+      "weight": 25636
+    },
+    {
+      "text": "[ 🔴LIVE ] BESOK GTA 6 BENERAN #burgenk #imeroleplay #giogranger #imerp #almightyburgenk",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=hkIP2W2sbCw",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "official shoutcaster mpl & mdl indonesia discord burgenk:   gas membership gak sih?  instagram :   / giojoshua23   tiktok :    terima kasih yang mau nyawer    ",
+      "weight": 110446
+    },
+    {
+      "text": "Kumpulan Lagu Dangdut Lawas Terbaik Mansyur S | Full Nostalgia Original ✨#mansyurS",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=IdNk7JUa5Uo",
+      "category_id": "22",
+      "live_broadcast_content": "none",
+      "supporting_text": "mansyur s & elvy sukaesih – lagu dangdut lawas terpopuler | nostalgia 80an - 90an mansyur.s  | kumpulan lagu mansyur.s - dangdut lawas -----------------------------------------------------      ------------------------------------------------------ beberapa artis dangdut ternama dari era lawas atau klasik antara lain elvy sukaesih, mansyur s., dan masih banyak lagi. musik mereka pada tahun 1970an hingga 1990an tetap populer di kalangan penggemar musik tradisional indonesia dan terus mempengaruhi",
+      "weight": 64683
+    },
+    {
+      "text": "Mio & Baby Celine Ubah Yuta Jadi Penjaga Telur Di Steal An Egg! | ROBLOX",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=i3KTCDoG7x0",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "🎮 selamat datang di dunia budi roblox! yuk ikuti keseruan kak yuta, mio dan baby celine dalam berbagai cerita seru, lucu, dan penuh kejutan di dunia roblox!   ━━━━━━━━━━━━━━━━━━━━━━━  yuk pakai aksesoris kak yuta, mio, dan baby celine di roblox! klik link di bawah ini untuk beli item kesukaan kamu:  🎒 yuta backpack:   🎒 mio backpack:   🎒 baby celine backpack:    📱 game roblox buatan kita: 1.   2.    ━━━━━━━━━━━━━━━━━━━━━━━  📲 follow sosial media dunia budi roblox: instagram:   tiktok:    #roblox",
+      "weight": 477143
+    },
+    {
+      "text": "AJENG FEBRIA - 100% CINTAKU - BAGINDAS (OFFICIAL MUSIC VIDEO) | AKU TAK TAHU YANG HARUS KULAKUKAN",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=glgV1mFFt_I",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "maturnuwun sanget sampun pinarak wonten channel   mugi tansah pinaringan sehat sentosa. .  title: 100% cintaku artist: ajeng febria songwriter: michael christian music arrangement: ambyar everywhere  lyric : (100% cintaku)  aku tak tahu yang harus kulakukan untuk memilih dirimu ataukah dia dua-duanya sama-sama kusuka tapi aku bingung harus pilih yang mana  satu hitam manis, sedikit berkumis bulu tipis-tipis, kalau tersenyum manis satu putih cantik, bulu mata melentik periang, penyayang, bikin ma",
+      "weight": 70035
+    },
+    {
+      "text": "GAS LANJUT GRAND THEFT AUTO VI 72 Jam with GGWP - part 3 PS5 PRO",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=eStYZivBJdI",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "subathon gta vi tara arts with ggwp  yang mau dukung subathon gassss langsung ke:   setiap support rp20.000 = +1 menit subathon!  mau main gta vi di ps5? gas beli voucher gta vi di ggwp, lagi ada promo jadi lebih murah!  👉    kamu streamer atau baru mau mulai live streaming? terima support dari viewers lewat gg.ggwp.id: fitur lengkap, potongan fee cuma 3%, dan live stream kamu bisa dipromosikan lewat ekosistem media ggwp! 👉    📰 update berita game & esports:   💬 join komunitas discord ggwp (5.00",
+      "weight": 710026
+    },
+    {
+      "text": "Sekadar Hitam di Atas Putih 💔 Pernikahan Tanpa Cinta | Slow Rock Melayu Paling Sedih Menyayat Hati",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=Gxx2JBmA7BU",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "💔 **sekadar hitam di atas putih — wangsa music**  bagaimana rasanya bertahan dalam sebuah pernikahan ketika cinta sudah lama mati, tetapi janji harus tetap dijaga?  *sekadar hitam di atas putih* adalah lagu slow rock melayu tentang luka yang tersembunyi di balik status suami istri. dua hati masih tinggal di rumah yang sama, tidur di ranjang yang sama, tetapi hidup dalam dunia yang berbeda.  bertahan bukan lagi karena cinta yang membara, melainkan demi anak-anak tercinta. senyum tetap dipaksakan ",
+      "weight": 43825
+    },
+    {
+      "text": "[ID] FFWS Global Finals 2026 - KO Phase 2 | Day 1",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=pnLRIRr16kA",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "panggung dunia menanti. saatnya indonesia unjuk gigi!   saksikan free fire world series (ffws) global finals 2026 dari bangkok, thailand! sebanyak 24 tim terbaik dunia bertarung memperebutkan gelar juara dunia free fire. setiap poin, eliminasi, dan booyah bisa menentukan langkah mereka menuju puncak!  dukung perjuangan wakil indonesia menghadapi para penantang dari berbagai region. siapa yang bakal tampil dominan dan membawa pulang trofi ffws global finals 2026? 🏆  🔥official free fire esports ch",
+      "weight": 389127
+    },
+    {
+      "text": "Terbelah Jadi Dua - Gloria Jessica & Ade Govinda (Lirik Lagu)",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=sL1FZTGGAgk",
+      "category_id": "22",
+      "live_broadcast_content": "none",
+      "supporting_text": "#gloriajessica #adegovinda #terbelahjadidua #liriklagu #laguindonesia #popindonesia #musicindonesia #lyricsvideo #indotune #mychanel  🎤 penyanyi: gloria jessica & ade govinda 🎵 judul lagu: terbelah jadi dua 🎼 genre: pop ballad indonesia 🏷️ label: mymusic records  terbelah jadi dua - gloria jessica & ade govinda - (lirik lagu) | lagu galau indonesia terbaru 2026 lirik: cinta memang misteri terkadang ingkar janji buktinya kualami aku dicintai juga disakiti hatimu libatkan yang lain membuat cintamu",
+      "weight": 33003
+    },
+    {
+      "text": "ATUN & MOMON KEMBALI MENEMUKAN MAKHLUK NYATA DI GOOGLE EARTH !! Feat @sapipurba",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=DIjnjTXNTa4",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "atun & momon kembali menemukan makhluk nyata di google earth !! feat  ⁨ ⁩    jangan lupa untuk di subscribe channel     :    #bangjblox  #roblox #robloxindonesia video kocak brookhaven brookhaven rp roleplay brookhaven horror brookhaven brookhaven indonesia  ikuti juga :  ▶bussiness :   ▶tiktok :   ▶instagram :   ▶roblox :   ▶group :   ▶discord :  ",
+      "weight": 264367
+    },
+    {
+      "text": "Pop Minang Viral Tiktok Terbaik 2026 Enak Didengar - Lagu Minang Terbaru 2026 Terpopuler Saat Ini",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=s8AYO7G1bTY",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "pop minang viral tiktok terbaik 2026 enak didengar - lagu minang terbaru 2026 terpopuler saat ini    tracklist : 01. kayo indak sanang balabiah 02. harok baganti seso 03. manjago cinto 04. cari nan lain 05. seso manangguang sasa 06. merpati putih 07. bujuak rayu 08. cinto baganti aia mato 09. rantau den pajauah 10. sarumah bajauah hati 11. batahan sakik bapisah anggan 12. kawin tapaso 13. ganti nan lamo 14. manyasa surang diri 15. tasisiah  tonton video paling terpopuler : 1. ipank ft rayola - r",
+      "weight": 89862
+    },
+    {
+      "text": "live main bareng tamatin semua map horror roblox bantu tamatin ya guys #roblox #shorts  #horror",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=VsbZkBkpc9o",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "hallo aku yurika kamu siapa? aku sangat suka bermain game roblox horor kalian ada yang suka juga gak?  #roblox #trending #shorts #games #fyp #viral #gaming #live",
+      "weight": 2166129
+    },
+    {
+      "text": "TENTANG AKU KAU DAN DIA - KANGEN BAND | ACOUSTIC + CAJON VERSION | Whykustik COVER",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=_Zb9HE2lrJA",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "🎵 kangen band – tentang aku, kau dan dia | acoustic + cajon version  salah satu lagu legendaris dari kangen band yang selalu punya tempat tersendiri di hati para pendengarnya. kali ini whykustik menghadirkan kembali lagu “tentang aku, kau dan dia” dalam nuansa acoustic + cajon version dengan aransemen yang lebih santai, hangat, dan tetap mempertahankan emosi dari lagu aslinya.  perpaduan petikan gitar akustik, irama cajon, dan karakter vokal yang penuh penghayatan menghadirkan suasana berbeda ta",
+      "weight": 148452
+    },
+    {
+      "text": "KITA DIKUTUK JADI KENTANG DI ROBLOX!!!",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=aKhPgzNcyM8",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "stresmen main  - subscribe guys - jangan lupa like - tonton sampe habis!!! discord:    #stresmen #odo #roblox #minecraft  email :  --------------------------------------------------------------------------------------- instagram :  ",
+      "weight": 215590
+    },
+    {
+      "text": "NANTIKAN AKU DI BATAS SENJA – Lagu Pop Nostalgia 90an yang Bikin Rindu | Nada Puitis",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=4vZ8LU7sao0",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "ada perpisahan yang bukan berarti kehilangan. ada jarak yang harus dilalui, dan ada janji yang tetap tersimpan di dalam hati.  nantikan aku di batas senja adalah lagu pop nostalgia bernuansa 90-an tentang cinta, perpisahan, kerinduan, dan sebuah janji untuk kembali.  dengan alunan musik pop melayu yang lembut, melodi romantis, serta vokal perempuan yang penuh penghayatan, lagu ini mengajak kita mengenang seseorang yang pernah berjanji untuk pulang.  \"jangan menangis, kasih, jangan bersedih... ak",
+      "weight": 26790
+    },
+    {
+      "text": "Yuta, Mio Dan Baby Celine Berjualan Pizza Tapi Yang Beli Anomaly || ROBLOX",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=4fVbD0VFSOw",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "#roblox #duniafarash #sakuraschoolsimulator",
+      "weight": 52519
+    },
+    {
+      "text": "PIALA CINTA - Masder x Rehan Darso [Cover]",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=gd4HMdPJT8Y",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "cover  judul. piala cinta artis. masder x rehan darso cipt. doel sumbang / sugandi s arransement. bm entertainment  for booking job :  ph / wa. 082120572009 lokasi.   hayu gabung di whatsapp grup bandung music official untuk update informasi terbaru seputar lagu dan artis bandung music, gabung disini ya :    tiktok :   instagram:    tonton juga lagu lagu dari artis bandung music lainnya :  jomblo :   rumpaka cinta :   mapay roko :   keueung :   jomblo (dj version) :   oncom gondrong :   tulisan ",
+      "weight": 78667
+    },
+    {
+      "text": "LHO KOK MARAH - DANGDUT UDA FAJAR TERBARU 2026 (OFFICIAL LIVE MUSIC)",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=e3biyLKq9fQ",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": " music & video credits  title : lho kok marah songwriter : asmin cayder artist : indah andesra feat uda fajar arr & mixing mastering : ufo studio's  ♪ lirik lho kok marah ♪  lho begitu saja kok marah lho begitu saja kok keki padahal cuma bercanda mengapa diambil hati  lho begitu saja kok marah lho begitu saja kok keki sungguh ku tidak menyangka kalau kau jadi emosi  lho begitu saja kok marah  reff  cuma karena diriku tidak mau kau cium lalu kau curiga aku telah bosan kepadamu  aku hanya bercanda",
+      "weight": 17894
+    },
+    {
+      "text": "MIPAN & ZUZUZU Gali Tanah Untuk Kabur Dari Rumah Sakit Dokter Gila! ROBLOX",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=IalqKpicVdI",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "yang mau lihat kita main roblox  ▶channel mipan & zuzuzu main roblox  :   ▶channel akudap roblox :    ▶channel animasi :    ▶roblox : kosongduasatu ▶tiktok :   ▶email :    tags #mipanzuzuzu  #akudav",
+      "weight": 244451
+    },
+    {
+      "text": "Tipe-X 2026 / Kumpulan lagu Tipe X pilihan terbaik - Salam Rindu, Mawar Hitam , Selamat Jalan ...",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=p_v7Hoa5AKk",
+      "category_id": "22",
+      "live_broadcast_content": "none",
+      "supporting_text": "#rockindonesia #laguterpopuler #tipexband   #tipexband  #rockindonesia #laguterpopuler  tipe-x  full album terbaik 2026 / lagu indonesia hits pilihan terbaik & terpopuler sepanjang masa tipe-x - kumpulan lagu-lagu pilihan terbaik & terpopuler||tipe-x - mawar hitam, selamat jalan   --------------------------------------------------------- tipe-x (bahasa inggris: type-x) adalah band ska indonesia yang dibentuk pada tahun 1995 di jakarta. grup ini beranggotakan tresno riadi (vokal), micky (bass), y",
+      "weight": 53532
+    },
+    {
+      "text": "I Survived 100 Hours In GTA 6",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=ymCHX_Dcc-U",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "i got early access to gta 6, and this is what we accomplished in my first 100 in game hours. i made sure there are no spoilers in this video and i want to give a giant thank you to rockstar for giving me this huge privilege!  sub to all channels                   new merch -   join our discord server for your chance to compete in future minecraft challenges!   original score by jules werli music provided by   ---------------------------------------------------------------- • facebook -   • twitt",
+      "weight": 11571090
+    },
+    {
+      "text": "Lilakno Lungamu",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=vf67Bc03brw",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "provided to youtube by santara indonesia  lilakno lungamu · ajeng febria  lilakno lungamu  ℗ evan loss  producer: santara indonesia composer lyricist: evan loss  auto-generated by youtube.",
+      "weight": 5710
+    },
+    {
+      "text": "AKU SIAP MENAMATKAN GTA 6 100% - GTA VI #2",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=ELsDFl7-UMU",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "bussines/partnership :   - join membership :   - donate sociabuzz :   - ✮ join saluran wa :   ✮ follow instagram :    ✮ keizerz - indonesia gaming youtube channel  ✮ yang mau ngobrol bisa join discord :   - spek pc :   processor : intel i9 13900f gen 13 ram : 32gb ddr5 5200mhz vga : nvidia rtx 4090 (22gb vram) hdd : 1tb ssd : 240gb m.2 nvme : 1tb #gtavi #gta6",
+      "weight": 326054
+    },
+    {
+      "text": "HAPPY ASMARA Ft.DIKE SABRINA - LILAKNE LUNGAMU |MahareBMW7 |Ft.BINTANG FORTUNA(Official Music Video)",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=KTFplCbWXeA",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬  happy asmara ft.dike sabrina - lilakne lungamu | mahare bmw 7 | ft.bintang fortuna (official music video)  ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬ available download & streaming on :  ♪ coming soon ..  ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬  executive producer : muara bintang music production  title             : lilakne lungamu songwriter :  evan loss songwriter rap & verse cewek : yonanda frisna damara music by    : bintang fortuna vocal          : hap",
+      "weight": 23436
+    },
+    {
+      "text": "Encontramos un TRANSFORMER BAJO EL AGUA en Minecraft!",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=0MSGP-xdIM0",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "hoy, nacho y dagar encuentran un transformer en el fondo del mar bajo el agua en minecraft! tendrán que sacarlo de ahí para descubrir sus poderes... ¿qué pasará? ¡descúbrelo!   #minecraft #minecraftmod #dagar #nachoydagar",
+      "weight": 1555454
+    },
+    {
+      "text": "AJENG FEBRIA - PULUNG (Official Music Live) Opo mungkin Sing gak mungkin dadi mungkin",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=u7ENtxwEG18",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "official music live from ajeng febria - pulung  songwritter by nopek novian x gta band  arrangement by music interactive videographer by maska crewaktif lighting  by maska lighting  ℗ & © maska music records  musisi music interactive : bass : dika gitar : deblong melody : dindy kendang : cak tembel drumer : dani kyboard 1 : hendra  kyboard 2 : hasan saxophone : bayu cuk : glowoh  lyric : pulung  soyo gede lagi kroso abote golek arto direwangi jungkir walik kerjo totoan nyowo  sampek kapan uripku",
+      "weight": 121473
+    },
+    {
+      "text": "Yuta Mio Buat Benteng Raksasa Paling Aman Dari Mahluk Punah, Hantu Si Samsul Di Kota Sakura😱",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=WYJ4OgSKLXY",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "sakura school simulator selamat menonton ya, dan jika sudah menonton jangan lupa like, komen, subscribe dan share  thank you! :)  #sakuraschoolsimulator #idsakuraschoolsimulator #sakuraschoolsimulatordrama #yuta #mio",
+      "weight": 247565
+    },
+    {
+      "text": "LISA - Leave With Me (Featured in Always Lalisa) (Official Music Video)",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=M8fO5lQpfrc",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "listen to \"leave with me\" now: lisa.lnk.to/leavewithme lisa’s ep, ‘press play’ is out now. listen here:      shop vinyl, cds, merch and more: lisa.lnk.to/shop                     lyrics: yesterday kiss it goodbye wipe my eyes dry hold my head high i leave with me check the clock yeah it’s my time spread my wings fly me on my side you know that there’s no hard feelings every wrong and right put me right where i’m supposed to be no hard feelings and you can come or stay either way ima leave with m",
+      "weight": 2795055
+    },
+    {
+      "text": "Rahasia Pesta Pinkie Pie! [Pinkie Promise]",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=IB4fq4EKaEE",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "resep rahasia cupcake pinkie pie... aku? ----- link ig:   link tiktok:   channel kedua:    copyright disclaimer under section 107 of the copyright act 1976, allowance is made for “fair use” for purposes such as criticism, comment, news reporting, teaching, scholarship, education and research.  video ini diedit oleh:      - dukung aku dengan berdonasi disini:    #roblox #robloxindonesia #fannyplays",
+      "weight": 215868
+    },
+    {
+      "text": "Doa Ibu – Dharma Gita | Jangan Takut Curhat Sama Ibumu",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=Yip3fjoLMhE",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "ibu adalah tempat kita pulang ketika dunia terasa begitu berat. di balik senyumnya, ada kasih yang tak pernah habis. di balik diamnya, ada doa yang selalu menyertai perjalanan hidup anak-anaknya.  lagu **“doa ibu”** mengingatkan kita agar jangan takut bercerita kepada ibu. ceritakan kesedihan, kegelisahan, dan beban hidup yang kita rasakan. sebab seorang ibu bukan hanya ingin mendengar cerita anaknya, tetapi juga ingin memberikan nasihat dan kasih sayang terbaiknya.  terinspirasi dari kisah dewi",
+      "weight": 53709
+    },
+    {
+      "text": "MIPAN & ZUZUZU SEDIH! Harus Berpisah Sama Sahabat Nya! ROBLOX",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=CcjmXcWPicg",
+      "category_id": "26",
+      "live_broadcast_content": "none",
+      "supporting_text": "",
+      "weight": 173981
+    },
+    {
+      "text": "LANY - Stuck (Lyrics)",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=KQFwcGSGS_I",
+      "category_id": "24",
+      "live_broadcast_content": "none",
+      "supporting_text": "lany - stuck  ✖ stream / download:    ✖ follow:    🎤  lyrics: [verse 1] take a deep breath drive around town sun in my eyes, out of my mind missing you now days fly by whisper your name if anything's real, a part of you healed a part of me when we  [pre-chorus] stayed home for the summer memorized your number i just got this feeling if you disappeared then we'd still find each other  [chorus] i'm, i'm stuck on you, wow i'm, i'm stuck on you, wow i'm, i'm stuck on you how could i ever go on witho",
+      "weight": 6082
+    },
+    {
+      "text": "GTA 6 LAUNCH DAY with MY GIRLFRIEND 🌴 PS5 PRO PLAYTHROUGH 🌴 GIVING AWAY PS5 & COPIES",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=ZeVjEN6qaLQ",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "▼ stay connected! ▼ tiktok: tiktok.com/  twitter:   instagram:   facebook:   snapchat:    🎮 join my discord:    🔥sponsors: scuf: swagg scuf:     ➡️ my setup: sony a6400:   lens:   ac adapter:   elgato cam link 4k:   micro hdmi to hdmi:       #gta #gta6 #gtaiv",
+      "weight": 405517
+    },
+    {
+      "text": "Rosa Armenia - Tampang Lugu Suhu Kironyo (Official Music Video)",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=gnl8a1iESwg",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "music video credits vocal : rosa armenia title : tampang lugu suhu kironyo song & lyric : amri damanin arr : decky ryan video maker : png video pimpro : risky ahmd producer : 741sky ©2024 sky musik digital   ♪ tampang lugu suhu kironyo ♪ ----------------------------------  katokanlah jikok kini lah hilang raso jan di gantuang denai nan indak batali manikam usah nan di balakang elok lah uda bataruih tarang bia...nak jaleh hitam jo putiahnyo..  lah tapadiah mangko badan ko ka tau hati ko di paramb",
+      "weight": 45321
+    },
+    {
+      "text": "PLOT: Teror Mutan Dinosaurus Mengerikan | Terrible Lizards",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=OcLA1DLPl-8",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "seluruh alur cerita game terrible lizards saat menjelajahi sebuah museum dinosaurus, seorang pria justru mengalami teror mengerikan berhadapan langsung dengan monster dinosaurus yang terus memburunya. tidak ada yang tahu bahwa di bawah museum tersebut, terdapat area penggalian dengan segudang misteri  our other channels: droomp plays -   droomp talks -    game:     chapters 00:00 - 01:05 opening 01:05 - 07:45 exploring dalton's dinos 07:45 - 15:07 dig site 15:07 - 20:07 deep sites 20:07 - 25:47 ",
+      "weight": 191097
+    },
+    {
+      "text": "Robi DA7 - Mustahil | Lirik Video (New Single)",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=Jiob_6bvXVg",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "robi da7 - mustahil | lirik video (new single)     🔴indo no1 :   🎶playlists :  ",
+      "weight": 10674
+    },
+    {
+      "text": "SAKURA 18 #sakuraschoolsimulator",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=qsPpu-RAmVI",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "halo teman teman..... kami dari keluarga dobelpro. . . perkenalkan aku ayra dan ariel di dampingi dengan bapak aku  yang akan menemani hari kalian dengan bermain bersama . . jangan lupa dukung channel ini ya caranya,tekan tombol like,share dana subscribe!!! . . sampai bertemu di live dan konten konten kita ya. . . link donate sawer :    link whatshaap :    discord ;     tik tok :  ",
+      "weight": 1475855
+    },
+    {
+      "text": "Yeni Inka X Yesa Oktavia - KUCING GARONG (Official Music Yi Production)",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=FdGtD25TQSs",
+      "category_id": "10",
+      "live_broadcast_content": "none",
+      "supporting_text": "kelakuan si kucing garong, kalau lihat mangsa mengeong. main sikat main embat, mangsa yang lewat | kucing garong - yeni inka feat. yesa oktavia (official music yi production).  title : kucing garong artist : yeni inka ft. yesa oktavia songwriter : usin indra mixing mastering : dindy kalizzaka video shooting : zeta cinema production : yi production    musisi ◦ kendang : viham ◦ keyboard : fuad ◦ gitar : dindy kalizzaka   ------------------------------------------- lirik ♫ kucing garong dangdutan ",
+      "weight": 76109
+    },
+    {
+      "text": "1000 HARI AKU JADI ROBOT TRANSFORMER DI MINECRAFT VS ROBOT PARASIT MASA DEPAN",
+      "source": "youtube_most_popular_id",
+      "url": "https://www.youtube.com/watch?v=hmdrPqt5m8Q",
+      "category_id": "20",
+      "live_broadcast_content": "none",
+      "supporting_text": "gaes ini adalah 100 hari kita menjadi robot dan menyelamatkan dunia !  yang belum beli baju azuya surya kalian klik product di bawah ya !  cerita ini hanya roleplay  note : smeua youtuber disini adalah npc (bukan asli)   mau lanjut lagi ? like dulu sampai 10000 like ya untuk lanjut part 2  inspirasi :  groxmc  ,  remanrhn   , not safe , reff  join mmbership azuya surya join disini ya :    -follow dulu ya kawan , linknya ini :   atau cari aja yg fotonya aku bawa gold playbutton !!  - join discord",
+      "weight": 96132
+    },
+    {
+      "text": "Peluncuran Program Saintek Riset Pembelajaran Transformatif (SATRIA) Tahun 2026–2027",
+      "source": "youtube_monthly_knowledge_id",
+      "url": "https://www.youtube.com/watch?v=U92uhup8VLw",
+      "category_id": "",
+      "live_broadcast_content": "none",
+      "supporting_text": "",
+      "weight": 0
+    },
+    {
+      "text": "Konvensi Sains 2026: Inovasi RI Wajib Cuan, Bukan Cuma Pamer",
+      "source": "youtube_monthly_knowledge_id",
+      "url": "https://www.youtube.com/watch?v=fnpica7wEEQ",
+      "category_id": "",
+      "live_broadcast_content": "none",
+      "supporting_text": "ada satu pesan yang jarang dibahas dari konvensi sains 2026: riset kita lagi diukur pakai standar yang jauh lebih keras.",
+      "weight": 0
+    },
+    {
+      "text": "Sains dan Inovasi Indonesia: Produksi Pengetahuan Lintas Bidang Ilmu",
+      "source": "youtube_monthly_knowledge_id",
+      "url": "https://www.youtube.com/watch?v=beuBdZwwScc",
+      "category_id": "",
+      "live_broadcast_content": "none",
+      "supporting_text": "bagaimana sains indonesia berkembang? apakah sejarah setiap bidang ilmu berjalan sendiri-sendiri, atau justru ...",
+      "weight": 0
+    },
+    {
+      "text": "Penemuan Struktur 3D Partikel Vault Bakteri! #beritaterkini #indonesia #teknologi #sains #viral",
+      "source": "youtube_monthly_knowledge_id",
+      "url": "https://www.youtube.com/watch?v=fRjdTHJ5NS4",
+      "category_id": "",
+      "live_broadcast_content": "none",
+      "supporting_text": "ilmuwan berhasil memetakan struktur tiga dimensi partikel vault yang misterius, membuka wawasan baru dalam biologi.",
+      "weight": 0
+    },
+    {
+      "text": "Sains di Balik Harga BBM Stabil se-Indonesia! | Sains Kilat #8 #shorts",
+      "source": "youtube_monthly_knowledge_id",
+      "url": "https://www.youtube.com/watch?v=aMNC0fMN0Wc",
+      "category_id": "",
+      "live_broadcast_content": "none",
+      "supporting_text": "bagaimana sains logistik dan energi mengatur distribusi bbm hingga harganya bisa terpaut tipis di berbagai spbu?",
+      "weight": 0
+    }
+  ],
+  "production_api_import_isolated": true,
+  "runtime_activation_verified": false
+}

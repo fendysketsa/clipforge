@@ -7,6 +7,7 @@ import api
 import ryuundy_editorial_themes as themes
 
 TITLES = {
+    "practical_knowledge": "Sains teknologi Indonesia eksperimen cara kerja kecerdasan buatan",
     "moral_animation_story": "Animasi cerita moral Indonesia tentang pedagang curang dan kejujuran",
     "nostalgia_indonesia": "Nostalgia kehidupan Indonesia tahun 1980 dan sejarah sekolah tempo dulu",
     "legend_folklore": "Cerita rakyat legenda Danau Toba dalam bahasa Indonesia",

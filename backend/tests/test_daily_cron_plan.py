@@ -142,6 +142,10 @@ def test_private_reserves_are_never_automatically_promoted_in_the_new_plan(enabl
 def test_public_quota_does_not_consume_the_four_private_slots(enabled, monkeypatch):
     snapshot = plan(uploads=[upload(i) for i in range(17)])
     monkeypatch.setattr(api, "daily_cron_plan_status", lambda *a: snapshot)
+    # Test capacity independently of real Studio demand, which can pick a
+    # political theme whose publication hold correctly disables auto-upload.
+    monkeypatch.setattr(api, "scheduled_ryuundy_theme_profile", lambda: (
+        "lecture_wisdom", dict(api.RYUUNDY_CRON_THEME_PROFILES["lecture_wisdom"])))
     monkeypatch.setattr(api, "scheduled_auto_viral_youtube_browser_ready", lambda: True)
     monkeypatch.setattr(api, "scheduled_auto_viral_rights_profile_ready", lambda: True)
     request = api.scheduled_auto_viral_request()

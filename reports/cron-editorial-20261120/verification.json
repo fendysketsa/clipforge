@@ -1,0 +1,65 @@
+{
+  "checked_at": "2026-11-20T04:14:48.624804+00:00",
+  "activation_verified": false,
+  "sudo_preflight": "sudo -n true: a password is required",
+  "standard_deployment_attempted": false,
+  "reason": "Active cron/video work must finish; sudo access is also unavailable.",
+  "required_deployment_command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+  "health": {
+    "http_status": 200,
+    "data": {
+      "status": "ok"
+    }
+  },
+  "automation/viral-cc/editorial-policy": {
+    "http_status": 404,
+    "error_type": "HTTPError"
+  },
+  "automation/viral-cc/schedule": {
+    "http_status": 200,
+    "data": {
+      "enabled": true,
+      "scheduler_running": true,
+      "active_run_id": null,
+      "activity": {
+        "state": "running",
+        "label": "Render Long berjalan",
+        "detail": "Encoding visual, motion, dan subtitle · momen kompilasi 4 dari 8",
+        "progress_percent": 78,
+        "stage": "render",
+        "updated_at": "2026-11-20T04:14:45.417937+00:00",
+        "source_title": null
+      }
+    }
+  },
+  "jobs": {
+    "http_status": 200,
+    "data": {
+      "active_jobs": [
+        {
+          "id": "e1d886b6975f447d80fcb5f2c050977f",
+          "status": "running"
+        }
+      ]
+    }
+  },
+  "source_hashes": {
+    "backend/api.py": "26de07e551e47a5a38772a0bc1af94d745ee363b88b69fd0f3f6037130cec714",
+    "backend/cron_editorial.py": "13265e6a0e7c99ae30358fcfc1a13ac9f175a8be583ba02ee8371e8f8b308f69",
+    "backend/deployment_runtime.py": "bf96bafa6adfd41c18f5a2739d6864b2080282fc8e4fb8f3c80cbc2f8b4920c6",
+    "backend/requirements.txt": "d30c4c0dd9a0d4bf3398879c7757e44fdd5b6ead6cc50040ab528de918eb987c",
+    "docker-compose.yml": "22f228505e6c2e172fa2dfcb2622e670be0af8ebea6c6ae2ec1892cb43bdb71f"
+  },
+  "tests": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "559",
+      "time": "6.572",
+      "timestamp": "2026-11-20T11:13:46.138884+07:00",
+      "hostname": "fendycnugraha"
+    }
+  ]
+}

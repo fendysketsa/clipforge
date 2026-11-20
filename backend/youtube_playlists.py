@@ -4,6 +4,10 @@ import re
 
 
 CRON_THEME_PLAYLISTS = {
+    "practical_knowledge": "Sains & Pengetahuan Praktis",
+    "ramadan_season": "Ramadan & Puasa",
+    "eid_family_season": "Lebaran & Silaturahmi",
+    "hajj_charity_season": "Haji, Kurban & Kepedulian",
     "moral_animation_story": "Animasi Cerita Moral",
     "nostalgia_indonesia": "Nostalgia & Indonesia Tempo Dulu",
     "chinese_drama_story": "Drama China",

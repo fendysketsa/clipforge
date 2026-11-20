@@ -4669,10 +4669,18 @@ def create_missing_playlist(page, playlist_name: str) -> None:
         # Current Studio opens a menu that also offers Podcast and Course.
         # Some variants open the creation form directly.
         form = page.locator("ytcp-playlist-creation-dialog").last
-        menu_item = page.locator(
+        # Studio renders the dropdown outside ytcp-playlist-dialog (inside a
+        # global ytcp-text-menu). Restrict only by test-id/role so the new
+        # form still opens when the menu is portalled away from the dialog.
+        menu_items = page.locator(
             'ytcp-playlist-dialog #action-menu tp-yt-paper-item[test-id="new_playlist"], '
-            'ytcp-playlist-dialog #action-menu [role="menuitem"]'
-        ).filter(has_text=re.compile(r"^(Playlist baru|New playlist)$", re.I)).first
+            'tp-yt-paper-item[test-id="new_playlist"][role="menuitem"], '
+            '[role="menuitem"][test-id="new_playlist"]'
+        )
+        if not menu_items.count():
+            menu_items = page.locator(
+                'ytcp-playlist-dialog #action-menu [role="menuitem"]'
+            ).filter(has_text=re.compile(r"Playlist baru|New playlist", re.I))
         menu_deadline = time.monotonic() + 6
         while time.monotonic() < menu_deadline:
             try:
@@ -4681,9 +4689,27 @@ def create_missing_playlist(page, playlist_name: str) -> None:
             except Exception:
                 pass
             try:
-                if menu_item.count() and menu_item.is_visible(timeout=300):
-                    menu_item.click(timeout=3000)
+                clicked = False
+                for index in range(menu_items.count()):
+                    item = menu_items.nth(index)
+                    if not item.is_visible(timeout=200):
+                        continue
+                    try:
+                        item.click(timeout=2000)
+                    except Exception:
+                        # Studio animates its popup; a synthetic click on the
+                        # menu item is still safe because it only opens the
+                        # creation form and never submits it.
+                        item.evaluate("(element) => element.click()")
+                    clicked = True
+                    log(f"Menu Playlist baru dibuka untuk pembuatan: {playlist_name}.")
                     break
+                if clicked:
+                    try:
+                        form.wait_for(state="visible", timeout=4000)
+                        break
+                    except Exception:
+                        pass
             except Exception:
                 pass
             time.sleep(0.2)

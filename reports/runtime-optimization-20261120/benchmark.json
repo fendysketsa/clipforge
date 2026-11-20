@@ -1,0 +1,50 @@
+{
+  "observed_at": "2026-11-20T04:32:06.291639+00:00",
+  "scope": "isolated_source_benchmark_not_live_activation",
+  "repetitions": 7,
+  "production_writes": false,
+  "payloads": {
+    "youtube": {
+      "records": 740,
+      "full_bytes": 10485909,
+      "dashboard_bytes": 3493312,
+      "reduction_percent": 66.69,
+      "identical_record_ids_and_order": true
+    },
+    "tiktok": {
+      "records": 132,
+      "full_bytes": 514374,
+      "dashboard_bytes": 374028,
+      "reduction_percent": 27.28,
+      "identical_record_ids_and_order": true
+    }
+  },
+  "checkpoint_serialization": {
+    "youtube": {
+      "old_median_ms": 290.166,
+      "new_median_ms": 83.268,
+      "speedup": 3.48,
+      "semantic_json_equal": true
+    },
+    "tiktok": {
+      "old_median_ms": 7.976,
+      "new_median_ms": 1.514,
+      "speedup": 5.27,
+      "semantic_json_equal": true
+    }
+  },
+  "daily_plan": {
+    "old_median_ms": 36.271,
+    "new_median_ms": 26.825,
+    "speedup": 1.35,
+    "identical_plan": true,
+    "comparison_time": "2026-11-20T04:32:10.133840+00:00"
+  },
+  "polling": {
+    "duplicate_cleanup_interval_ms_removed": 250,
+    "existing_upload_poll_interval_preserved_ms": 1500,
+    "overlapping_reads_coalesced": true,
+    "finished_responses_cached": false,
+    "hidden_background_polls_skipped": true
+  }
+}

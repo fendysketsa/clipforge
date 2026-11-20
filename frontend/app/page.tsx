@@ -29,7 +29,6 @@ import {
   deleteJobs,
   discoverLocalLlms,
   enableYouTubeDirectProfileUpload,
-  fetchModels,
   getAutoViralSchedule,
   getJob,
   getJobs,
@@ -42,10 +41,8 @@ import {
   probeUrlSource,
   setupYouTubeOneTimeLogin,
   setAutoViralScheduleEnabled,
-  startYouTubeLogin,
   startTikTokLogin,
   updateJobClipStatus,
-  uploadVideo,
   type ClipDeleteResult,
   type LocalLlmProvider,
   type SourceProbe,
@@ -78,6 +75,7 @@ import {
   RECENT_LOG_LIMIT,
 } from "../lib/constants";
 import { isActiveJob } from "../lib/utils";
+import { createPollingTask } from "../lib/pollTask";
 import type {
   BackgroundMode,
   AutoViralScheduleStatus,
@@ -115,7 +113,6 @@ const isProcessJob = (item: ClipJob | null) =>
 const sharesWorkerLane = (jobMode: ClipMode, requestedMode: ClipMode) =>
   (jobMode === "long_animate") === (requestedMode === "long_animate");
 const CLEANUP_SUCCESS_DISPLAY_MS = 6_000;
-const CLEANUP_PROGRESS_POLL_MS = 250;
 const TAB_JOB_STORAGE_KEY = "fendy-clipper.activeJobId.v1";
 const compactStoryboardField = (value: string, maximum: number) => value
   .replace(/^\s*#{1,6}\s*ADEGAN\b.*$/gim, "")
@@ -169,9 +166,7 @@ export default function HomePage() {
   const [storyboardProgress, setStoryboardProgress] = useState<StoryboardProgress | null>(null);
   const [storyboardError, setStoryboardError] = useState("");
   const [sourceMode, setSourceMode] = useState<SourceMode>("url");
-  const [uploadToken, setUploadToken] = useState("");
-  const [uploadFileName, setUploadFileName] = useState("");
-  const [isUploading, setIsUploading] = useState(false);
+  const uploadToken = "";
   const [minDuration, setMinDuration] = useState(DEFAULT_MIN_DURATION);
   const [maxDuration, setMaxDuration] = useState(DEFAULT_MAX_DURATION);
   const [targetClips, setTargetClips] = useState(0);
@@ -185,9 +180,8 @@ export default function HomePage() {
   const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>("keep");
   const [clipMode, setClipMode] = useState<ClipMode>(DEFAULT_CLIP_MODE);
   const [compilationTargetSeconds, setCompilationTargetSeconds] = useState(COMPILATION_TARGET_SECONDS);
-  const [uploadPreviewUrl, setUploadPreviewUrl] = useState("");
   const [cropMode, setCropMode] = useState<CropMode>("person");
-  const [camCorner, setCamCorner] = useState<CamCorner>("auto");
+  const camCorner: CamCorner = "auto";
   const [burnSubtitles, setBurnSubtitles] = useState(true);
   const [slowMotionNoVoice, setSlowMotionNoVoice] = useState(false);
   const [captionFontSize, setCaptionFontSize] = useState(DEFAULT_CAPTION_FONT_SIZE);
@@ -199,13 +193,11 @@ export default function HomePage() {
   const [aiEnabled, setAiEnabled] = useState(DEFAULT_AI_ENABLED);
   const [aiBaseUrl, setAiBaseUrl] = useState(DEFAULT_AI_BASE_URL);
   const [aiModel, setAiModel] = useState(DEFAULT_AI_MODEL);
-  const [aiApiKey, setAiApiKey] = useState("");
-  const [requiredHashtags, setRequiredHashtags] = useState(DEFAULT_REQUIRED_HASHTAGS);
-  const [requireCreativeCommons, setRequireCreativeCommons] = useState(true);
+  const aiApiKey = "";
+  const requiredHashtags = DEFAULT_REQUIRED_HASHTAGS;
+  const requireCreativeCommons = true;
   const [confirmSourceRights, setConfirmSourceRights] = useState(false);
   const [autoUploadYoutube, setAutoUploadYoutube] = useState(false);
-  const [aiModels, setAiModels] = useState<string[]>([]);
-  const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [localLlmProviders, setLocalLlmProviders] = useState<LocalLlmProvider[]>([]);
   const [isDiscoveringLlms, setIsDiscoveringLlms] = useState(false);
   const [hasAutoDiscoveredLlms, setHasAutoDiscoveredLlms] = useState(false);
@@ -281,9 +273,6 @@ export default function HomePage() {
       upload.status === "queued"
       || upload.status === "running"
       || Boolean(upload.clip_delete_after && !upload.clip_deleted_at),
-  );
-  const hasPendingYouTubeCleanup = youtubeUploads.some(
-    (upload) => Boolean(upload.clip_delete_after && !upload.clip_deleted_at),
   );
   const hasActiveTikTokUpload = tiktokUploads.some(
     (upload) => upload.status === "queued" || upload.status === "running",
@@ -503,7 +492,7 @@ export default function HomePage() {
     let requestInFlight = false;
 
     const refreshActiveHistory = async () => {
-      if (requestInFlight) return;
+      if (requestInFlight || document.hidden) return;
       requestInFlight = true;
       try {
         const nextJobs = (await getJobs()).filter(item => item.request.target_platform !== 'facebook');
@@ -524,10 +513,9 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!hasActiveTikTokUpload) return;
-    const interval = window.setInterval(() => {
-      loadTikTokUploads().catch(() => undefined);
-    }, 1500);
-    return () => window.clearInterval(interval);
+    const poll = createPollingTask(async () => { await loadTikTokUploads(); }, () => !document.hidden);
+    const interval = window.setInterval(poll.run, 1500);
+    return () => { poll.stop(); window.clearInterval(interval); };
   }, [hasActiveTikTokUpload, loadTikTokUploads]);
 
   useEffect(() => {
@@ -608,27 +596,10 @@ export default function HomePage() {
   }, [activeJob, jobs]);
 
   useEffect(() => {
-    if (!hasPendingYouTubeCleanup) return;
-    let cancelled = false;
-    const refreshCleanupProgress = async () => {
-      const uploads = await getYouTubeUploads().catch(() => null);
-      if (!cancelled && uploads) {
-        setYoutubeUploads(uploads);
-      }
-    };
-    refreshCleanupProgress();
-    const interval = window.setInterval(refreshCleanupProgress, CLEANUP_PROGRESS_POLL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [hasPendingYouTubeCleanup]);
-
-  useEffect(() => {
     if (!hasActiveYouTubeUpload) return;
-    const interval = window.setInterval(async () => {
+    const poll = createPollingTask(async (isCurrent) => {
       const result = await Promise.all([loadYouTubeUploads(), loadJobs()]).catch(() => null);
-      if (!result) return;
+      if (!result || !isCurrent()) return;
       const [nextUploads, nextJobs] = result;
       const selectedJobId = job?.id;
       if (!selectedJobId) return;
@@ -665,8 +636,9 @@ export default function HomePage() {
         return;
       }
       setJob((current) => (current?.id === selectedJobId ? nextJob : current));
-    }, JOB_POLL_INTERVAL_MS);
-    return () => window.clearInterval(interval);
+    }, () => !document.hidden);
+    const interval = window.setInterval(poll.run, JOB_POLL_INTERVAL_MS);
+    return () => { poll.stop(); window.clearInterval(interval); };
   }, [hasActiveYouTubeUpload, job?.id, loadJobs, loadYouTubeUploads]);
 
   useEffect(() => () => {
@@ -690,17 +662,19 @@ export default function HomePage() {
   useEffect(() => {
     if (!activeJobId || !isTrackedJobBusy) return;
 
-    const interval = window.setInterval(async () => {
+    const poll = createPollingTask(async (isCurrent) => {
       const nextJob = await getJob(activeJobId);
+      if (!isCurrent()) return;
       setActiveJob(nextJob);
 
       if (nextJob.status === "completed" || nextJob.status === "failed" || nextJob.status === "cancelled") {
         setJob((current) => (current?.id === nextJob.id || current === null ? nextJob : current));
         loadJobs().catch(() => undefined);
       }
-    }, ACTIVE_JOB_POLL_INTERVAL_MS);
+    }, () => !document.hidden);
+    const interval = window.setInterval(poll.run, ACTIVE_JOB_POLL_INTERVAL_MS);
 
-    return () => window.clearInterval(interval);
+    return () => { poll.stop(); window.clearInterval(interval); };
   }, [activeJobId, isTrackedJobBusy, loadJobs]);
 
   useEffect(() => {
@@ -718,30 +692,6 @@ export default function HomePage() {
       window.removeEventListener("beforeunload", warnBeforeUnload);
     };
   }, [activeJobId, isTrackedJobBusy]);
-
-  const handleLoadModels = useCallback(async () => {
-    const base = aiBaseUrl.trim();
-    if (!base) return;
-    setIsLoadingModels(true);
-    try {
-      const models = await fetchModels(base, aiApiKey.trim());
-      setAiModels(models);
-      if (models.length) {
-        setAiModel((current) => {
-          if (models.includes(DEFAULT_AI_MODEL)) return DEFAULT_AI_MODEL;
-          if (models.includes(current)) return current;
-          return models[0];
-        });
-        toast.success(`${models.length} model dimuat`);
-      } else {
-        toast.error("Tidak ada model ditemukan");
-      }
-    } catch (modelsError) {
-      toast.error(modelsError instanceof Error ? modelsError.message : "Gagal memuat model");
-    } finally {
-      setIsLoadingModels(false);
-    }
-  }, [aiBaseUrl, aiApiKey]);
 
   const handleDiscoverLocalLlms = useCallback(async (silent = false) => {
     setIsDiscoveringLlms(true);
@@ -763,7 +713,6 @@ export default function HomePage() {
         providers.find((provider) => provider.base_url.includes(":11434")) ??
         providers[0];
       setAiBaseUrl(selected.base_url);
-      setAiModels(selected.models);
       if (selected.models.length) {
         setAiModel(
           selected.models.includes(DEFAULT_AI_MODEL) ? DEFAULT_AI_MODEL : selected.models[0],
@@ -803,74 +752,12 @@ export default function HomePage() {
     [handleDiscoverLocalLlms, isDiscoveringLlms, localLlmProviders.length],
   );
 
-  const handleSelectLocalProvider = useCallback((provider: LocalLlmProvider) => {
-    setAiBaseUrl(provider.base_url);
-    setAiApiKey("");
-    setAiModels(provider.models);
-    if (provider.models.length) {
-      setAiModel(
-        provider.models.includes(DEFAULT_AI_MODEL) ? DEFAULT_AI_MODEL : provider.models[0],
-      );
-    }
-  }, []);
-
-  const handleAiBaseUrlChange = useCallback((value: string) => {
-    setAiBaseUrl((current) => {
-      if (current !== value) {
-        setAiModels([]);
-      }
-      return value;
-    });
-    if (/localhost:(11434|1234|1337|8080)|127\.0\.0\.1:(11434|1234|1337|8080)/.test(value)) {
-      setAiApiKey("");
-    }
-  }, []);
-
-  const handleSourceModeChange = useCallback((mode: SourceMode) => {
-    setSourceMode(mode);
-    setConfirmSourceRights(false);
-    setError("");
-  }, []);
-
   const handleTargetClipsChange = useCallback(
     (value: number) => {
       setTargetClips(Math.max(0, Math.min(MAX_REQUESTED_CLIPS, maxClips, value)));
     },
     [maxClips],
   );
-
-  const handleUploadFileChange = useCallback(async (file: File | null) => {
-    setError("");
-    setUploadPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return file ? URL.createObjectURL(file) : "";
-    });
-    if (!file) {
-      setUploadToken("");
-      setUploadFileName("");
-      setVideoDuration(null);
-      return;
-    }
-
-    setIsUploading(true);
-    try {
-      const result = await toast.promise(uploadVideo(file), {
-        loading: "Mengunggah video...",
-        success: "Video berhasil diunggah!",
-        error: "Gagal mengunggah video",
-      });
-      setUploadToken(result.source_file);
-      setUploadFileName(result.original_name);
-      setVideoDuration(result.duration);
-    } catch (uploadError) {
-      setUploadToken("");
-      setVideoDuration(null);
-      setUploadFileName("");
-      setError(uploadError instanceof Error ? uploadError.message : "Gagal mengunggah video.");
-    } finally {
-      setIsUploading(false);
-    }
-  }, []);
 
   const handleGenerateStoryboard = useCallback(async () => {
     const source = hypitStoryBody(prepareStoryInput(storyText, storyFormat)).trim();
@@ -1599,36 +1486,6 @@ export default function HomePage() {
     youtubeConfig?.upload_all_above_fyp_target,
   ]);
 
-  const handleStartYouTubeLogin = useCallback(async () => {
-    if (usesChromeDebugging()) {
-      try {
-        await toast.promise(setupYouTubeOneTimeLogin().then(requireValidYouTubeSession), {
-          loading: "Menyiapkan login sekali...",
-          success: "Login sekali aktif. Upload berikutnya memakai Playwright storage-state.",
-          error: (error) => error instanceof Error ? error.message : "Gagal menyiapkan login sekali",
-        });
-        loadYouTubeUploads().catch(() => undefined);
-      } catch {
-        // toast.promise already displayed the backend error.
-      }
-      return;
-    }
-    try {
-      await toast.promise(startYouTubeLogin(), {
-        loading: "Membuka login YouTube Playwright...",
-        success: "Proses login Playwright dimulai. Setelah Studio tampil, session akan disimpan otomatis.",
-        error: (error) => error instanceof Error ? error.message : "Gagal membuka login Playwright",
-      });
-      setIsYouTubeLoginActive(true);
-      window.setTimeout(() => {
-        setIsYouTubeLoginActive(false);
-        loadYouTubeUploads().catch(() => undefined);
-      }, 12000);
-    } catch {
-      // toast.promise already displayed the backend error.
-    }
-  }, [loadYouTubeUploads, requireValidYouTubeSession, usesChromeDebugging]);
-
   const handleCaptureYouTubeSession = useCallback(async () => {
     if (usesChromeDebugging()) {
       try {
@@ -1910,7 +1767,6 @@ export default function HomePage() {
           onEnableNoCdpMode={handleEnableNoCdpMode}
           onImportYouTubeCdpCookies={handleImportYouTubeCdpCookies}
           onSetupYouTubeOneTimeLogin={handleSetupYouTubeOneTimeLogin}
-          onStartYouTubeLogin={handleStartYouTubeLogin}
           onCheckTikTokSession={handleCheckTikTokSession}
           onStartTikTokLogin={handleStartTikTokLogin}
           onUploadAllToYouTube={handleUploadAllToYouTube}

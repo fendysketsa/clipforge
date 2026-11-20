@@ -61,7 +61,6 @@ type ResultsSectionProps = {
   onEnableNoCdpMode: () => void;
   onImportYouTubeCdpCookies: () => void;
   onSetupYouTubeOneTimeLogin: () => void;
-  onStartYouTubeLogin: () => void;
   onStartTikTokLogin: () => void;
   onUploadAllToYouTube: () => void;
   onUploadAllToTikTok: () => void;
@@ -340,7 +339,6 @@ export function ResultsSection({
   onEnableNoCdpMode,
   onImportYouTubeCdpCookies,
   onSetupYouTubeOneTimeLogin,
-  onStartYouTubeLogin,
   onStartTikTokLogin,
   onUploadAllToYouTube,
   onUploadAllToTikTok,

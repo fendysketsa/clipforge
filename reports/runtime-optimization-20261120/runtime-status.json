@@ -1,0 +1,72 @@
+{
+  "checked_at": "2026-11-20T04:33:33.925769+00:00",
+  "activation_verified": false,
+  "services": {
+    "health": {
+      "http": 200,
+      "data": {
+        "status": "ok"
+      }
+    },
+    "runtime/optimization": {
+      "http": 404,
+      "error_type": "HTTPError"
+    },
+    "automation/viral-cc/schedule": {
+      "http": 200,
+      "data": {
+        "enabled": true,
+        "scheduler_running": true,
+        "activity": {
+          "state": "running",
+          "label": "Cron sedang bekerja",
+          "detail": "1 kandidat terurut; mulai mengolah sumber terbaik",
+          "progress_percent": 18,
+          "stage": "selection",
+          "updated_at": "2026-11-20T04:27:10.285799+00:00",
+          "source_title": null
+        },
+        "active_run_id": "57f2a42ee15b41b8a5e421f974a45f7a"
+      }
+    },
+    "jobs": {
+      "http": 200,
+      "data": {
+        "active": [
+          {
+            "id": "e1d886b6975f447d80fcb5f2c050977f",
+            "status": "running",
+            "progress_percent": 88,
+            "progress_detail": "Encoding visual, motion, dan subtitle · momen kompilasi 8 dari 8"
+          }
+        ]
+      }
+    },
+    "frontend": {
+      "http": 200
+    }
+  },
+  "clipforge_processes": [
+    {
+      "pid": 686989,
+      "role": "api:app",
+      "State": "S (sleeping)",
+      "PPid": "686966",
+      "VmRSS": "132 kB"
+    },
+    {
+      "pid": 687069,
+      "role": "api:app",
+      "State": "R (running)",
+      "PPid": "686989",
+      "VmRSS": "377760 kB"
+    },
+    {
+      "pid": 687215,
+      "role": "clipper.py",
+      "State": "S (sleeping)",
+      "PPid": "687069",
+      "VmRSS": "390400 kB"
+    }
+  ]
+}

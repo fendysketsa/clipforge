@@ -463,6 +463,40 @@ myth. It participates in cron rotation; manual discovery keeps its own catalogue
 Playlist creation permission is persisted on cron upload records and passed as
 `--create-missing-playlist`; manual uploads do not create missing playlists.
 Older/manual jobs retain content-based routing.
+
+Cron-only adaptive discovery is enabled by
+`AUTO_VIRAL_SCHEDULE_DYNAMIC_EDITORIAL_ENABLED=true`. It searches across
+channels without channel-ID restrictions, rotates 18 Indonesian preacher search
+seeds alongside generic discovery, and researches up to 12 actual subniches
+each Jakarta calendar month from fresh Studio demand, Google Trends RSS and
+YouTube's Indonesia popular chart, plus two bounded current-month searches for
+Indonesian kajian and practical knowledge. Monthly subjects must match the title/query;
+music-chart entries and active/upcoming broadcasts are excluded. Empty or failed
+research retries after six hours while ordinary cron discovery continues.
+The editorial calendar prioritizes preparation during the 30 days before
+Ramadan (40% of ordinary cron campaigns), Ramadan (75%), its final ten nights,
+Lebaran and hajj/kurban. It also covers Independence Day, year-end reflection
+and school holidays. Hijri dates use Umm al-Qura estimates for editorial planning;
+local official religious dates remain authoritative. These are campaign shares,
+not promised upload counts. The monthly plan, retry checkpoint and rotation
+counter survive rebuilds in `backend/data/cron_editorial_policy.json`.
+`GET /api/automation/viral-cc/editorial-policy` reports the plan and current
+season without starting work. Manual generation keeps its selected workflow;
+daily quotas, rights checks, political holds and Long QC still apply.
+
+Dashboard polling uses `?dashboard=true` on the YouTube/TikTok upload lists.
+This view omits unused performance snapshot arrays and shortens terminal logs
+while retaining queue/retry/claim indicators; active upload logs remain complete.
+The default list and YouTube detail endpoint retain full evidence, and saved
+checkpoints remain complete. Concurrent identical frontend reads share one
+request without caching finished responses. Hidden tabs skip frequent status
+polling, and the duplicate 250 ms cleanup timer has been removed.
+Validated model checkpoints use Pydantic's native JSON serializer; daily quota
+snapshots include only the accounting fields. Renderer workers run in owned
+process sessions so cancellation/error/finalization also releases encoder
+children without signalling shared browser sessions. Standard startup verifies
+these capabilities through `GET /api/runtime/optimization`.
+
 When a queue response is lost, the dashboard retries serialized recovery up to
 three times, checking persisted upload records between attempts. It preserves
 the duplicate guard if recovery remains unavailable and names the affected
