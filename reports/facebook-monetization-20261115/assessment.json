@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "checked_at": "2026-11-15T03:58:47.854162+00:00",
+  "account_verified": true,
+  "program": {
+    "state": "active",
+    "evidence": "Profil Anda menghasilkan uang"
+  },
+  "policy": {
+    "state": "clear"
+  },
+  "earnings": {
+    "estimated_usd": 0.0,
+    "period": "November",
+    "qualified_views": 0,
+    "rate_usd_per_1000": 0.0,
+    "non_qualified_reasons": [
+      {
+        "label": "Durasi tayangan terlalu singkat",
+        "percent": 98.0
+      },
+      {
+        "label": "Durasi konten kurang dari 10 detik",
+        "percent": 2.0
+      }
+    ]
+  },
+  "bonus": {
+    "amount_usd": 1.0,
+    "required_reels": 3,
+    "minimum_duration_seconds": 10,
+    "minimum_qualified_views": 10,
+    "minimum_reels_with_qualified_views": 1,
+    "completed_reels": 0,
+    "days_remaining_at_check": 5,
+    "period_label": "12 Nov - 19 Nov",
+    "awarded": false
+  },
+  "payout": {
+    "state": "unknown",
+    "issues": [],
+    "message": "Kesiapan pencairan belum terverifikasi. Buka pembayaran dan periksa metode, identitas, serta pajak bila diminta."
+  },
+  "insights": {
+    "period": "18 Okt - 14 Nov",
+    "views": 91,
+    "three_second_views": 5
+  },
+  "links": {
+    "overview": "https://www.facebook.com/professional_dashboard/monetization/",
+    "content": "https://www.facebook.com/professional_dashboard/monetization/content_monetization/",
+    "rate": "https://www.facebook.com/professional_dashboard/earnings/earnings_rate/",
+    "health": "https://www.facebook.com/profile_status/?referrer=monetization_transparency_home",
+    "payout": "https://www.facebook.com/payout/overview/?entry_point=PRODASH",
+    "insights": "https://www.facebook.com/professional_dashboard/profile_insights/views/"
+  },
+  "originality_policy_url": "https://about.fb.com/news/2026/03/rewarding-original-creators-on-facebook/",
+  "limits": "Status program, kelayakan setiap konten, bonus, dan pencairan adalah pemeriksaan berbeda. Facebook menentukan kelayakan dan pendapatan aktual; tidak ada jaminan penghasilan atau waktu pencairan.",
+  "actions": [
+    {
+      "key": "payout",
+      "priority": "Hari ini",
+      "title": "Verifikasi kesiapan pencairan",
+      "detail": "Periksa metode pembayaran, verifikasi identitas dan pajak bila diminta. Saldo nol belum membuktikan pembayaran siap.",
+      "href": "https://www.facebook.com/payout/overview/?entry_point=PRODASH",
+      "state": "unknown"
+    },
+    {
+      "key": "retention",
+      "priority": "Fokus produksi",
+      "title": "Perbaiki dua detik pertama",
+      "detail": "Durasi tayangan terlalu singkat terdeteksi pada laporan akun. Tampilkan masalah atau hasil sejak awal, langsung demonstrasikan langkah. Hindari pembuka logo dan kalimat berputar; pertahankan batas 30–55 detik.",
+      "href": "https://www.facebook.com/professional_dashboard/earnings/earnings_rate/"
+    },
+    {
+      "key": "original_reels",
+      "priority": "3 hari pertama",
+      "title": "Siapkan tiga Reel asli yang berbeda",
+      "detail": "Ikuti syarat bonus yang ditampilkan Facebook; tiga upload lokal belum berarti bonus tercapai. Rekam layar dan penjelasan sendiri. Publikasikan satu tutorial yang utuh per hari setelah preview dan QC.",
+      "href": "https://www.facebook.com/professional_dashboard/monetization/content_monetization/"
+    },
+    {
+      "key": "measure",
+      "priority": "Setelah 24–48 jam",
+      "title": "Pilih topik dari hasil nyata",
+      "detail": "Bandingkan tayangan yang memenuhi syarat, retensi/waktu tonton yang tersedia, serta alasan penolakan. Ulangi masalah yang diminati dengan contoh baru; jangan mengunggah salinan yang sama.",
+      "href": "https://www.facebook.com/professional_dashboard/profile_insights/views/"
+    }
+  ],
+  "production_briefs": [
+    {
+      "key": "notifications",
+      "title": "Notifikasi grup yang terlalu ramai",
+      "hook": "Grup ramai, tapi belum ingin keluar?",
+      "recording": "Rekam langkah membisukan notifikasi pada aplikasi yang Anda gunakan. Perlihatkan pengaturan sebelum dan sesudah; gunakan percakapan demo.",
+      "caption": "Notifikasi grup bisa diatur sesuai kebutuhan. Periksa pengaturannya di HP Anda; nama menu dapat berbeda menurut versi aplikasi.\n\n#TipsHP #TeknologiSehariHari",
+      "target_seconds": 30,
+      "max_seconds": 55,
+      "state": "needs_original_recording",
+      "sequence": [
+        "0–2 dtk: masalah atau hasil",
+        "2–5 dtk: konteks singkat",
+        "5–23 dtk: langkah nyata",
+        "23–30 dtk: hasil dan batasan"
+      ],
+      "proof": "Butuh rekaman asli dan penjelasan sendiri; sembunyikan data pribadi. Ini brief, bukan video yang sudah diproduksi."
+    },
+    {
+      "key": "storage",
+      "title": "Temukan file yang memakan ruang",
+      "hook": "HP mulai penuh? Periksa file besarnya dulu.",
+      "recording": "Rekam pemeriksaan penyimpanan pada HP sendiri, tunjukkan kategori atau file terbesar. Jangan menghapus data pribadi untuk kebutuhan rekaman.",
+      "caption": "Periksa penggunaan penyimpanan sebelum merapikan file. Tinjau mana yang masih dibutuhkan agar data penting tetap tersimpan.\n\n#TipsHP #TeknologiSehariHari",
+      "target_seconds": 30,
+      "max_seconds": 55,
+      "state": "needs_original_recording",
+      "sequence": [
+        "0–2 dtk: masalah atau hasil",
+        "2–5 dtk: konteks singkat",
+        "5–23 dtk: langkah nyata",
+        "23–30 dtk: hasil dan batasan"
+      ],
+      "proof": "Butuh rekaman asli dan penjelasan sendiri; sembunyikan data pribadi. Ini brief, bukan video yang sudah diproduksi."
+    },
+    {
+      "key": "focus",
+      "title": "Waktu fokus dengan notifikasi terkontrol",
+      "hook": "Perlu fokus tanpa mematikan HP?",
+      "recording": "Demonstrasikan fitur jangan ganggu/fokus yang benar-benar tersedia di HP Anda. Tunjukkan pengecualian panggilan penting dan cara mengembalikan pengaturan.",
+      "caption": "Atur waktu fokus sesuai kebutuhan, termasuk panggilan yang tetap ingin diterima. Periksa pengecualiannya sebelum memakai mode ini.\n\n#TipsHP #TeknologiSehariHari",
+      "target_seconds": 30,
+      "max_seconds": 55,
+      "state": "needs_original_recording",
+      "sequence": [
+        "0–2 dtk: masalah atau hasil",
+        "2–5 dtk: konteks singkat",
+        "5–23 dtk: langkah nyata",
+        "23–30 dtk: hasil dan batasan"
+      ],
+      "proof": "Butuh rekaman asli dan penjelasan sendiri; sembunyikan data pribadi. Ini brief, bukan video yang sudah diproduksi."
+    }
+  ],
+  "unavailable_sections": []
+}

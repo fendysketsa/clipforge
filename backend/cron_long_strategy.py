@@ -7,6 +7,10 @@ from __future__ import annotations
 
 import math
 import re
+import hashlib
+import json
+
+COMPILATION_FALLBACK_VERSION = 1
 
 LONG_EDITOR_BRIEF = (
     "Konsep khusus Long: satu pertanyaan atau perjalanan tokoh dengan konteks, perkembangan, "
@@ -143,3 +147,98 @@ def validate_review(review, material: list[dict], short_ranges=()) -> dict:
                 new_material_fraction=round(added_fraction, 4),
                 basis="ai_editorial_review_with_exact_transcript_quotes",
                 actual_retention_verified=False, future_views_guaranteed=False)
+
+
+def compilation_signature(material: list[dict]) -> str:
+    """Bind the separate compilation audit to the actual ordered source cuts."""
+    rows = [{'start':float(row['start']), 'end':float(row['end']),
+             'text':str(row.get('text') or '').strip()} for row in material]
+    return hashlib.sha256(json.dumps(rows, sort_keys=True, ensure_ascii=False,
+                                    allow_nan=False).encode()).hexdigest()
+
+
+def validate_compilation(material: list[dict], short_ranges=()) -> dict:
+    """A compilation needs complete, unique, chronological source moments.
+
+    It does not claim a single plot or a resolved ending for the whole source.
+    Rights, source safety, media/audio checks and independent Long QC still apply.
+    """
+    reasons, seen, clean = [], set(), []
+    previous_end = -1.0
+    for row in material:
+        if not isinstance(row,dict) or not isinstance(row.get('text'),str):
+            reasons.append('invalid_compilation_source_part')
+            continue
+        start, end = number(row.get('start')), number(row.get('end'))
+        text = normalized(row.get('text', ''))
+        if start is None or end is None or end <= start or len(text.split()) < 4:
+            reasons.append('invalid_compilation_source_part')
+            continue
+        if start < previous_end - .001:
+            reasons.append('overlapping_or_reordered_compilation')
+        if text in seen:
+            reasons.append('duplicate_compilation_moment')
+        seen.add(text)
+        previous_end = end
+        clean.append(row)
+    duration = sum(float(row['end'])-float(row['start']) for row in clean)
+    if len(clean) < 3 or not 180 <= duration <= 600:
+        reasons.append('insufficient_or_excessive_compilation_material')
+    merged = []
+    if not isinstance(short_ranges,(list,tuple)):
+        short_ranges = []
+        reasons.append('invalid_short_anchor')
+    for anchor in short_ranges:
+        if not isinstance(anchor, (list,tuple)) or len(anchor) != 2:
+            reasons.append('invalid_short_anchor')
+            continue
+        start, end = number(anchor[0]), number(anchor[1])
+        if start is None or end is None or end <= start:
+            reasons.append('invalid_short_anchor')
+            continue
+        merged.append([start,end])
+    union = []
+    for start,end in sorted(merged):
+        if union and start <= union[-1][1]:
+            union[-1][1] = max(union[-1][1],end)
+        else:
+            union.append([start,end])
+    overlap = sum(max(0,min(float(row['end']),end)-max(float(row['start']),start))
+                  for row in clean for start,end in union)
+    added = max(0,1-overlap/max(1,duration))
+    if added < .6:
+        reasons.append('mostly_repeated_short')
+    for start,end in merged:
+        coverage = sum(max(0,min(float(row['end']),end)-max(float(row['start']),start)) for row in clean)
+        if coverage/max(.001,end-start) < .5:
+            reasons.append('missing_required_short_anchor')
+    return {'version':COMPILATION_FALLBACK_VERSION, 'passed':not reasons,
+            'reasons':list(dict.fromkeys(reasons)), 'format':'chronological_compilation',
+            'output_seconds':round(duration,3), 'part_count':len(clean),
+            'new_material_fraction':round(added,4), 'short_anchor_ranges':merged,
+            'material_sha256':compilation_signature(clean) if not reasons else None,
+            'source_chronology_preserved':not bool(set(reasons)&{'overlapping_or_reordered_compilation'}),
+            'filler_padding_added':False, 'resolved_source_story_claimed':False,
+            'independent_long_qc_required':True, 'actual_retention_verified':False}
+
+
+def long_evidence_issue(sidecar: dict, short_ranges=None) -> str | None:
+    """Accept the correct format evidence, never relabel a failed story pass."""
+    if not isinstance(sidecar,dict):
+        return 'invalid_long_sidecar'
+    if sidecar.get('long_format') != 'compilation':
+        story = sidecar.get('cron_long_story_review')
+        return None if isinstance(story,dict) and story.get('passed') is True else 'missing_passing_long_story_review'
+    saved = sidecar.get('cron_long_compilation_review') or {}
+    if not isinstance(saved,dict) or saved.get('version') != COMPILATION_FALLBACK_VERSION or saved.get('passed') is not True:
+        return 'missing_passing_compilation_review'
+    parts = sidecar.get('parts')
+    if not isinstance(parts,list) or not all(isinstance(row,dict) for row in parts):
+        return 'invalid_compilation_parts'
+    anchors = saved.get('short_anchor_ranges',[]) if short_ranges is None else short_ranges
+    current = validate_compilation(parts, anchors)
+    if not current['passed']:
+        return 'invalid_compilation_evidence:' + ','.join(current['reasons'])
+    if current['material_sha256'] != saved.get('material_sha256'):
+        return 'compilation_material_changed'
+    return None

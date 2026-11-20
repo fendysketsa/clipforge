@@ -1,0 +1,33 @@
+{
+  "lag_seconds": -0.005,
+  "aligned_correlation": 0.9938273528051622,
+  "rms": [
+    {
+      "name": "source",
+      "duration": 36.48,
+      "ending_rms": [
+        0.09901,
+        0.14258,
+        0.1296,
+        0.20991,
+        0.22896,
+        0.19575,
+        0.14114
+      ]
+    },
+    {
+      "name": "output",
+      "duration": 33.6,
+      "ending_rms": [
+        0.08365,
+        0.12253,
+        0.11445,
+        0.18018,
+        0.18235,
+        null,
+        null
+      ]
+    }
+  ],
+  "status": "pre_fix_rejected_audio_mix"
+}

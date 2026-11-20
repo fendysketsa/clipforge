@@ -1,0 +1,54 @@
+{
+  "media_sha256": "e73a6d1fc42ae0dc7d77330a31485ea6a654e69ee458631547d6cc1b4838e3ac",
+  "duration_seconds": 27.744,
+  "clock": {
+    "version": 1,
+    "fps": 30,
+    "alignment": "measured_tts_phrase_with_estimated_verb_position",
+    "select": 8.701,
+    "departure": 9.051,
+    "arrival": 12.251,
+    "search_reset": 19.31,
+    "complete": 12.451,
+    "compare": 12.31,
+    "inspect": 23.742,
+    "phase_order": [
+      "recognize",
+      "select",
+      "demonstrate",
+      "inspect_result"
+    ],
+    "label": "SIMULASI EDUKASI",
+    "source_clock_changed": false
+  },
+  "streams": [
+    {
+      "codec_type": "video",
+      "codec_name": "h264",
+      "width": 1080,
+      "height": 1920,
+      "duration": "27.733333",
+      "avg_frame_rate": "30/1",
+      "sample_rate": null
+    },
+    {
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "width": null,
+      "height": null,
+      "duration": "27.744000",
+      "avg_frame_rate": "0/0",
+      "sample_rate": "48000"
+    }
+  ],
+  "frame_samples": [
+    0.7,
+    1.5,
+    8.801,
+    10.651,
+    12.551,
+    24.292
+  ],
+  "full_decode_passed": true,
+  "automatic_upload_approved": false
+}

@@ -1,0 +1,11 @@
+{
+  "deployment_attempted": true,
+  "deployment_command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+  "deployment_exit_code": 1,
+  "activation_confirmed": false,
+  "reason": "sudo requires password and interactive terminal",
+  "runtime_strategy_version": 2,
+  "runtime_compilation_fallback_version": null,
+  "active_job_was_not_interrupted": true,
+  "real_failed_long_reprocessed": false
+}

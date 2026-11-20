@@ -1,0 +1,15 @@
+{
+  "ending_reviews": [
+    {
+      "name": "source",
+      "start_seconds": 29.5,
+      "recognized_text": " itu RU Perambasan Aset ya, makanya wah mereka melihat mungkin, mungkin loh ya menurut saya"
+    },
+    {
+      "name": "output",
+      "start_seconds": 29.5,
+      "recognized_text": " itu, RUU perambasan aset ya, makanya wah mereka melihat mungkin, mungkin loh ya menurut saya"
+    }
+  ],
+  "qualifier_retained": true
+}

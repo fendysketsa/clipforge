@@ -4262,6 +4262,8 @@ def click_playlist_checkbox(page, playlist_name: str, timeout_ms: int = 8000) ->
 
 def search_playlist(page, playlist_name: str) -> bool:
     selectors = (
+        'ytcp-playlist-dialog ytcp-search-bar#search-input input#search-input',
+        'ytcp-playlist-dialog input#search-input',
         'ytcp-playlist-dialog input',
         'tp-yt-paper-dialog.ytcp-playlist-dialog input',
         'tp-yt-iron-dropdown input[placeholder*="playlist" i]',
@@ -4474,28 +4476,148 @@ def playlist_dialog_open(page, timeout_ms: int = 1500) -> bool:
     return False
 
 
+PLAYLIST_ROW_LABELS_JS = """
+() => {
+  const visible = e => {
+    if (!e || !e.getBoundingClientRect) return false;
+    const rect = e.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    const style = window.getComputedStyle(e);
+    return style && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+  };
+  const labels = [];
+  for (const dialog of document.querySelectorAll('ytcp-playlist-dialog')) {
+    const surface = dialog.querySelector('tp-yt-paper-dialog#dialog');
+    if (!visible(surface) || surface.getAttribute('aria-hidden') === 'true') continue;
+    const list = dialog.querySelector('#playlists-list');
+    if (!list) continue;
+    const rows = [...list.querySelectorAll('li.row, div.row, [role="listitem"], [role="option"]')]
+      .filter(visible);
+    for (const row of rows) {
+      const textNodes = [...row.querySelectorAll('.label-text')];
+      const nodes = textNodes.length ? textNodes : [...row.querySelectorAll('.checkbox-label')];
+      for (const node of nodes) {
+        const value = String(node.textContent || '').trim().toLowerCase();
+        if (value) labels.push(value);
+      }
+    }
+  }
+  return labels;
+}
+"""
+
+
+def playlist_list_labels(page) -> list[str]:
+    """Return the visible playlist row labels from the open Studio dialog."""
+    try:
+        result = page.evaluate(PLAYLIST_ROW_LABELS_JS)
+        return result if isinstance(result, list) else []
+    except Exception:
+        return []
+
+
 def playlist_search_state(page, playlist_name: str) -> str:
     """Distinguish an absent result from an unavailable/still-loading dialog."""
     return page.evaluate(
         """target => {
-          const visible = e => e && e.getBoundingClientRect().width > 0
-            && e.getBoundingClientRect().height > 0;
+          const visible = e => {
+            if (!e || !e.getBoundingClientRect) return false;
+            const rect = e.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return false;
+            const style = window.getComputedStyle(e);
+            return style && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+          };
           for (const dialog of document.querySelectorAll('ytcp-playlist-dialog')) {
             const surface = dialog.querySelector('tp-yt-paper-dialog#dialog');
             if (!visible(surface) || surface.getAttribute('aria-hidden') === 'true') continue;
             const search = dialog.querySelector('input#search-input');
             const list = dialog.querySelector('#playlists-list');
-            if (!search || search.value.trim().toLowerCase() !== target || !list) return 'unknown';
+            if (!search || !list) return 'unknown';
+            if (search.value.trim().toLowerCase() !== target) return 'unknown';
             if ([...dialog.querySelectorAll('[role="progressbar"], tp-yt-paper-spinner')]
                 .some(e => visible(e) && !e.hasAttribute('hidden'))) return 'unknown';
-            const labels = [...list.querySelectorAll('li.row .checkbox-label, li.row .label-text')]
-              .filter(visible).map(e => e.textContent.trim().toLowerCase());
+            const rows = [...list.querySelectorAll('li.row, div.row, [role="listitem"], [role="option"]')]
+              .filter(visible);
+            const labels = [];
+            for (const row of rows) {
+              const textNodes = [...row.querySelectorAll('.label-text')];
+              const nodes = textNodes.length ? textNodes : [...row.querySelectorAll('.checkbox-label')];
+              for (const node of nodes) {
+                const value = String(node.textContent || '').trim().toLowerCase();
+                if (value) labels.push(value);
+              }
+            }
             return labels.includes(target) ? 'exists' : 'missing';
           }
           return 'unknown';
         }""",
         playlist_name.strip().lower(),
     )
+
+
+def clear_playlist_search(page, timeout_ms: int = 5000) -> bool:
+    """Clear the playlist search field.
+
+    Studio disables the New playlist button whenever its search box contains
+    text, so creation must wait until the field is empty.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    while time.monotonic() < deadline:
+        try:
+            field = page.locator(
+                "ytcp-playlist-dialog ytcp-search-bar#search-input input#search-input, "
+                "ytcp-playlist-dialog input#search-input, "
+                "ytcp-playlist-dialog input"
+            ).first
+            if field.count() and field.is_visible(timeout=300):
+                if not (field.input_value(timeout=500) or "").strip():
+                    return True
+                field.click(timeout=1500)
+                page.keyboard.press("Control+A")
+                page.keyboard.press("Backspace")
+                time.sleep(0.3)
+                if not (field.input_value(timeout=500) or "").strip():
+                    log("Kolom pencarian playlist dikosongkan agar tombol Playlist baru aktif.")
+                    return True
+        except Exception:
+            pass
+        time.sleep(0.2)
+    return False
+
+
+def wait_for_new_playlist_button(page, timeout_ms: int = 8000) -> bool:
+    """Wait until Studio enables the New playlist button after search clears."""
+    deadline = time.monotonic() + timeout_ms / 1000
+    while time.monotonic() < deadline:
+        try:
+            state = page.evaluate(
+                """() => {
+                  const visible = e => {
+                    if (!e || !e.getBoundingClientRect) return false;
+                    const rect = e.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0;
+                  };
+                  for (const dialog of document.querySelectorAll('ytcp-playlist-dialog')) {
+                    const surface = dialog.querySelector('tp-yt-paper-dialog#dialog');
+                    if (!visible(surface) || surface.getAttribute('aria-hidden') === 'true') continue;
+                    const host = dialog.querySelector('.new-playlist-button');
+                    if (!host) continue;
+                    const button = host.querySelector?.('button') || host;
+                    const disabled =
+                      button?.disabled === true ||
+                      button?.getAttribute?.('aria-disabled') === 'true' ||
+                      host.getAttribute?.('aria-disabled') === 'true';
+                    return { found: true, ready: !disabled };
+                  }
+                  return { found: false, ready: false };
+                }"""
+            )
+            if isinstance(state, dict) and state.get("ready"):
+                return True
+        except Exception:
+            pass
+        time.sleep(0.2)
+    return False
 
 
 def create_missing_playlist(page, playlist_name: str) -> None:
@@ -4507,42 +4629,125 @@ def create_missing_playlist(page, playlist_name: str) -> None:
     """
     if not search_playlist(page, playlist_name):
         raise UploadError("Pencarian playlist belum tersedia; pembuatan playlist ditahan.")
-    for _ in range(3):
+    confirmed_missing = False
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline:
         state = playlist_search_state(page, playlist_name)
         if state == "exists":
             return
-        if state != "missing":
-            raise UploadError("Daftar playlist belum terverifikasi; pembuatan playlist ditahan.")
-        time.sleep(0.5)
+        if state == "missing":
+            confirmed_missing = True
+            break
+        time.sleep(0.4)
+    if not confirmed_missing:
+        raise UploadError("Daftar playlist belum terverifikasi; pembuatan playlist ditahan.")
+
+    # YouTube disables "New playlist" while the search box has text. Clear the
+    # query first; otherwise the click times out even though the button exists.
+    if not clear_playlist_search(page):
+        save_debug_artifacts(page, "playlist-search-clear-failed")
+        raise UploadError(
+            "Kolom pencarian playlist tidak dapat dikosongkan; pembuatan playlist ditahan."
+        )
+    time.sleep(0.4)
+    target = playlist_name.strip().casefold()
+    if target in playlist_list_labels(page):
+        log(f"Playlist sudah ada pada daftar penuh; pembuatan tidak diulang: {playlist_name}.")
+        return
+
     try:
-        page.locator('ytcp-playlist-dialog .new-playlist-button button').click(timeout=5000)
+        if not wait_for_new_playlist_button(page, timeout_ms=8000):
+            save_debug_artifacts(page, "playlist-new-button-disabled")
+            raise UploadError(
+                "Tombol Playlist baru masih nonaktif setelah kolom pencarian dikosongkan."
+            )
+        page.locator(
+            "ytcp-playlist-dialog .new-playlist-button button, "
+            "ytcp-playlist-dialog .new-playlist-button"
+        ).first.click(timeout=5000)
+
         # Current Studio opens a menu that also offers Podcast and Course.
         # Some variants open the creation form directly.
-        form = page.locator('ytcp-playlist-creation-dialog')
-        if not form.is_visible(timeout=500):
-            page.locator('ytcp-playlist-dialog #action-menu').get_by_role(
-                'menuitem', name=re.compile(r'^(Playlist baru|New playlist)$', re.I)
-            ).click(timeout=5000)
-        form.wait_for(state='visible', timeout=5000)
-        title = form.locator('#title-textarea [contenteditable="true"], #title-textarea textarea').first
+        form = page.locator("ytcp-playlist-creation-dialog").last
+        menu_item = page.locator(
+            'ytcp-playlist-dialog #action-menu tp-yt-paper-item[test-id="new_playlist"], '
+            'ytcp-playlist-dialog #action-menu [role="menuitem"]'
+        ).filter(has_text=re.compile(r"^(Playlist baru|New playlist)$", re.I)).first
+        menu_deadline = time.monotonic() + 6
+        while time.monotonic() < menu_deadline:
+            try:
+                if form.is_visible(timeout=300):
+                    break
+            except Exception:
+                pass
+            try:
+                if menu_item.count() and menu_item.is_visible(timeout=300):
+                    menu_item.click(timeout=3000)
+                    break
+            except Exception:
+                pass
+            time.sleep(0.2)
+        form.wait_for(state="visible", timeout=8000)
+
+        title = form.locator(
+            '#title-textarea [contenteditable="true"], #title-textarea textarea'
+        ).first
         title.fill(playlist_name, timeout=5000)
-        if title.inner_text(timeout=1000).strip() != playlist_name:
+        title_text = title.inner_text(timeout=1500).strip()
+        if title_text != playlist_name:
+            title.click(timeout=1500)
+            page.keyboard.press("Control+A")
+            page.keyboard.press("Backspace")
+            page.keyboard.type(
+                playlist_name,
+                delay=max(0, int(os.environ.get("YOUTUBE_TYPE_DELAY_MS", "6"))),
+            )
+            title_text = title.inner_text(timeout=1500).strip()
+        if title_text != playlist_name:
             raise UploadError("Judul playlist baru belum sesuai niche.")
+
+        submit = form.locator("#create-button button, #create-button").first
+        submit_deadline = time.monotonic() + 5000
+        while time.monotonic() < submit_deadline:
+            try:
+                if submit.is_visible(timeout=300):
+                    disabled = submit.is_disabled(timeout=300) or (
+                        (submit.get_attribute("aria-disabled") or "").strip().lower() == "true"
+                    )
+                    if not disabled:
+                        break
+            except Exception:
+                pass
+            time.sleep(0.2)
+        else:
+            raise UploadError("Tombol Buat playlist belum aktif setelah judul diisi.")
         # One submission only; disappearance of the form alone is not proof.
-        form.locator('#create-button button').click(timeout=5000)
-        form.wait_for(state='hidden', timeout=20000)
+        submit.click(timeout=5000)
+        form.wait_for(state="hidden", timeout=20000)
+
         if not playlist_dialog_open(page, timeout_ms=1000):
             if not open_playlist_dropdown(page, timeout_ms=5000):
                 raise UploadError("Daftar playlist tidak terbuka setelah pembuatan.")
         search_playlist(page, playlist_name)
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
-            if playlist_search_state(page, playlist_name) == 'exists':
+            if playlist_search_state(page, playlist_name) == "exists":
                 log(f"PLAYLIST_CREATED_CONFIRMED: {playlist_name}")
                 return
             time.sleep(0.4)
+        # The new row can lag behind the search index. Check the unfiltered
+        # list as well before reporting failure.
+        clear_playlist_search(page)
+        time.sleep(0.4)
+        if target in playlist_list_labels(page):
+            log(f"PLAYLIST_CREATED_CONFIRMED: {playlist_name}")
+            return
+        save_debug_artifacts(page, "playlist-creation-not-visible")
         raise UploadError("Playlist baru belum muncul pada hasil pencarian.")
+    except UploadError:
+        raise
     except Exception as exc:
+        save_debug_artifacts(page, "playlist-creation-failed")
         raise UploadError(
             f"Pembuatan playlist '{playlist_name}' belum terkonfirmasi: {exc}. "
             "Tombol Buat tidak diulang agar tidak membuat duplikat."

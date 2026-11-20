@@ -1,0 +1,30 @@
+{
+  "media_sha256": "a69529e8ae823e7dc48650275992f059bf6b75dbe2d9724faf9e270a3db91c65",
+  "duration_seconds": 36.502,
+  "streams": [
+    {
+      "codec_type": "video",
+      "codec_name": "h264",
+      "width": 1080,
+      "height": 1920,
+      "duration": "36.500000",
+      "avg_frame_rate": "30/1",
+      "sample_rate": null
+    },
+    {
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "width": null,
+      "height": null,
+      "duration": "36.502000",
+      "avg_frame_rate": "0/0",
+      "sample_rate": "48000"
+    }
+  ],
+  "volumes": {
+    "mean_volume": -19.3,
+    "max_volume": -1.9
+  },
+  "full_decode_verified": true,
+  "review_only": true
+}

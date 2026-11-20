@@ -1,0 +1,79 @@
+{
+  "checked_at": "2026-11-15T09:08:47.744000+00:00",
+  "health": {
+    "status": "ok"
+  },
+  "capabilities": {
+    "autopilot_version": 1,
+    "creative_policy_version": null,
+    "bonus_priority_version": null
+  },
+  "scheduler": {
+    "scheduler_running": true,
+    "heartbeat": "2026-11-15T09:08:18.577052+00:00",
+    "runtime_state": "waiting",
+    "message": "Menunggu jadwal berikutnya atau hasil proses yang sedang berjalan.",
+    "confirmed_posts": 1,
+    "confirmed_stories": 0
+  },
+  "active_run": {},
+  "monetization": {
+    "checked_at": "2026-11-15T07:48:42.397241+00:00",
+    "account_verified": true,
+    "program": {
+      "state": "active",
+      "evidence": "Profil Anda menghasilkan uang"
+    },
+    "policy": {
+      "state": "clear"
+    },
+    "earnings": {
+      "estimated_usd": 0.0,
+      "period": "November",
+      "qualified_views": 0,
+      "rate_usd_per_1000": 0.0,
+      "non_qualified_reasons": [
+        {
+          "label": "Durasi tayangan terlalu singkat",
+          "percent": 98.0
+        },
+        {
+          "label": "Durasi konten kurang dari 10 detik",
+          "percent": 1.0
+        }
+      ]
+    },
+    "bonus": {
+      "amount_usd": 1.0,
+      "required_reels": 3,
+      "minimum_duration_seconds": 10,
+      "minimum_qualified_views": 10,
+      "minimum_reels_with_qualified_views": 1,
+      "completed_reels": 1,
+      "days_remaining_at_check": 5,
+      "period_label": "12 Nov - 19 Nov",
+      "awarded": false
+    }
+  },
+  "uploads": [
+    {
+      "id": "d27a9dd3518b4f01a3a9cec3a41f3ac9",
+      "status": "completed",
+      "upload_confirmed": true,
+      "video_url": "https://www.facebook.com/reel/1844917023309992/",
+      "submission_started": true
+    }
+  ],
+  "active_jobs": [
+    {
+      "id": "d5ff0ced61a449ce84a6ecac44e50dc3",
+      "status": "running"
+    }
+  ],
+  "deployment": {
+    "command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+    "attempt_exit_code": 1,
+    "activated": false,
+    "blocking_reason": "sudo requires a password; terminal/password unavailable to this process"
+  }
+}

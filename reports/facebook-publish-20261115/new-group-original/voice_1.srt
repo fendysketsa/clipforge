@@ -1,0 +1,8 @@
+1
+00:00:00,100 --> 00:00:04,431
+Ini simulasi: satu catatan dan dua foto ada di Dokumen.
+
+2
+00:00:04,381 --> 00:00:07,100
+Folder Foto kegiatan masih kosong.
+

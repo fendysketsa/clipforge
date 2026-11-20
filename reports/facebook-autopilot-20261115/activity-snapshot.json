@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "account_verified": true,
+  "checked_at": "2026-11-15T04:57:59.354716+00:00",
+  "period_label": "15 Nov - 21 Nov",
+  "percent": 13,
+  "tasks": [
+    {
+      "key": "public_posts",
+      "label": "Postingan publik",
+      "completed": 0,
+      "target": 7
+    },
+    {
+      "key": "reels",
+      "label": "Reel publik",
+      "completed": 0,
+      "target": 2
+    },
+    {
+      "key": "followers",
+      "label": "Pengikut baru",
+      "completed": 0,
+      "target": 10
+    },
+    {
+      "key": "views",
+      "label": "Tayangan",
+      "completed": 120,
+      "target": 900
+    }
+  ],
+  "stories": null,
+  "source": "facebook_live",
+  "href": "https://www.facebook.com/professional_dashboard/status/",
+  "note": "Facebook menentukan progres tugas. Unggahan lokal tidak dihitung sebagai kredit tugas atau bonus."
+}

@@ -1,0 +1,98 @@
+{
+  "state": "approved_by_user_request_and_verified",
+  "started_at": "2026-11-15T09:19:51.847214+00:00",
+  "upload_id": "d27a9dd3518b4f01a3a9cec3a41f3ac9",
+  "job_id": "d3c240acaab44c53b518732a21a2a61b",
+  "title": "Mengganti nama bukan mengubah format",
+  "video_url": "https://www.facebook.com/reel/1844917023309992/",
+  "files": [
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/facebook_original.auto-qc.json",
+      "bytes": 1527,
+      "sha256": "514a37ac581185b442bb62a685feacdd1e36b208df114548a8ef773fff6d6618"
+    },
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/facebook_original.json",
+      "bytes": 4335,
+      "sha256": "aa1ad07c0e43bcef9f352fc85341b281f955bec30d0c24ebf591d57c03bdc42b"
+    },
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/facebook_original.mp4",
+      "bytes": 730752,
+      "sha256": "67d9ed15193897e6fb37bb04ae77b64321a2995a6203cc39ae4663f5641c965b"
+    },
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/facebook_original.srt",
+      "bytes": 971,
+      "sha256": "36e3744c285aa43a51f09043b72a494362e9e38f7eabed4b1f2591f8a42932cc"
+    },
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/facebook_original_thumb.jpg",
+      "bytes": 62856,
+      "sha256": "853e9789cb8485a9817d46a5e5ac5c714289eb0bce520003299d9b30ca3e20c2"
+    },
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/narration.wav",
+      "bytes": 2778702,
+      "sha256": "ed991e77a202e8b0c780df00fd6c0f8c31e42379a2d39c5028ffe5b907053063"
+    },
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/render.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/source-plan.json",
+      "bytes": 2072,
+      "sha256": "f9412df8815afa5c0cdd71da27f7db4747bcf6a688cc4eb0ace20725e8d323d6"
+    },
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/voice_0.mp3",
+      "bytes": 25632,
+      "sha256": "604e5d920c9db256ec27556aa239bb00032018cf69b8ae817e77f3159497ac26"
+    },
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/voice_0.srt",
+      "bytes": 106,
+      "sha256": "1eeab046a8781e4243cf12f6909b9d1a5ca050308f1dd0b97d6fc695d2486f96"
+    },
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/voice_1.mp3",
+      "bytes": 46368,
+      "sha256": "a7dc5664904b60d7a09e2a5aae9625743da77be9044d9dd1765a1730df3f7e72"
+    },
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/voice_1.srt",
+      "bytes": 163,
+      "sha256": "97f4becdac1c025e0addf510668d9b9ad067d948dc4b2e21decaae4aa17402e8"
+    },
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/voice_2.mp3",
+      "bytes": 58032,
+      "sha256": "b4b38f78dcc90a4377144894d604c5ba9d81378203ae113349d78dabc3dabdc8"
+    },
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/voice_2.srt",
+      "bytes": 172,
+      "sha256": "9fdea5d3d058d584cb0cc75b028111aca80e09db0f5c0465f9288c5e24c40d28"
+    },
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/voice_3.mp3",
+      "bytes": 43632,
+      "sha256": "e0dfaa0e4846d83ec75928aab4dee87ade574dc3f488c743f682d10a6e25c846"
+    },
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/voice_3.srt",
+      "bytes": 162,
+      "sha256": "4253346872aa694910cdec55d063355d47f490d0727c6877e3c644d03d9e0a0c"
+    },
+    {
+      "path": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/voices.txt",
+      "bytes": 76,
+      "sha256": "c6c1bcc2f432b98876f65214b0c377654a572555004144169c6f448ab9f2b560"
+    }
+  ],
+  "expected_bytes": 3755558,
+  "remote_verified": true,
+  "foreign_dependencies": 0
+}

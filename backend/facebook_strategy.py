@@ -22,8 +22,9 @@ NICHES = {
         'hashtags': ['TipsHP', 'TeknologiSehariHari'],
     },
     'digital_simple': {
-        'label': 'Kebiasaan digital yang memudahkan hidup',
-        'brief': 'Tunjukkan langkah sederhana mengatur file, foto, pesan, dan pekerjaan digital. '
+        'label': 'Digital sehari-hari untuk keluarga',
+        'brief': 'Satu persoalan file atau foto, demonstrasi asli yang terlihat, lalu hasil dan batasannya. '
+                 'Variasikan beres-beres penyimpanan, langkah praktis, dan kekeliruan digital. '
                  'Jangan memotong peringatan atau membuat hasil yang tidak terlihat di rekaman.',
         'queries': ['tips mengatur file foto HP tutorial Indonesia',
                     'tips produktivitas digital sederhana Indonesia'],

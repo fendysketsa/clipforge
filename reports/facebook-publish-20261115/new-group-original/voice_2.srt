@@ -1,0 +1,12 @@
+1
+00:00:00,100 --> 00:00:03,921
+Pilih kedua foto, lalu pindahkan ke Foto kegiatan.
+
+2
+00:00:03,871 --> 00:00:06,141
+Perhatikan pergerakannya.
+
+3
+00:00:06,141 --> 00:00:10,558
+Catatan tetap di Dokumen; kedua foto sekarang ada di folder tujuan.
+

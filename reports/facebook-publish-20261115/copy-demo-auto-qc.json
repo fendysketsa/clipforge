@@ -1,0 +1,34 @@
+{
+  "provider_http_status": 422,
+  "provider_error": "Provider returned error {\"error\": {\"message\": \"input rejected by content safety screening\"}}",
+  "status": "reviewed",
+  "audit": {
+    "schema_version": 1,
+    "source_job_id": "bde81c95c3d0422d9d7ce35dfe676109",
+    "source_clip_url": "/outputs/facebook_autopilot/bde81c95c3d0422d9d7ce35dfe676109/facebook_original.mp4",
+    "repair_attempted": false,
+    "decision": "DROP_SOURCE",
+    "confidence": 1.0,
+    "hard_gates": {
+      "rights": true,
+      "media_integrity": true,
+      "meaning_preserved": true,
+      "context_safe": false
+    },
+    "ai_checks": {
+      "hook": null,
+      "standalone_clarity": null,
+      "payoff": null,
+      "caption": null,
+      "crop": null,
+      "visual_quality": null,
+      "audio_quality": null
+    },
+    "evidence": [
+      "QC provider declined this source during content safety screening; no retry or publication."
+    ],
+    "repair_instructions": [],
+    "delete_source": true,
+    "upload_allowed": false
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "enabled_for_normal_backend_startup": true,
+  "active_runtime": false,
+  "running_config_http": 404,
+  "upload_ledger_preserved": true,
+  "session_binding_preserved": true,
+  "prior_operator_settings_preserved": true,
+  "no_publication_attempted": true
+}

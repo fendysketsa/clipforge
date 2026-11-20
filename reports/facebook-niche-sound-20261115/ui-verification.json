@@ -1,0 +1,40 @@
+{
+  "preview_only": true,
+  "live_status_used_as_fixture": true,
+  "api_mutations_mocked": true,
+  "viewports": [
+    {
+      "width": 1440,
+      "body": 1440,
+      "bonus": "886px 210px",
+      "overview": "614.938px 559.062px",
+      "buttonHeight": 37
+    },
+    {
+      "width": 1280,
+      "body": 1280,
+      "bonus": "726px 210px",
+      "overview": "531.141px 482.859px",
+      "buttonHeight": 37
+    },
+    {
+      "width": 390,
+      "body": 390,
+      "bonus": "318px",
+      "overview": "352px",
+      "buttonHeight": 37
+    },
+    {
+      "width": 320,
+      "body": 320,
+      "bonus": "258px",
+      "overview": "292px",
+      "buttonHeight": 37
+    }
+  ],
+  "page_errors": [],
+  "pause_resume_checked": true,
+  "automatic_result_has_no_manual_review_requirement": true,
+  "bonus_progress_native": 1,
+  "build_id": "ZRn6YMIKJRAWszTD0Rm_a"
+}

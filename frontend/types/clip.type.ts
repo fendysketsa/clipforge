@@ -19,6 +19,8 @@ export type ClipFile = {
   name: string;
   url: string;
   size_bytes: number;
+  long_format?: "story" | "compilation" | null;
+  long_fallback_reasons?: string[];
   title?: string | null;
   thumbnail_url?: string | null;
   thumbnail_variants?: string[];
@@ -266,6 +268,7 @@ export type ClipJob = {
   request: {
     target_platform?: "standard" | "facebook";
     facebook_niche?: "tech_daily" | "digital_simple";
+    facebook_autopilot_key?: string;
     publication_review_required?: boolean;
     url: string;
     source_file: string;

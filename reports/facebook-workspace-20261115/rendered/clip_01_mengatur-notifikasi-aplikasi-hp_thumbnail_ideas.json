@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "schema": "clipforge-thumbnail-ideas-v2",
+  "policy_version": 1,
+  "source_clip": "clip_01_mengatur-notifikasi-aplikasi-hp.mp4",
+  "format": "shorts_9_16",
+  "status": "READY_FOR_DESIGN",
+  "winner": "A",
+  "selection_reason": "Highest editorial design score from actual clip frames and verbatim speech; not a CTR prediction.",
+  "needs_frame_review": false,
+  "variants": [
+    {
+      "id": "A",
+      "angle": "human_tension",
+      "eyebrow": "",
+      "headline": "BUKA PENGATURAN HP LALU PILIH",
+      "support": "",
+      "keyframe_direction": {
+        "timestamp_seconds": 1.2,
+        "source_timestamp_seconds": 1.2,
+        "observed_faces": 0
+      },
+      "composition": {
+        "font_size": 78,
+        "headline_lines": [
+          "BUKA PENGATURAN",
+          "HP LALU PILIH"
+        ],
+        "headline_zone": [
+          78,
+          1300,
+          960,
+          1500
+        ],
+        "subject_crop": "real_scene"
+      },
+      "palette": [
+        "#111111",
+        "#FFFFFF",
+        "#FFCF32"
+      ],
+      "image_prompt": "Use the real 9:16 cover source frame at 1.2s. Preserve the subject identity and actual expression. Add only the exact copy 'BUKA PENGATURAN HP LALU PILIH'; keep eyes clear and headline in the central UI-safe zone.",
+      "negative_prompt": "No invented expressions, people, events, claims, fake quotes, fake evidence, copied branding or extra badges.",
+      "evidence": [
+        "Buka pengaturan HP lalu pilih menu notifikasi."
+      ],
+      "filename": "clip_01_mengatur-notifikasi-aplikasi-hp_thumb.jpg",
+      "score": 71,
+      "score_breakdown": {
+        "readability": 25,
+        "truthful_curiosity": 10,
+        "subject_hierarchy": 13,
+        "emotional_specificity": 5,
+        "cinematic_craft": 8,
+        "brand_distinction": 5,
+        "production_feasibility": 5
+      }
+    },
+    {
+      "id": "B",
+      "angle": "source_context",
+      "eyebrow": "",
+      "headline": "PILIH APLIKASI YANG INGIN ANDA",
+      "support": "",
+      "keyframe_direction": {
+        "timestamp_seconds": 1.2,
+        "source_timestamp_seconds": 1.2,
+        "observed_faces": 0
+      },
+      "composition": {
+        "font_size": 84,
+        "headline_lines": [
+          "PILIH APLIKASI",
+          "YANG INGIN ANDA"
+        ],
+        "headline_zone": [
+          78,
+          1240,
+          960,
+          1452
+        ],
+        "subject_crop": "real_scene"
+      },
+      "palette": [
+        "#111111",
+        "#FFFFFF",
+        "#4BE4D4"
+      ],
+      "image_prompt": "Use the real 9:16 cover source frame at 1.2s. Preserve the subject identity and actual expression. Add only the exact copy 'PILIH APLIKASI YANG INGIN ANDA'; keep eyes clear and headline in the central UI-safe zone.",
+      "negative_prompt": "No invented expressions, people, events, claims, fake quotes, fake evidence, copied branding or extra badges.",
+      "evidence": [
+        "Pilih aplikasi yang ingin Anda atur notifikasinya."
+      ],
+      "filename": "clip_01_mengatur-notifikasi-aplikasi-hp_thumb_b.jpg",
+      "score": 71,
+      "score_breakdown": {
+        "readability": 25,
+        "truthful_curiosity": 10,
+        "subject_hierarchy": 13,
+        "emotional_specificity": 5,
+        "cinematic_craft": 8,
+        "brand_distinction": 5,
+        "production_feasibility": 5
+      }
+    },
+    {
+      "id": "C",
+      "angle": "cinematic_story",
+      "eyebrow": "",
+      "headline": "NAMA MENU DAPAT BERBEDA SESUAI",
+      "support": "",
+      "keyframe_direction": {
+        "timestamp_seconds": 1.2,
+        "source_timestamp_seconds": 1.2,
+        "observed_faces": 0
+      },
+      "composition": {
+        "font_size": 78,
+        "headline_lines": [
+          "NAMA MENU DAPAT",
+          "BERBEDA SESUAI"
+        ],
+        "headline_zone": [
+          78,
+          1260,
+          960,
+          1460
+        ],
+        "subject_crop": "real_scene"
+      },
+      "palette": [
+        "#111111",
+        "#FFFFFF",
+        "#FF8E48"
+      ],
+      "image_prompt": "Use the real 9:16 cover source frame at 1.2s. Preserve the subject identity and actual expression. Add only the exact copy 'NAMA MENU DAPAT BERBEDA SESUAI'; keep eyes clear and headline in the central UI-safe zone.",
+      "negative_prompt": "No invented expressions, people, events, claims, fake quotes, fake evidence, copied branding or extra badges.",
+      "evidence": [
+        "Nama menu dapat berbeda sesuai merek dan versi HP."
+      ],
+      "filename": "clip_01_mengatur-notifikasi-aplikasi-hp_thumb_c.jpg",
+      "score": 71,
+      "score_breakdown": {
+        "readability": 25,
+        "truthful_curiosity": 10,
+        "subject_hierarchy": 13,
+        "emotional_specificity": 5,
+        "cinematic_craft": 8,
+        "brand_distinction": 5,
+        "production_feasibility": 5
+      }
+    }
+  ],
+  "keyframe_source": "original_source_before_overlays",
+  "source_video_sha256": "8c2932daaf4fe58d85ca6a262bc2828a97fb65095faf453b746e1f3cd9474e14",
+  "shorts_custom_thumbnail_guaranteed": false
+}

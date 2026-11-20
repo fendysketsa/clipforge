@@ -1,0 +1,39 @@
+{
+  "status": "reviewed",
+  "fingerprint": "e50310108ac6588c64a7d93e5566a3177a482c2779d4b2b0f069d86c1af9e932",
+  "media_sha256": "9e24ce7bc43bbb60b8ef9b60057bced0fcaa9b662760fedfb9b29aa3b0eee2d2",
+  "audit": {
+    "schema_version": 1,
+    "source_job_id": "fb-demo-20261115",
+    "source_clip_url": "/outputs/fb-demo-20261115/facebook_original.mp4",
+    "repair_attempted": false,
+    "decision": "PASS_UPLOAD",
+    "confidence": 0.95,
+    "hard_gates": {
+      "rights": true,
+      "media_integrity": true,
+      "meaning_preserved": true,
+      "context_safe": true
+    },
+    "ai_checks": {
+      "hook": true,
+      "standalone_clarity": true,
+      "payoff": true,
+      "caption": true,
+      "crop": true,
+      "visual_quality": true,
+      "audio_quality": true
+    },
+    "evidence": [
+      "Full media decode and generated source identity verified.",
+      "0.0-4.344s: Hook 'Ruang file terasa penuh? Periksa ukurannya dulu.' with title card visible.",
+      "4.344-12.192s: File list shown with sizes 2 MB, 120 MB, 48 MB matching narration.",
+      "12.192-19.848s: Animation sorts files to 120 MB, 48 MB, 2 MB order demonstrating the operation.",
+      "19.848-27.144s: Ending text 'Mengurutkan belum menghapus apa pun...' with final sorted list visible.",
+      "0-27.144s: Whisper audio review overlap F1 scores 0.667-0.923 confirm audio-caption sync and intelligibility."
+    ],
+    "repair_instructions": [],
+    "delete_source": false,
+    "upload_allowed": true
+  }
+}

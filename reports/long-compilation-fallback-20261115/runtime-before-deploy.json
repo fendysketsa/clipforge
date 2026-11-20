@@ -1,0 +1,155 @@
+{
+  "jobs": {
+    "count": 2,
+    "active": [
+      {
+        "id": "c73c2f67732546da80bcbeca70f77fbb",
+        "status": "running",
+        "progress": null
+      }
+    ]
+  },
+  "strategy": {
+    "version": 2,
+    "scope": "new_cron_long_jobs",
+    "target_views": 1000,
+    "minimum_source_views": 1000,
+    "minimum_source_seconds": 300,
+    "minimum_output_seconds": 180,
+    "minimum_new_material_fraction": 0.6,
+    "semantic_story_review_required": true,
+    "future_views_guaranteed": false,
+    "editorial_brief": "Konsep khusus Long: satu pertanyaan atau perjalanan tokoh dengan konteks, perkembangan, bukti/konsekuensi, dan jawaban tuntas. Penonton harus mendapat informasi baru sepanjang video. Dalam 30 detik awal jelaskan masalah dan alasan mengikuti cerita; teaser singkat tidak boleh membocorkan seluruh jawaban. Pertahankan hubungan sebab-akibat dan akhir sumber. Short hanya satu momen; Long harus memberi penjelasan dan perkembangan yang belum ada di Short. Pilih durasi sesuai bahan, buang pengulangan, salam panjang, dan filler; jangan memanjangkan Short demi lima menit. Judul dan thumbnail harus cocok dengan isi pembuka dan jawaban. Untuk game/fiksi ikuti tujuan, pilihan, akibat dan penyelesaian tokoh; untuk pengetahuan ikuti pertanyaan, penjelasan, contoh/bukti dan simpulan. Caption stabil, visual mengikuti kejadian. Misteri boleh berakhir dengan batas pengetahuan yang jelas; jangan mengarang penyelesaian. Legenda diberi atribusi sebagai cerita rakyat. Politik membedakan fakta, opini dan tuduhan serta memerlukan review manusia. Review makanan membedakan pengalaman rasa dengan fakta bahan/gizi; jangan menjanjikan manfaat medis atau mengarang harga dan angka nutrisi. Target eksperimen 1000+ views, bukan jaminan. Ukur CTR, retensi 30 detik, durasi tonton rata-rata dan bagian penonton keluar setelah publikasi; bandingkan hanya Long bertopik dan usia setara.",
+    "themes": [
+      {
+        "key": "legend_folklore",
+        "label": "Legenda, Cerita Rakyat & Asal-Usul Nusantara",
+        "manual_review_required": false
+      },
+      {
+        "key": "domestic_politics",
+        "label": "Politik Dalam Negeri, Kronologi & Dampak Kebijakan",
+        "manual_review_required": true
+      },
+      {
+        "key": "food_healthy_review",
+        "label": "Review Makanan Sehat & Pilihan Menu",
+        "manual_review_required": false
+      },
+      {
+        "key": "food_taste_review",
+        "label": "Review Makanan Enak & Cerita Kuliner",
+        "manual_review_required": false
+      },
+      {
+        "key": "chinese_drama_story",
+        "label": "Drama China: Pilihan, Keluarga & Plot Twist",
+        "manual_review_required": false
+      },
+      {
+        "key": "korean_drama_story",
+        "label": "Drama Korea: Hubungan, Konsekuensi & Pelajaran Hidup",
+        "manual_review_required": false
+      },
+      {
+        "key": "love_betrayal",
+        "label": "Cinta, Pengkhianatan & Sakit Hati",
+        "manual_review_required": false
+      },
+      {
+        "key": "family_conflict",
+        "label": "Konflik Keluarga & Rumah Tangga",
+        "manual_review_required": false
+      },
+      {
+        "key": "friendship_twist",
+        "label": "Persahabatan, Kepercayaan & Plot Twist",
+        "manual_review_required": false
+      },
+      {
+        "key": "life_comeback",
+        "label": "Jatuh, Bangkit & Pelajaran Hidup",
+        "manual_review_required": false
+      },
+      {
+        "key": "mystery_story",
+        "label": "Misteri & Kisah Tak Terduga",
+        "manual_review_required": false
+      },
+      {
+        "key": "humor_interlude",
+        "label": "Jeda Humor Kehidupan",
+        "manual_review_required": false
+      },
+      {
+        "key": "gaming_story",
+        "label": "Game, Mabar & Cerita Pemain",
+        "manual_review_required": false
+      },
+      {
+        "key": "famous_game_reaction",
+        "label": "Reaction Game Populer, Gagal Lucu & Comeback",
+        "manual_review_required": false
+      },
+      {
+        "key": "quirky_animation",
+        "label": "Kartun Nyeleneh, Animasi Absurd & Plot Twist",
+        "manual_review_required": false
+      },
+      {
+        "key": "reaction_clip_story",
+        "label": "Clip Lucu, Reaction Natural & Cerita Singkat",
+        "manual_review_required": false
+      },
+      {
+        "key": "islamic_animation_kids",
+        "label": "Animasi Islami Anak & Keluarga",
+        "manual_review_required": false
+      },
+      {
+        "key": "islamic_animation_general",
+        "label": "Animasi Kisah Islami Umum & Dewasa",
+        "manual_review_required": false
+      },
+      {
+        "key": "podcast_conversation",
+        "label": "Podcast, Wawancara & Cerita Narasumber",
+        "manual_review_required": false
+      },
+      {
+        "key": "football_story",
+        "label": "Bola, Rivalitas & Cerita Pertandingan",
+        "manual_review_required": false
+      },
+      {
+        "key": "history_geography_nusantara",
+        "label": "Sejarah, Geografi & Budaya Nusantara",
+        "manual_review_required": false
+      },
+      {
+        "key": "faith_life",
+        "label": "Iman, Hijrah & Ujian Hidup",
+        "manual_review_required": false
+      },
+      {
+        "key": "lecture_wisdom",
+        "label": "Ceramah, Kajian & Tanya Jawab Kehidupan",
+        "manual_review_required": false
+      }
+    ]
+  },
+  "youtube": {
+    "count": 678,
+    "active": [
+      {
+        "id": "cd3b0f7a432e4c0fadfce173b4648175",
+        "status": "queued",
+        "progress": null
+      }
+    ]
+  },
+  "tiktok": {
+    "count": 70,
+    "active": []
+  }
+}

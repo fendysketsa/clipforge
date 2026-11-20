@@ -1,0 +1,7 @@
+{
+  "complete": false,
+  "usable_for_revision": false,
+  "reason": "Recovered high-resolution stream ended early; discarded instead of replacing the complete low-resolution source.",
+  "container_duration_seconds": 26.353,
+  "expected_complete_seconds": 36.521
+}

@@ -12,6 +12,9 @@ import { tiktokAutomaticRetryLabel, tiktokUploadForClip } from "../../lib/tiktok
 
 function jobFormat(job: ClipJob) {
   if (job.request.clip_mode === "highlight_5m") {
+    if (job.clips.some(clip => clip.long_format === "compilation")) {
+      return { aspect: "16:9", kind: "long", label: "KOMPILASI", title: "Kompilasi Momen" } as const;
+    }
     return { aspect: "16:9", kind: "long", label: "LONG", title: "Long Highlight" } as const;
   }
   if (job.request.clip_mode === "long_animate") {

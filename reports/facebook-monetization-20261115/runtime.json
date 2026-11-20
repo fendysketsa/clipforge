@@ -1,0 +1,12 @@
+{
+  "health": {
+    "http_status": 200
+  },
+  "facebook_config": {
+    "http_status": 404
+  },
+  "monetization": {
+    "http_status": 404
+  },
+  "deployment": "blocked_sudo_password_required"
+}

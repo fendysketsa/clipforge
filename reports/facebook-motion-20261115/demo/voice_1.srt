@@ -1,0 +1,8 @@
+1
+00:00:00,100 --> 00:00:02,975
+Contoh ini punya satu catatan di Asal.
+
+2
+00:00:02,925 --> 00:00:05,025
+Cadangan masih kosong.
+

@@ -1,0 +1,16 @@
+{
+  "full_worker_pipeline": true,
+  "job_status": "completed",
+  "run_status": "ready",
+  "queue_callback": [
+    {
+      "job_id": "fb-original-verification",
+      "clip_url": "/outputs/facebook_autopilot/fb-original-verification/facebook_original.mp4",
+      "kind": "reel",
+      "publication_attempted": false
+    }
+  ],
+  "publication_attempted": false,
+  "manual_review_claimed": false,
+  "message": "Only verification callback; no Facebook post."
+}

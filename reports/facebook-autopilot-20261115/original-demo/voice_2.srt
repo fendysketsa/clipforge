@@ -1,0 +1,8 @@
+1
+00:00:00,100 --> 00:00:02,757
+Urutkan ukuran dari besar ke kecil.
+
+2
+00:00:02,707 --> 00:00:07,597
+Video terbesar naik ke atas, sehingga mudah diperiksa sebelum memutuskan tindakan.
+

@@ -1,0 +1,142 @@
+{
+  "checked_at": "2026-11-15T14:23:07.285227+00:00",
+  "models": [
+    {
+      "id": "inclusionai/ling-3.2-flash:free",
+      "context_length": 1048576,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      }
+    },
+    {
+      "id": "thinkingmachines/inkling-2-small:free",
+      "context_length": 1048576,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      }
+    },
+    {
+      "id": "particle-ai/particle-1:free",
+      "context_length": 1048576,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      }
+    },
+    {
+      "id": "nvidia/nemotron-3.5-super-vl:free",
+      "context_length": 1000000,
+      "modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      }
+    },
+    {
+      "id": "dots-studio/dots-3-note-preview:free",
+      "context_length": 512000,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      }
+    },
+    {
+      "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+      "context_length": 256000,
+      "modalities": [
+        "text",
+        "audio",
+        "image",
+        "video"
+      ],
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      }
+    },
+    {
+      "id": "google/gemma-4-26b-a4b-it:free",
+      "context_length": 262144,
+      "modalities": [
+        "image",
+        "text",
+        "video"
+      ],
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      }
+    },
+    {
+      "id": "google/gemma-4-31b-it:free",
+      "context_length": 262144,
+      "modalities": [
+        "image",
+        "text",
+        "video"
+      ],
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      }
+    },
+    {
+      "id": "google/lyria-3-pro-preview",
+      "context_length": 1048576,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      }
+    },
+    {
+      "id": "google/lyria-3-clip-preview",
+      "context_length": 1048576,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      }
+    },
+    {
+      "id": "openrouter/free",
+      "context_length": 200000,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      }
+    }
+  ]
+}

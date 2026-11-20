@@ -1,0 +1,27 @@
+{
+  "source_url": "https://www.youtube.com/watch?v=Mw_cS6UmG8o",
+  "video_id": "Mw_cS6UmG8o",
+  "title": "Film Animasi, Matahari, Bumi dan Bulan | Animasi 2D",
+  "author": "Andicha Channel",
+  "channel_id": "UCarXHzYmej-OAuCW85l4GlA",
+  "reported_duration_seconds": 322,
+  "publish_timestamp": "2017-04-12T20:57:45-07:00",
+  "playability": "OK",
+  "caption_tracks": [
+    {
+      "languageCode": "id",
+      "name": {
+        "simpleText": "Indonesia (dibuat otomatis)"
+      },
+      "kind": "asr"
+    },
+    {
+      "languageCode": "en-US",
+      "name": {
+        "simpleText": "Inggris (Amerika Serikat) (dibuat otomatis)"
+      },
+      "kind": "asr"
+    }
+  ],
+  "scope": "reference_analysis_only"
+}

@@ -42,6 +42,7 @@ def test_worker_profile_is_isolated_and_disables_third_party_audio(monkeypatch):
     assert 'CLIPFORGE_FACEBOOK_NICHE' not in normal
     assert facebook['CLIPFORGE_FACEBOOK_NICHE']=='tech_daily'
     assert facebook['SHORTS_ALLOW_THIRD_PARTY_MUSIC']=='false'
+    assert facebook['QURAN_OUTRO_ENABLED']=='false'
     assert api.os.environ['CLIPFORGE_FACEBOOK_NICHE']=='digital_simple'
 
 
@@ -184,6 +185,28 @@ def test_upload_cannot_start_from_saved_cookie_presence(client,rendered):
     assert result.status_code==409 and 'sesi' in result.json()['detail']
 
 
+def test_cleanup_outage_never_demotes_a_confirmed_upload(client,rendered,monkeypatch):
+    job,clip,_,_=rendered
+    queued=[]
+    monkeypatch.setattr(facebook_api,'start_background',lambda target,*args:queued.append((target,args)))
+    monkeypatch.setattr(api,'social_upload_turn',lambda:nullcontext())
+    monkeypatch.setattr(api,'social_upload_cooldown_remaining',lambda:0)
+    ledger=api.JOBS_PATH.parent/'facebook_workspace.json'
+    ledger.write_text(json.dumps({'schema':1,'uploads':{},'session':{
+        'account_verified':True,'verified_profile_id':'1234','checked_at':datetime.now(timezone.utc).isoformat()}}))
+    response=client.post('/api/facebook/uploads',json={'job_id':job.id,'clip_url':clip.url})
+    assert response.status_code==200
+    def publish(path,caption,profile_id,checkpoint):
+        checkpoint(submission_started=True)
+        return dict(status='completed',upload_confirmed=True,video_url='https://www.facebook.com/reel/12345/',message='Confirmed')
+    monkeypatch.setattr(facebook_browser,'upload',publish)
+    monkeypatch.setattr(facebook_api.facebook_cleanup,'cleanup_once',lambda *args:(_ for _ in ()).throw(OSError('offline disk')))
+    target,args=queued[0];target(*args)
+    row=client.get('/api/facebook/uploads').json()[0]
+    assert row['status']=='completed' and row['upload_confirmed']
+    assert row['video_url']=='https://www.facebook.com/reel/12345/'
+
+
 def test_protects_pending_facebook_files_from_deletion(client,rendered,monkeypatch):
     job,clip,_,_=rendered
     monkeypatch.setattr(api,'facebook_upload_protected',lambda *args:True)
@@ -224,3 +247,12 @@ def test_read_only_reconcile_rejects_another_domain(client,tmp_path):
     ledger.write_text(json.dumps({'schema':1,'uploads':{'u':{'id':'u','profile_id':'1234','caption':'Test'}},'session':{}}))
     result=client.post('/api/facebook/uploads/u/verify-remote',json={'video_url':'https://evil.test/reel/123/'})
     assert result.status_code==400
+
+
+def test_retry_never_reposts_an_ambiguous_submission(client):
+    ledger=api.JOBS_PATH.parent/'facebook_workspace.json'
+    ledger.write_text(json.dumps({'schema':1,'uploads':{'u':{'id':'u','status':'failed',
+        'submission_started':True,'upload_confirmed':False}},'session':{}}))
+    result=client.post('/api/facebook/uploads/u/retry')
+    assert result.status_code==409
+    assert 'remote' in result.json()['detail']

@@ -1,0 +1,36 @@
+{
+  "preview_only": true,
+  "live_account_snapshot_used": true,
+  "api_actions_mocked": true,
+  "build_id": "wETF5Y3hWo4COGjB1S0Us",
+  "viewports": [
+    {
+      "viewport": 1440,
+      "bodyWidth": 1440,
+      "metricColumns": "293.5px 293.5px 293.5px 293.5px",
+      "briefColumns": "362px 362px 362px"
+    },
+    {
+      "viewport": 1280,
+      "bodyWidth": 1280,
+      "metricColumns": "253.5px 253.5px 253.5px 253.5px",
+      "briefColumns": "308.656px 308.672px 308.656px"
+    },
+    {
+      "viewport": 390,
+      "bodyWidth": 390,
+      "metricColumns": "176px 176px",
+      "briefColumns": "318px"
+    },
+    {
+      "viewport": 320,
+      "bodyWidth": 320,
+      "metricColumns": "146px 146px",
+      "briefColumns": "258px"
+    }
+  ],
+  "page_errors": [],
+  "brief_to_form_checked": true,
+  "refresh_single_flight_checked": true,
+  "unknown_state_checked": true
+}

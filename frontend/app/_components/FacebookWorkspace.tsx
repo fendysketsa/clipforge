@@ -5,6 +5,8 @@ import toast from 'react-hot-toast';
 import { cancelJob, updateJobClipStatus, uploadVideo } from '../../lib/apiClient';
 import { facebookRequest, mediaUrl, type FacebookConfig, type FacebookProduction, type FacebookQC, type FacebookSession, type FacebookUpload } from '../../lib/facebook';
 import { FacebookConnection } from './FacebookConnection';
+import { FacebookMonetizationPanel } from './FacebookMonetizationPanel';
+import { FacebookAutopilotPanel } from './FacebookAutopilotPanel';
 
 const statusLabel: Record<string,string> = {queued:'Menunggu', running:'Diproses', completed:'Selesai', failed:'Gagal', cancelled:'Dibatalkan', needs_review:'Periksa hasil posting'};
 
@@ -57,14 +59,21 @@ export function FacebookWorkspace() {
     });
   };
   const selected = config?.niches.find(item => item.key === niche);
+  const published = uploads.filter(item => item.status === 'completed' && item.upload_confirmed && item.video_url);
+  const pendingProductions = productions.map(production => ({...production, job: {...production.job,
+    clips: production.job.clips.filter(clip => !published.some(post => post.job_id === production.job.id && post.clip_url === clip.url))}}))
+    .filter(({job}) => job.clips.length || job.status !== 'completed');
   return <div className="fbWorkspace">
     <div className="fbIntro"><div><span className="fbEyebrow"><Facebook size={16}/> FACEBOOK REELS</span>
       <h2>Satu tips. Langsung berguna.</h2><p>Target 30 detik · maksimal 55 detik · portrait 1080×1920</p></div>
-      <div className="fbRecipe"><strong>Hook → langkah → hasil</strong><span>Subtitle frasa stabil · watermark RYUUNDY</span></div></div>
+      <div className="fbRecipe"><strong>Masalah → tindakan → hasil</strong><span>Objek bergerak · subtitle stabil · SFX lembut</span></div></div>
+    <FacebookAutopilotPanel/>
+    <FacebookMonetizationPanel onUseBrief={brief => {setNiche('tech_daily'); setPerspective(`${brief.hook} ${brief.recording}`); const manual=document.getElementById('facebook-manual'); if(manual instanceof HTMLDetailsElement)manual.open=true; document.getElementById('facebook-composer')?.scrollIntoView({behavior:'smooth',block:'start'});}}/>
     <FacebookConnection onChange={sessionChanged}/>
     {error ? <p role="alert" className="fbError">{error}</p> : null}
     <div className="fbColumns">
-      <form className="fbComposer" onSubmit={create}>
+      <details className="fbManual" id="facebook-manual"><summary>Tambahkan rekaman sendiri <span>Opsional</span></summary>
+      <form className="fbComposer" id="facebook-composer" onSubmit={create}>
         <header><Clapperboard size={19}/><h2>Produksi khusus Facebook</h2></header>
         <label>Niche<select value={niche} onChange={event => setNiche(event.target.value)}>
           {(config?.niches || [{key:'tech_daily', label:'Tips teknologi & trik HP sehari-hari'}]).map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
@@ -80,32 +89,52 @@ export function FacebookWorkspace() {
         {sourceMode === 'url' ? <label className="fbCheck"><input type="checkbox" checked={reprocess} onChange={event => setReprocess(event.target.checked)}/> Saya mengizinkan proses ulang jika video sudah pernah dipakai.</label> : null}
         <p className="fbHint">Caption publik tanpa sumber. Materi yang mewajibkan kredit perlu izin terpisah. Data asal tetap tersimpan untuk pemeriksaan.</p>
         <button className="uiButton uiButton--primary fbSubmit" disabled={!!busy || !config} type="submit">{busy === 'create' ? <Loader2 size={17} className="spin"/> : <Clapperboard size={17}/>} {busy === 'create' ? 'Menyiapkan produksi…' : 'Buat clip Facebook'}</button>
-      </form>
+      </form></details>
       <section className="fbResults" aria-label="Hasil khusus Facebook">
-        <header className="fbResultsHeading"><div><h2>Proses & hasil Facebook</h2><p>{productions.length} produksi · {uploads.filter(item => item.upload_confirmed).length} Reel terkonfirmasi</p></div><button className="uiButton" onClick={() => void refresh()} type="button" aria-label="Perbarui hasil Facebook"><RefreshCw size={15}/></button></header>
-        {!productions.length ? <div className="fbEmpty"><Facebook size={32}/><h3>Ruang untuk Reel pertama.</h3><p>Pilih video, lalu biarkan editor mencari satu tips dengan pembukaan, langkah, dan hasil yang utuh.</p><span>01 Pilih momen · 02 Clip & QC · 03 Preview · 04 Upload</span></div> : null}
-        {productions.map(({job,results}) => <article className="fbProduction" key={job.id}>
+        <header className="fbResultsHeading"><div><h2>Proses & hasil Facebook</h2><p>{pendingProductions.length} perlu dipantau · {published.length} terbit</p></div><button className="uiButton" onClick={() => void refresh()} type="button" aria-label="Perbarui hasil Facebook"><RefreshCw size={15}/></button></header>
+        <p className="fbStorageNote">File lokal dibersihkan otomatis setelah unggahan terkonfirmasi. Riwayat dan tautan Facebook tetap tersimpan.</p>
+        {!pendingProductions.length && !published.length ? <div className="fbEmpty"><Facebook size={32}/><h3>Hasil akan muncul di sini.</h3><p>Produksi dan publikasi berjalan sesuai jadwal FB Pro.</p></div> : null}
+        {pendingProductions.map(({job,results}) => <article className="fbProduction" key={job.id}>
           <header><div><span className={`fbState is-${job.status}`}>{statusLabel[job.status]}</span><h3>{job.source_title || `Produksi Facebook · ${job.id.slice(0,8)}`}</h3></div><small>{new Date(job.created_at).toLocaleDateString('id-ID', {timeZone:'Asia/Jakarta'})}</small></header>
           {['queued','running'].includes(job.status) ? <div className="fbProgress" aria-live="polite"><progress value={job.progress_percent || 0} max={100}/><span>{job.progress_detail || 'Menunggu worker…'}</span><button type="button" disabled={!!busy} onClick={() => void perform(job.id, () => cancelJob(job.id))}>Batalkan produksi</button></div> : null}
-          {job.error ? <p className="fbError">{job.error}</p> : null}
+          {job.error ? <details className="fbFailureDetail"><summary>Lihat kendala produksi</summary><p className="fbError">{job.error}</p></details> : null}
           {job.clips.map(clip => {
             const key = `${job.id}:${clip.url}`;
             const caption = results.find(result => result.clip_url === clip.url)?.caption || '';
             const post = uploads.find(item => item.job_id === job.id && item.clip_url === clip.url);
             const audit = audits[key];
+            const automatic = !!job.request.facebook_autopilot_key;
             return <div className="fbResult" key={clip.url}>
               <video controls playsInline preload="metadata" poster={clip.thumbnail_url ? mediaUrl(clip.thumbnail_url) : undefined} src={mediaUrl(clip.url)} aria-label={`Preview ${clip.title || clip.name}`}/>
-              <div className="fbResultDetail"><h4>{clip.title || clip.name}</h4><span className="fbEyebrow">CAPTION FACEBOOK</span><p className="fbCaption">{caption || 'Caption belum tersedia.'}</p>
+              <div className="fbResultDetail"><span className="fbEyebrow">CAPTION FACEBOOK</span><p className="fbCaption">{caption || 'Caption belum tersedia.'}</p>
                 <div className="fbActions"><button className="uiButton" disabled={!caption} type="button" onClick={() => void perform(`copy:${key}`, () => navigator.clipboard.writeText(caption).then(() => toast.success('Caption disalin.')))}><Copy size={14}/> Salin caption</button><a className="uiButton" href={mediaUrl(clip.url)} download><Download size={14}/> Unduh video</a></div>
+                {automatic ? null : <>
                 <label className="fbCheck"><input type="checkbox" checked={clip.is_correct} disabled={!!busy || !!post} onChange={event => {const checked = event.target.checked; setAudits(previous => {const next = {...previous}; delete next[key]; return next;}); void perform(`review:${key}`, () => updateJobClipStatus(job.id,clip.url,checked));}}/> Saya sudah menonton; konteks, subtitle, dan hasil sudah benar.</label>
                 <div className="fbActions"><button className="uiButton" type="button" disabled={!!busy} onClick={() => void perform(`qc:${key}`, async () => {const value = await facebookRequest<FacebookQC>('facebook/qc',{job_id:job.id,clip_url:clip.url}); setAudits(previous => ({...previous,[key]:value}));})}><ShieldCheck size={15}/> Periksa QC</button>
-                  <button className="uiButton uiButton--primary" type="button" disabled={!!busy || !!post || audit?.decision !== 'PASS_UPLOAD' || !session.account_verified || !!error} onClick={() => void perform(`post:${key}`, () => facebookRequest('facebook/uploads',{job_id:job.id,clip_url:clip.url}))}><Facebook size={15}/> Upload Reel publik</button></div>
-                {audit ? <div className="fbAudit" role="status">{audit.decision === 'PASS_UPLOAD' ? <p><CheckCircle2 size={14}/> QC lulus; siap masuk antrean.</p> : <><strong>Ditahan untuk diperiksa</strong><ul>{audit.issues.map(issue => <li key={issue}>{issue}</li>)}</ul></>}</div> : <p className="fbHint">Tonton preview dan periksa QC sebelum upload.</p>}
-                {post ? <div className="fbPost" role="status"><strong>{post.upload_confirmed ? 'Reel terkonfirmasi' : statusLabel[post.status]}</strong><p>{post.message}</p>{post.video_url && post.upload_confirmed ? <a href={post.video_url} target="_blank" rel="noreferrer">Lihat Reel ↗</a> : null}
+                  <button className="uiButton uiButton--primary" type="button" disabled={!!busy || !!post || audit?.decision !== 'PASS_UPLOAD' || !session.account_verified || !!error} onClick={() => void perform(`post:${key}`, () => facebookRequest('facebook/uploads',{job_id:job.id,clip_url:clip.url}))}><Facebook size={15}/> Upload Reel publik</button></div></>}
+                {audit ? <div className="fbAudit" role="status">{audit.decision === 'PASS_UPLOAD' ? <p><CheckCircle2 size={14}/> QC lulus; siap masuk antrean.</p> : <><strong>Ditahan untuk diperiksa</strong><ul>{audit.issues.map(issue => <li key={issue}>{issue}</li>)}</ul></>}</div> : !automatic ? <p className="fbHint">Tonton preview dan periksa QC sebelum upload.</p> : null}
+                {audit?.monetization ? <p className="fbHint"><strong>{audit.monetization.label}.</strong> {audit.monetization.message}</p> : null}
+                {post ? <div className="fbPost" role="status"><strong>{post.upload_confirmed ? `${post.kind==='story'?'Cerita':'Reel'} terkonfirmasi` : statusLabel[post.status]}</strong><p>{post.message}</p>{post.video_url && post.upload_confirmed ? <a href={post.video_url} target="_blank" rel="noreferrer">Lihat {post.kind==='story'?'Cerita':'Reel'} ↗</a> : null}
+                  {post.status === 'failed' && !post.submission_started ? <button type="button" className="uiButton" disabled={!!busy} onClick={() => void perform(`retry:${post.id}`, () => facebookRequest(`facebook/uploads/${post.id}/retry`,{}))}>Ulangi proses sebelum Post</button> : null}
                   {post.status === 'needs_review' ? <div className="fbReconcile"><label>Permalink Reel yang sudah diposting<input type="url" value={remoteUrls[post.id] || ''} placeholder="https://www.facebook.com/reel/…/" onChange={event => setRemoteUrls(previous => ({...previous,[post.id]:event.target.value}))}/></label><button type="button" className="uiButton" disabled={!!busy || !remoteUrls[post.id]} onClick={() => void perform(`verify:${post.id}`, () => facebookRequest(`facebook/uploads/${post.id}/verify-remote`, {video_url:remoteUrls[post.id]}))}>Cocokkan hasil remote</button></div> : null}</div> : null}
               </div></div>;
           })}
         </article>)}
+        {published.length ? <div className="fbPublishedList" aria-label="Sudah terbit di Facebook">
+          {published.map(post => {
+            const job = productions.find(item => item.job.id === post.job_id)?.job;
+            const title = post.title || job?.clips.find(clip => clip.url === post.clip_url)?.title || job?.source_title || post.clip_name;
+            const cleared = ['deleted','missing'].includes(post.local_cleanup?.state || '');
+            return <article className="fbPublished" key={post.id}>
+              <div className="fbPublishedIcon"><CheckCircle2 size={20}/></div>
+              <div className="fbPublishedBody"><span className="fbState is-completed">{post.kind === 'story' ? 'Cerita terbit' : 'Reel terbit'}</span>
+                <h3>{title}</h3><p>{cleared ? `File lokal sudah dibersihkan${post.local_cleanup?.freed_bytes ? ` · ${(post.local_cleanup.freed_bytes / 1024 / 1024).toLocaleString('id-ID',{maximumFractionDigits:1})} MB` : ''}.` : 'Unggahan terkonfirmasi · pembersihan lokal menunggu.'}</p>
+                {post.caption ? <details className="fbPublishedCaption"><summary>Lihat caption</summary><p className="fbCaption">{post.caption}</p><button className="uiButton" type="button" onClick={() => void perform(`copy:${post.id}`, () => navigator.clipboard.writeText(post.caption).then(() => toast.success('Caption disalin.')))}><Copy size={14}/> Salin caption</button></details> : null}
+              </div>
+              <a className="uiButton fbPublishedLink" href={post.video_url!} target="_blank" rel="noreferrer">Lihat di Facebook ↗</a>
+            </article>;
+          })}
+        </div> : null}
       </section>
     </div>
   </div>;

@@ -1,0 +1,32 @@
+{
+  "status": "reviewed",
+  "audit": {
+    "schema_version": 1,
+    "source_job_id": "fb-family-group-20261115",
+    "source_clip_url": "/outputs/fb-family-group-20261115/facebook_original.mp4",
+    "repair_attempted": false,
+    "decision": "DROP_SOURCE",
+    "confidence": 1.0,
+    "hard_gates": {
+      "rights": true,
+      "media_integrity": true,
+      "meaning_preserved": true,
+      "context_safe": true
+    },
+    "ai_checks": {
+      "hook": null,
+      "standalone_clarity": null,
+      "payoff": null,
+      "caption": null,
+      "crop": null,
+      "visual_quality": null,
+      "audio_quality": null
+    },
+    "evidence": [
+      "Rendered audio does not sufficiently match timed captions at output 30.000-30.667s"
+    ],
+    "repair_instructions": [],
+    "delete_source": true,
+    "upload_allowed": false
+  }
+}

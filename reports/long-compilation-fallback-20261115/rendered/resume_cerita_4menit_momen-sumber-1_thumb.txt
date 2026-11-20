@@ -1,0 +1,4 @@
+HOOK: KOMPILASI MOMEN: MOMEN SUMBER 1
+STRATEGI: custom_long_form_upload
+
+Create an elegant cinematic, high-CTR 16:9 long-form YouTube thumbnail text overlay reading "KOMPILASI MOMEN: MOMEN SUMBER 1" onto the provided screenshot. Keep the screenshot itself untouched as the background. Use a premium editorial hierarchy, restrained accent colors, large high-contrast bold text, and strong 16:9 composition; do not cover faces, do not redraw or restyle the background image.

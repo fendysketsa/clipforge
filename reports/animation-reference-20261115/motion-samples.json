@@ -1,0 +1,47 @@
+[
+  {
+    "group": "solar",
+    "at": 9,
+    "path": "reports/animation-reference-20261115/frames/solar-9.jpg"
+  },
+  {
+    "group": "solar",
+    "at": 10,
+    "path": "reports/animation-reference-20261115/frames/solar-10.jpg"
+  },
+  {
+    "group": "solar",
+    "at": 11,
+    "path": "reports/animation-reference-20261115/frames/solar-11.jpg"
+  },
+  {
+    "group": "rotation",
+    "at": 108,
+    "path": "reports/animation-reference-20261115/frames/rotation-108.jpg"
+  },
+  {
+    "group": "rotation",
+    "at": 110,
+    "path": "reports/animation-reference-20261115/frames/rotation-110.jpg"
+  },
+  {
+    "group": "rotation",
+    "at": 112,
+    "path": "reports/animation-reference-20261115/frames/rotation-112.jpg"
+  },
+  {
+    "group": "orbit",
+    "at": 178,
+    "path": "reports/animation-reference-20261115/frames/orbit-178.jpg"
+  },
+  {
+    "group": "orbit",
+    "at": 180,
+    "path": "reports/animation-reference-20261115/frames/orbit-180.jpg"
+  },
+  {
+    "group": "orbit",
+    "at": 182,
+    "path": "reports/animation-reference-20261115/frames/orbit-182.jpg"
+  }
+]

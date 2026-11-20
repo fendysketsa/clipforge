@@ -1,0 +1,154 @@
+{
+  "preview_only": true,
+  "api_mutations_mocked": true,
+  "published_has_no_local_media_requests": true,
+  "published_has_no_preview_download_qc_or_reconcile": true,
+  "orphan_ledger_history_visible": true,
+  "pending_keeps_preview_and_reconciliation": true,
+  "running_keeps_progress": true,
+  "caption_expansion_checked": true,
+  "page_errors": [],
+  "viewports": [
+    {
+      "width": 1440,
+      "body": 1440,
+      "columns": "1176px",
+      "card": {
+        "x": 236,
+        "y": 2797.234375,
+        "width": 1176,
+        "height": 155.765625,
+        "top": 2797.234375,
+        "right": 1412,
+        "bottom": 2953,
+        "left": 236
+      },
+      "results": {
+        "x": 236,
+        "y": 2704.546875,
+        "width": 1176,
+        "height": 248.453125,
+        "top": 2704.546875,
+        "right": 1412,
+        "bottom": 2953,
+        "left": 236
+      },
+      "link": {
+        "x": 1271.5,
+        "y": 2818.234375,
+        "width": 119.5,
+        "height": 37,
+        "top": 2818.234375,
+        "right": 1391,
+        "bottom": 2855.234375,
+        "left": 1271.5
+      }
+    },
+    {
+      "width": 1280,
+      "body": 1280,
+      "columns": "1016px",
+      "card": {
+        "x": 236,
+        "y": 804.9375,
+        "width": 1016,
+        "height": 155.765625,
+        "top": 804.9375,
+        "right": 1252,
+        "bottom": 960.703125,
+        "left": 236
+      },
+      "results": {
+        "x": 236,
+        "y": 712.25,
+        "width": 1016,
+        "height": 248.453125,
+        "top": 712.25,
+        "right": 1252,
+        "bottom": 960.703125,
+        "left": 236
+      },
+      "link": {
+        "x": 1111.5,
+        "y": 825.9375,
+        "width": 119.5,
+        "height": 37,
+        "top": 825.9375,
+        "right": 1231,
+        "bottom": 862.9375,
+        "left": 1111.5
+      }
+    },
+    {
+      "width": 390,
+      "body": 390,
+      "columns": "354px",
+      "card": {
+        "x": 18,
+        "y": 2217.03125,
+        "width": 354,
+        "height": 194.765625,
+        "top": 2217.03125,
+        "right": 372,
+        "bottom": 2411.796875,
+        "left": 18
+      },
+      "results": {
+        "x": 18,
+        "y": 2105.65625,
+        "width": 354,
+        "height": 306.140625,
+        "top": 2105.65625,
+        "right": 372,
+        "bottom": 2411.796875,
+        "left": 18
+      },
+      "link": {
+        "x": 65,
+        "y": 2357.796875,
+        "width": 110.71875,
+        "height": 37,
+        "top": 2357.796875,
+        "right": 175.71875,
+        "bottom": 2394.796875,
+        "left": 65
+      }
+    },
+    {
+      "width": 320,
+      "body": 320,
+      "columns": "294px",
+      "card": {
+        "x": 13,
+        "y": 1294.140625,
+        "width": 294,
+        "height": 217.15625,
+        "top": 1294.140625,
+        "right": 307,
+        "bottom": 1511.296875,
+        "left": 13
+      },
+      "results": {
+        "x": 13,
+        "y": 1182.765625,
+        "width": 294,
+        "height": 328.53125,
+        "top": 1182.765625,
+        "right": 307,
+        "bottom": 1511.296875,
+        "left": 13
+      },
+      "link": {
+        "x": 60,
+        "y": 1457.296875,
+        "width": 110.71875,
+        "height": 37,
+        "top": 1457.296875,
+        "right": 170.71875,
+        "bottom": 1494.296875,
+        "left": 60
+      }
+    }
+  ],
+  "build_id": "BkANroL-crMq7xRhOmIi9"
+}

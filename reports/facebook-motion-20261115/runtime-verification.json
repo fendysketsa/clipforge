@@ -1,0 +1,78 @@
+{
+  "checked_at": "2026-11-15T13:33:02.234886+00:00",
+  "health": {
+    "status": "ok"
+  },
+  "educational_motion_version": 1,
+  "expected_motion_version": 1,
+  "scheduler_running": true,
+  "scheduler_heartbeat": "2026-11-15T13:33:02.038043+00:00",
+  "source_integrated": true,
+  "activated": true,
+  "backend_release": "68f0421ff3f1ecb731830124da22c86d5d150627dad6c2a37e352457936127f9",
+  "frontend": {
+    "schema": 1,
+    "build_id": "NZLB10Cbgvo-gPC99h7jG",
+    "release_id": "acfc101c6c7843dadee3c4d46e903944cc4764be2ca16398eed03644a1eb504e",
+    "ui_verified": true
+  },
+  "frontend_served_markers": {
+    "jobDirectorRecovery": true,
+    "history-four-columns": true,
+    "jobPlatformQueue": true,
+    "/reconcile": true,
+    "dijadwalkan ulang otomatis": true,
+    "pengaturan privasi tertunda": true,
+    "Hasil posting perlu diperiksa": true,
+    "cronActivityHeading": true,
+    "Detail pemeriksaan": true,
+    "cronDailyLanes": true,
+    "studioSidebar": true,
+    "studioQueueRow": true,
+    "connectionCard": true,
+    "studioThemeToggle": true,
+    "fbWorkspace": true,
+    "facebook/uploads": true,
+    "Facebook Reels": true,
+    "fbMonetization": true,
+    "facebook/monetization": true,
+    "fbAutopilot": true,
+    "facebook/autopilot": true,
+    "fbAutoBonus": true,
+    "fbPublished": true,
+    "File lokal dibersihkan otomatis": true,
+    "animasi objek 2D": true
+  },
+  "previous_deployment_attempt": {
+    "command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+    "exit_code": 1,
+    "error": "sudo requires a password and an interactive authentication terminal"
+  },
+  "activation_note": "Live API and source fingerprints now match the latest implementation. Previous sudo failure is historical. No extra restart or publication performed.",
+  "latest_run": [
+    {
+      "key": "2026-11-15:reel:1",
+      "status": "dropped",
+      "message": "QC provider declined this source during content safety screening; no retry or publication.",
+      "job_id": "f982e689d4274d9496d7416a412107cf"
+    }
+  ],
+  "bonus": {
+    "state": "produce_reels",
+    "priority": true,
+    "amount_usd": 1.0,
+    "required_reels": 3,
+    "facebook_completed_reels": 1,
+    "minimum_duration_seconds": 10,
+    "minimum_qualified_views": 10,
+    "minimum_reels_with_qualified_views": 1,
+    "period_label": "12 Nov - 19 Nov",
+    "checked_at": "2026-11-15T13:09:33.593101+00:00",
+    "locally_confirmed_reels": 0,
+    "awarded": false,
+    "note": "Bonus hanya tercapai setelah Facebook mengonfirmasi. Tayangan yang memenuhi syarat harus berasal dari penonton nyata.",
+    "remaining_reels_to_publish": 2
+  },
+  "frontend_assets_checked": 11,
+  "frontend_ui_verified_live": true
+}

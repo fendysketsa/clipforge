@@ -1,0 +1,153 @@
+{
+  "version": 1,
+  "seed": "fb-motion-copy-new-authored-20261115-v1",
+  "kind": "reel",
+  "topic": "copy",
+  "title": "Disalin, kok aslinya masih ada?",
+  "stages": [
+    {
+      "title": "Masalahnya",
+      "text": "Disalin, kok file aslinya masih ada?",
+      "start": 0.0,
+      "end": 3.216
+    },
+    {
+      "title": "Perhatikan contoh",
+      "text": "Contoh ini punya satu catatan di Asal. Cadangan masih kosong.",
+      "start": 3.216,
+      "end": 8.256
+    },
+    {
+      "title": "Coba langkahnya",
+      "text": "Saat disalin, yang bergerak ke Cadangan adalah salinannya. File di Asal tetap ada. Lihat dua lokasi ini, masing-masing sekarang berisi satu catatan.",
+      "start": 8.256,
+      "end": 18.96
+    },
+    {
+      "title": "Lihat hasilnya",
+      "text": "Jadi, menyalin membuat duplikat, bukan memindahkan file asal. Periksa salinan di folder tujuan sebelum melanjutkan pekerjaanmu.",
+      "start": 18.96,
+      "end": 27.744
+    }
+  ],
+  "files": [
+    {
+      "id": "a",
+      "label": "Catatan_Kegiatan_18.txt",
+      "size": 2,
+      "type": "document"
+    },
+    {
+      "id": "b",
+      "label": "Foto_Kegiatan_18.jpg",
+      "size": 8,
+      "type": "photo"
+    },
+    {
+      "id": "c",
+      "label": "Foto_taman_18.jpg",
+      "size": 5,
+      "type": "photo"
+    }
+  ],
+  "caption": "Menyalin membuat duplikat, sementara berkas asal tetap ada. Periksa kembali folder tujuan setelah proses selesai.\n\n#TipsDigital #TeknologiSehariHari",
+  "visual_type": "authored_animated_simulation",
+  "third_party_footage": false,
+  "third_party_music": false,
+  "synthetic_voice": true,
+  "narration_provider": "edge_neural_id-ID-ArdiNeural",
+  "example": "Kegiatan_18",
+  "creative_policy": {
+    "version": 2,
+    "niche": "Digital sehari-hari untuk keluarga",
+    "pillar": "everyday",
+    "pillar_label": "Langkah digital yang memudahkan",
+    "basis": "editorial_hypothesis_not_measured_winner",
+    "format": "persistent_object_demonstration",
+    "reference_keys": [
+      "meta_original",
+      "meta_performance",
+      "meta_relevance",
+      "drive_search"
+    ],
+    "first_result_preview": null,
+    "captions_stable": true,
+    "source_clock_changed": false,
+    "views_guaranteed": false
+  },
+  "motion_version": 1,
+  "plan_sha256": "f96375856765ded14f7a46bdd32e0f5ad673f1bce51bd26db5248e2e1e4286a0",
+  "script_sha256": "cc645d945bf746ee8c5337ca37ca59c29371f52cb36445b1cfb1a522a24d767a",
+  "authorship": "codex_authored_new_grounded_script",
+  "motion_timeline": {
+    "version": 1,
+    "fps": 30,
+    "alignment": "measured_tts_phrase_with_estimated_verb_position",
+    "select": 8.701,
+    "departure": 9.051,
+    "arrival": 12.251,
+    "search_reset": 19.31,
+    "complete": 12.451,
+    "compare": 12.31,
+    "inspect": 23.742,
+    "phase_order": [
+      "recognize",
+      "select",
+      "demonstrate",
+      "inspect_result"
+    ],
+    "label": "SIMULASI EDUKASI",
+    "source_clock_changed": false
+  },
+  "sound_design": {
+    "version": 1,
+    "author": "ClipForge procedural UI synthesis",
+    "third_party_audio": false,
+    "attribution_required": false,
+    "music": false,
+    "narration_priority": true,
+    "ducked_under_voice": true,
+    "limiter_peak_dbfs": -1.5,
+    "inserted_timeline_seconds": 0,
+    "events": [
+      {
+        "kind": "tap",
+        "start": 0.35,
+        "duration": 0.065,
+        "gain_db": -23,
+        "event": "opening_question"
+      },
+      {
+        "kind": "tap",
+        "start": 8.701,
+        "duration": 0.065,
+        "gain_db": -23,
+        "event": "object_selected"
+      },
+      {
+        "kind": "swoosh",
+        "start": 9.051,
+        "duration": 0.24,
+        "gain_db": -25,
+        "event": "object_travels"
+      },
+      {
+        "kind": "chime",
+        "start": 12.251,
+        "duration": 0.38,
+        "gain_db": -24,
+        "event": "object_arrives"
+      },
+      {
+        "kind": "tap",
+        "start": 23.742,
+        "duration": 0.065,
+        "gain_db": -25,
+        "event": "inspect_existing_copy"
+      }
+    ],
+    "sha256": "77c890250b12b77238897a3b9f309713bf7faa8af161f20bdfe4c34b809e9a36",
+    "sample_rate": 48000,
+    "generated_peak_dbfs": -23.0
+  }
+}

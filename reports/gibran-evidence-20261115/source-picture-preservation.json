@@ -1,0 +1,7 @@
+{
+  "media_sha256": "a69529e8ae823e7dc48650275992f059bf6b75dbe2d9724faf9e270a3db91c65",
+  "region": "source pictures, watermark and burned captions at y=300..1580",
+  "ssim": 0.996151,
+  "source_clock_unchanged": true,
+  "comparison": "native Studio download vs actual revised encode at 30fps"
+}

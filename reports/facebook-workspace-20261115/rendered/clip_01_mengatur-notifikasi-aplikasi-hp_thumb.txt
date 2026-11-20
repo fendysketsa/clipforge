@@ -1,0 +1,5 @@
+HOOK: BUKA PENGATURAN HP LALU PILIH
+WINNER: A
+FRAME: 1.2s
+
+Use the real 9:16 cover source frame at 1.2s. Preserve the subject identity and actual expression. Add only the exact copy 'BUKA PENGATURAN HP LALU PILIH'; keep eyes clear and headline in the central UI-safe zone.

@@ -1,0 +1,82 @@
+[
+  {
+    "level": 0,
+    "tag": "SPAN",
+    "role": null,
+    "text": "Publik",
+    "radios": []
+  },
+  {
+    "level": 1,
+    "tag": "DIV",
+    "role": null,
+    "text": "Publik",
+    "radios": []
+  },
+  {
+    "level": 2,
+    "tag": "DIV",
+    "role": null,
+    "text": "Publik\nSiapa saja yang menggunakan Facebook atau Messenger",
+    "radios": []
+  },
+  {
+    "level": 3,
+    "tag": "DIV",
+    "role": null,
+    "text": "Publik\nSiapa saja yang menggunakan Facebook atau Messenger",
+    "radios": []
+  },
+  {
+    "level": 4,
+    "tag": "DIV",
+    "role": null,
+    "text": "Publik\nSiapa saja yang menggunakan Facebook atau Messenger",
+    "radios": []
+  },
+  {
+    "level": 5,
+    "tag": "DIV",
+    "role": null,
+    "text": "Publik\nSiapa saja yang menggunakan Facebook atau Messenger",
+    "radios": [
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "aria": "true",
+        "checked": true,
+        "id": ""
+      }
+    ]
+  },
+  {
+    "level": 6,
+    "tag": "DIV",
+    "role": null,
+    "text": "Publik\nSiapa saja yang menggunakan Facebook atau Messenger",
+    "radios": [
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "aria": "true",
+        "checked": true,
+        "id": ""
+      }
+    ]
+  },
+  {
+    "level": 7,
+    "tag": "DIV",
+    "role": "none",
+    "text": "Publik\nSiapa saja yang menggunakan Facebook atau Messenger",
+    "radios": [
+      {
+        "tag": "INPUT",
+        "type": "radio",
+        "aria": "true",
+        "checked": true,
+        "id": ""
+      }
+    ]
+  }
+]

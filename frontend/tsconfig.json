@@ -58,7 +58,15 @@
     ".next-studio-theme/types/**/*.ts",
     ".next-studio-theme/dev/types/**/*.ts",
     ".next-facebook/types/**/*.ts",
-    ".next-facebook/dev/types/**/*.ts"
+    ".next-facebook/dev/types/**/*.ts",
+    ".next-fb-research/types/**/*.ts",
+    ".next-fb-research/dev/types/**/*.ts",
+    ".next-fb-storage/types/**/*.ts",
+    ".next-fb-storage/dev/types/**/*.ts",
+    ".next-fb-motion/types/**/*.ts",
+    ".next-fb-motion/dev/types/**/*.ts",
+    ".next-fb-publish/types/**/*.ts",
+    ".next-fb-publish/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

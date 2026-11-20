@@ -1,0 +1,502 @@
+{
+  "title": "Foto rapi, catatan tetap di tempatnya",
+  "text": "Foto bercampur dengan catatan? Pisahkan dengan folder. Ini simulasi: satu catatan dan dua foto ada di Dokumen. Folder Foto kegiatan masih kosong. Pilih kedua foto, lalu pindahkan ke Foto kegiatan. Perhatikan pergerakannya. Catatan tetap di Dokumen; kedua foto sekarang ada di folder tujuan. Jumlahnya tetap tiga, tanpa salinan tambahan. Nama folder membantu kita mengenali isinya. Periksa hasil pemindahan sebelum merapikan file yang lain.",
+  "source_identity": "fb-group-new-20261115-v1",
+  "narrative_arc_complete": true,
+  "original_demo": {
+    "version": 1,
+    "seed": "fb-group-new-20261115-v1",
+    "kind": "reel",
+    "topic": "group",
+    "title": "Foto rapi, catatan tetap di tempatnya",
+    "stages": [
+      {
+        "title": "Masalahnya",
+        "text": "Foto bercampur dengan catatan? Pisahkan dengan folder.",
+        "start": 0.0,
+        "end": 4.656
+      },
+      {
+        "title": "Perhatikan contoh",
+        "text": "Ini simulasi: satu catatan dan dua foto ada di Dokumen. Folder Foto kegiatan masih kosong.",
+        "start": 4.656,
+        "end": 11.783999999999999
+      },
+      {
+        "title": "Coba langkahnya",
+        "text": "Pilih kedua foto, lalu pindahkan ke Foto kegiatan. Perhatikan pergerakannya. Catatan tetap di Dokumen; kedua foto sekarang ada di folder tujuan.",
+        "start": 11.783999999999999,
+        "end": 22.392
+      },
+      {
+        "title": "Lihat hasilnya",
+        "text": "Jumlahnya tetap tiga, tanpa salinan tambahan. Nama folder membantu kita mengenali isinya. Periksa hasil pemindahan sebelum merapikan file yang lain.",
+        "start": 22.392,
+        "end": 32.832
+      }
+    ],
+    "files": [
+      {
+        "id": "a",
+        "label": "Catatan_Kegiatan_22.txt",
+        "size": 2,
+        "type": "document"
+      },
+      {
+        "id": "b",
+        "label": "Foto_Kegiatan_22.jpg",
+        "size": 8,
+        "type": "photo"
+      },
+      {
+        "id": "c",
+        "label": "Foto_taman_22.jpg",
+        "size": 5,
+        "type": "photo"
+      }
+    ],
+    "caption": "Pisahkan foto dan catatan supaya lebih mudah ditemukan. Pada simulasi ini, dua foto pindah ke folder Foto kegiatan, sementara catatan tetap di Dokumen.\n\n#TipsDigital #TeknologiSehariHari",
+    "visual_type": "authored_animated_simulation",
+    "third_party_footage": false,
+    "third_party_music": false,
+    "synthetic_voice": true,
+    "narration_provider": "edge_neural_id-ID-ArdiNeural",
+    "example": "Kegiatan_22",
+    "creative_policy": {
+      "version": 2,
+      "niche": "Digital sehari-hari untuk keluarga",
+      "pillar": "storage",
+      "pillar_label": "File dan foto lebih rapi",
+      "basis": "editorial_hypothesis_not_measured_winner",
+      "format": "persistent_object_demonstration",
+      "reference_keys": [
+        "meta_original",
+        "meta_performance",
+        "meta_relevance",
+        "android_storage"
+      ],
+      "first_result_preview": null,
+      "captions_stable": true,
+      "source_clock_changed": false,
+      "views_guaranteed": false
+    },
+    "motion_version": 1,
+    "plan_sha256": "ee3373d085aeae71a8e18a3d36c88043db9e7c98767356283346cccecfb60e4c",
+    "authorship": "codex_authored_new_group_tutorial",
+    "script_sha256": "c97a272885e20a351490ce7187db03a7d28795801cbbea6fe80d2c3e156c439d",
+    "motion_timeline": {
+      "version": 1,
+      "fps": 30,
+      "alignment": "measured_tts_phrase_with_estimated_verb_position",
+      "select": 13.642,
+      "departure": 13.992,
+      "arrival": 17.192,
+      "search_reset": 22.742,
+      "complete": 17.392,
+      "compare": 17.242,
+      "inspect": 29.201,
+      "phase_order": [
+        "recognize",
+        "select",
+        "demonstrate",
+        "inspect_result"
+      ],
+      "label": "SIMULASI EDUKASI",
+      "source_clock_changed": false
+    },
+    "sound_design": {
+      "version": 1,
+      "author": "ClipForge procedural UI synthesis",
+      "third_party_audio": false,
+      "attribution_required": false,
+      "music": false,
+      "narration_priority": true,
+      "ducked_under_voice": true,
+      "limiter_peak_dbfs": -1.5,
+      "inserted_timeline_seconds": 0,
+      "events": [
+        {
+          "kind": "tap",
+          "start": 0.35,
+          "duration": 0.065,
+          "gain_db": -23,
+          "event": "opening_question"
+        },
+        {
+          "kind": "tap",
+          "start": 13.642,
+          "duration": 0.065,
+          "gain_db": -23,
+          "event": "object_selected"
+        },
+        {
+          "kind": "swoosh",
+          "start": 13.992,
+          "duration": 0.24,
+          "gain_db": -25,
+          "event": "object_travels"
+        },
+        {
+          "kind": "chime",
+          "start": 17.192,
+          "duration": 0.38,
+          "gain_db": -24,
+          "event": "object_arrives"
+        }
+      ],
+      "sha256": "6e38cc85fe71d23fa8b2d06379f4e773772f39d527805b7b1fde50b35f8ebd04",
+      "sample_rate": 48000,
+      "generated_peak_dbfs": -23.0
+    }
+  },
+  "sound_design": {
+    "version": 1,
+    "author": "ClipForge procedural UI synthesis",
+    "third_party_audio": false,
+    "attribution_required": false,
+    "music": false,
+    "narration_priority": true,
+    "ducked_under_voice": true,
+    "limiter_peak_dbfs": -1.5,
+    "inserted_timeline_seconds": 0,
+    "events": [
+      {
+        "kind": "tap",
+        "start": 0.35,
+        "duration": 0.065,
+        "gain_db": -23,
+        "event": "opening_question"
+      },
+      {
+        "kind": "tap",
+        "start": 13.642,
+        "duration": 0.065,
+        "gain_db": -23,
+        "event": "object_selected"
+      },
+      {
+        "kind": "swoosh",
+        "start": 13.992,
+        "duration": 0.24,
+        "gain_db": -25,
+        "event": "object_travels"
+      },
+      {
+        "kind": "chime",
+        "start": 17.192,
+        "duration": 0.38,
+        "gain_db": -24,
+        "event": "object_arrives"
+      }
+    ],
+    "sha256": "6e38cc85fe71d23fa8b2d06379f4e773772f39d527805b7b1fde50b35f8ebd04",
+    "sample_rate": 48000,
+    "generated_peak_dbfs": -23.0
+  },
+  "facebook": {
+    "version": 1,
+    "caption": "Pisahkan foto dan catatan supaya lebih mudah ditemukan. Pada simulasi ini, dua foto pindah ke folder Foto kegiatan, sementara catatan tetap di Dokumen.\n\n#TipsDigital #TeknologiSehariHari",
+    "watermark": {
+      "style_version": 2,
+      "style": "channel_monogram_champagne_seal",
+      "asset": "ryuundy-watermark-v2.svg",
+      "channel_url": "https://www.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ",
+      "position": "center_46_percent",
+      "size_px": 208,
+      "opacity": 0.24,
+      "wordmark_opacity": 0.34,
+      "backplate_opacity": 0.0,
+      "ornament": "original_channel_r_crescent_ring",
+      "animated": false,
+      "source_ownership_claimed": false
+    }
+  },
+  "render_quality_qc": {
+    "quality_gate_passed": true,
+    "blocking": false,
+    "full_decode_passed": true,
+    "frame_timestamps_seconds": [
+      0.44999999999999996,
+      0.5,
+      1.1,
+      1.75,
+      5.156,
+      12.283999999999999,
+      12.584,
+      13.283999999999999,
+      13.642,
+      13.741999999999999,
+      13.783999999999999,
+      14.092,
+      14.344000000000001,
+      14.696000000000002,
+      15.592,
+      16.488,
+      16.872,
+      17.292,
+      17.392,
+      22.892,
+      29.701
+    ]
+  },
+  "render_source_sha256": "6d33f0a5f2a865fd0e92c170f66b0838a4cdb24ac19999aa8fa98f3666a8ccfe",
+  "media_sha256": "bfe9d2ee0e9f9e9ed283d1a71fa9e629e70d36b2506e6aa11876c31d2711aca4",
+  "output_duration_seconds": 32.833333,
+  "source_provenance": {
+    "kind": "authored_original_simulation",
+    "original_script_and_visuals": true,
+    "third_party_video": false,
+    "music": false,
+    "neural_narration": true,
+    "original_sound_effects": true
+  },
+  "growth_readiness": {
+    "measured_retention": null,
+    "predicted_score": null,
+    "not_a_monetization_approval": true
+  },
+  "educational_motion": {
+    "version": 1,
+    "fps": 30,
+    "clock": {
+      "version": 1,
+      "fps": 30,
+      "alignment": "measured_tts_phrase_with_estimated_verb_position",
+      "select": 13.642,
+      "departure": 13.992,
+      "arrival": 17.192,
+      "search_reset": 22.742,
+      "complete": 17.392,
+      "compare": 17.242,
+      "inspect": 29.201,
+      "phase_order": [
+        "recognize",
+        "select",
+        "demonstrate",
+        "inspect_result"
+      ],
+      "label": "SIMULASI EDUKASI",
+      "source_clock_changed": false
+    },
+    "component": "persistent_objects_2d",
+    "labels_upright": true,
+    "initial": {
+      "topic": "group",
+      "items": [
+        {
+          "id": "a",
+          "label": "Catatan_Kegiatan_22.txt",
+          "size": 2,
+          "type": "document",
+          "key": "a",
+          "x": 115.0,
+          "y": 715.0,
+          "w": 108,
+          "h": 150,
+          "scale": 1.0,
+          "visible": true,
+          "role": "original",
+          "highlight": false,
+          "folder_item": true
+        },
+        {
+          "id": "b",
+          "label": "Foto_Kegiatan_22.jpg",
+          "size": 8,
+          "type": "photo",
+          "key": "b",
+          "x": 227.0,
+          "y": 707.0,
+          "w": 108,
+          "h": 150,
+          "scale": 1.0,
+          "visible": true,
+          "role": "original",
+          "highlight": false,
+          "folder_item": true
+        },
+        {
+          "id": "c",
+          "label": "Foto_taman_22.jpg",
+          "size": 5,
+          "type": "photo",
+          "key": "c",
+          "x": 339.0,
+          "y": 699.0,
+          "w": 108,
+          "h": 150,
+          "scale": 1.0,
+          "visible": true,
+          "role": "original",
+          "highlight": false,
+          "folder_item": true
+        }
+      ],
+      "folders": [
+        {
+          "x": 90.0,
+          "y": 835,
+          "w": 350,
+          "label": "Dokumen",
+          "open": 1.0,
+          "color": "#168F85",
+          "count": 3
+        },
+        {
+          "x": 560.0,
+          "y": 835,
+          "w": 350,
+          "label": "Foto kegiatan",
+          "open": 0.18,
+          "color": "#E9947D",
+          "count": 0
+        }
+      ],
+      "query": "",
+      "editing": null,
+      "focus": [
+        281.4726806150689,
+        791.9699462741514
+      ],
+      "operation_progress": 0.0,
+      "selected": false,
+      "complete": false,
+      "source_ids": [
+        "a",
+        "b",
+        "c"
+      ],
+      "source_count": 3,
+      "stored_count": 3,
+      "clock": {
+        "version": 1,
+        "fps": 30,
+        "alignment": "measured_tts_phrase_with_estimated_verb_position",
+        "select": 13.642,
+        "departure": 13.992,
+        "arrival": 17.192,
+        "search_reset": 22.742,
+        "complete": 17.392,
+        "compare": 17.242,
+        "inspect": 29.201,
+        "phase_order": [
+          "recognize",
+          "select",
+          "demonstrate",
+          "inspect_result"
+        ],
+        "label": "SIMULASI EDUKASI",
+        "source_clock_changed": false
+      }
+    },
+    "result": {
+      "topic": "group",
+      "items": [
+        {
+          "id": "a",
+          "label": "Catatan_Kegiatan_22.txt",
+          "size": 2,
+          "type": "document",
+          "key": "a",
+          "x": 115.0,
+          "y": 715.0,
+          "w": 108,
+          "h": 150,
+          "scale": 1.0,
+          "visible": true,
+          "role": "original",
+          "highlight": false,
+          "folder_item": true
+        },
+        {
+          "id": "b",
+          "label": "Foto_Kegiatan_22.jpg",
+          "size": 8,
+          "type": "photo",
+          "key": "b",
+          "x": 590.0,
+          "y": 715.0,
+          "w": 108,
+          "h": 150,
+          "scale": 1.0,
+          "visible": true,
+          "role": "original",
+          "highlight": true,
+          "folder_item": true
+        },
+        {
+          "id": "c",
+          "label": "Foto_taman_22.jpg",
+          "size": 5,
+          "type": "photo",
+          "key": "c",
+          "x": 715.0,
+          "y": 707.0,
+          "w": 108,
+          "h": 150,
+          "scale": 1.0,
+          "visible": true,
+          "role": "original",
+          "highlight": true,
+          "folder_item": true
+        }
+      ],
+      "folders": [
+        {
+          "x": 90.0,
+          "y": 835,
+          "w": 350,
+          "label": "Dokumen",
+          "open": 1.0,
+          "color": "#168F85",
+          "count": 1
+        },
+        {
+          "x": 560.0,
+          "y": 835,
+          "w": 350,
+          "label": "Foto kegiatan",
+          "open": 1.0,
+          "color": "#E9947D",
+          "count": 2
+        }
+      ],
+      "query": "",
+      "editing": null,
+      "focus": [
+        785.2,
+        782.0
+      ],
+      "operation_progress": 1.0,
+      "selected": true,
+      "complete": true,
+      "source_ids": [
+        "a",
+        "b",
+        "c"
+      ],
+      "source_count": 3,
+      "stored_count": 3,
+      "clock": {
+        "version": 1,
+        "fps": 30,
+        "alignment": "measured_tts_phrase_with_estimated_verb_position",
+        "select": 13.642,
+        "departure": 13.992,
+        "arrival": 17.192,
+        "search_reset": 22.742,
+        "complete": 17.392,
+        "compare": 17.242,
+        "inspect": 29.201,
+        "phase_order": [
+          "recognize",
+          "select",
+          "demonstrate",
+          "inspect_result"
+        ],
+        "label": "SIMULASI EDUKASI",
+        "source_clock_changed": false
+      }
+    }
+  }
+}

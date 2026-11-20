@@ -1,0 +1,67 @@
+1
+00:00:00,100 --> 00:00:03,242
+Disalin, kok file
+aslinya masih ada?
+
+2
+00:00:03,316 --> 00:00:06,191
+Contoh ini punya
+satu catatan di Asal.
+
+3
+00:00:06,191 --> 00:00:08,241
+Cadangan masih
+kosong.
+
+4
+00:00:08,356 --> 00:00:10,358
+Saat disalin, yang
+bergerak ke
+
+5
+00:00:10,358 --> 00:00:12,360
+Cadangan adalah
+salinannya.
+
+6
+00:00:12,360 --> 00:00:14,616
+File di Asal tetap
+ada.
+
+7
+00:00:14,616 --> 00:00:16,758
+Lihat dua lokasi ini,
+masing-masing
+
+8
+00:00:16,758 --> 00:00:18,899
+sekarang berisi satu
+catatan.
+
+9
+00:00:19,060 --> 00:00:20,637
+Jadi, menyalin
+membuat duplikat,
+
+10
+00:00:20,637 --> 00:00:22,215
+bukan
+memindahkan file
+
+11
+00:00:22,215 --> 00:00:23,792
+asal.
+
+12
+00:00:23,792 --> 00:00:25,102
+Periksa salinan di
+folder tujuan
+
+13
+00:00:25,102 --> 00:00:26,412
+sebelum
+melanjutkan
+
+14
+00:00:26,412 --> 00:00:27,722
+pekerjaanmu.

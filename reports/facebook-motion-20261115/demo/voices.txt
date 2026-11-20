@@ -1,0 +1,4 @@
+file 'voice_0.wav'
+file 'voice_1.wav'
+file 'voice_2.wav'
+file 'voice_3.wav'

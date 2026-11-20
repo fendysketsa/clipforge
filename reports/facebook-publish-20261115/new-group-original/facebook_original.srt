@@ -1,0 +1,76 @@
+1
+00:00:00,100 --> 00:00:02,490
+Foto bercampur
+dengan catatan?
+
+2
+00:00:02,490 --> 00:00:04,612
+Pisahkan dengan
+folder.
+
+3
+00:00:04,756 --> 00:00:06,922
+Ini simulasi: satu
+catatan dan dua
+
+4
+00:00:06,922 --> 00:00:09,087
+foto ada di
+Dokumen.
+
+5
+00:00:09,087 --> 00:00:11,756
+Folder Foto kegiatan
+masih kosong.
+
+6
+00:00:11,884 --> 00:00:13,794
+Pilih kedua foto, lalu
+pindahkan ke Foto
+
+7
+00:00:13,794 --> 00:00:15,705
+kegiatan.
+
+8
+00:00:15,705 --> 00:00:17,925
+Perhatikan
+pergerakannya.
+
+9
+00:00:17,925 --> 00:00:20,133
+Catatan tetap di
+Dokumen; kedua
+
+10
+00:00:20,133 --> 00:00:22,342
+foto sekarang ada di
+folder tujuan.
+
+11
+00:00:22,492 --> 00:00:24,360
+Jumlahnya tetap
+tiga, tanpa salinan
+
+12
+00:00:24,360 --> 00:00:26,229
+tambahan.
+
+13
+00:00:26,229 --> 00:00:27,715
+Nama folder
+membantu kita
+
+14
+00:00:27,715 --> 00:00:29,201
+mengenali isinya.
+
+15
+00:00:29,201 --> 00:00:30,997
+Periksa hasil
+pemindahan
+
+16
+00:00:30,997 --> 00:00:32,793
+sebelum merapikan
+file yang lain.

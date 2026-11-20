@@ -1,0 +1,29 @@
+{
+  "checked_at": "2026-11-15T14:40:32.091589+00:00",
+  "source_release": "af1c8bce0e4571815549d01e052e4a3e5e7ab30c33e76f10a75226f117f042ff",
+  "deployment": {
+    "command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+    "exit_code": 1,
+    "error": "sudo requires operator password; no deployment performed"
+  },
+  "tests_passed": 283,
+  "frontend_build_id": "fe0IYNRgakiejSxOxNTSU",
+  "facebook_future_model": "inclusionai/ling-3.2-flash:free",
+  "shared_long_model_unchanged": true,
+  "new_request_endpoint": "/api/facebook/originals",
+  "activated": true,
+  "upload_confirmed": false,
+  "shared_qc_tests_passed": 55,
+  "tests_include_shared_long_qc": true,
+  "pending_startup_request": "backend/data/facebook_requests/8d1372a08ca0482a9020b1eba53e981f.json",
+  "request_staged": true,
+  "new_group_video": "new-group-original/facebook_original.mp4",
+  "new_group_qc_state": "reviewed",
+  "local_audio_evidence_verified": true,
+  "activation_required": false,
+  "new_group_qc_decision": "PASS_UPLOAD",
+  "activation_verified_at": "2026-11-15T14:58:41.469976+00:00",
+  "new_group_qc_confidence": 0.92,
+  "live_production_job_id": "cccd4129e1ef451f9f330a991ee2af28",
+  "activation_note": "Live originals_request_version=1 and backend/Telegram source releases match current source; fresh production reserved. Two legacy result cards and their local outputs removed through API."
+}

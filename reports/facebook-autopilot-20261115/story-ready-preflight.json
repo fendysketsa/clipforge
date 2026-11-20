@@ -1,0 +1,47 @@
+{
+  "buttons": [
+    {
+      "text": "",
+      "label": "Menu Facebook"
+    },
+    {
+      "text": "",
+      "label": "Notifikasi"
+    },
+    {
+      "text": "",
+      "label": "Akun, profil Anda"
+    },
+    {
+      "text": "",
+      "label": "Pengaturan privasi cerita"
+    },
+    {
+      "text": "Pangkas video",
+      "label": null
+    },
+    {
+      "text": "Transkripsi",
+      "label": null
+    },
+    {
+      "text": "Hapus",
+      "label": "Hapus"
+    },
+    {
+      "text": "Bagikan ke Cerita",
+      "label": "Bagikan ke Cerita"
+    },
+    {
+      "text": "",
+      "label": "Senyapkan pratinjau. Ini tidak akan memengaruhi cerita Anda."
+    },
+    {
+      "text": "",
+      "label": "Jeda"
+    }
+  ],
+  "main": "Pratinjau\nCondro Kirono Luckytoo\nMengunggah 0%",
+  "editors": 0,
+  "radios": []
+}

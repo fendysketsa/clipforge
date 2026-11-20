@@ -1,0 +1,39 @@
+{
+  "status": "reviewed",
+  "fingerprint": "220a85594465785a022a7936429f80592f1b7d641c6fb7856abaf15dcb0afd96",
+  "media_sha256": "6b87ad749eb7571be2e951257d95166edd6aacca538ad560c88036b2df9457ec",
+  "audit": {
+    "schema_version": 1,
+    "source_job_id": "fb-research-number-20261115",
+    "source_clip_url": "/outputs/fb-research-number-20261115/facebook_original.mp4",
+    "repair_attempted": false,
+    "decision": "PASS_UPLOAD",
+    "confidence": 0.92,
+    "hard_gates": {
+      "rights": true,
+      "media_integrity": true,
+      "meaning_preserved": true,
+      "context_safe": true
+    },
+    "ai_checks": {
+      "hook": true,
+      "standalone_clarity": true,
+      "payoff": true,
+      "caption": true,
+      "crop": true,
+      "visual_quality": true,
+      "audio_quality": true
+    },
+    "evidence": [
+      "Full media decode and generated source identity verified.",
+      "0.5s: Hook displays 'File sepuluh tiba-tiba ada di tengah daftarnya saat ini.' matching plan stage 1.",
+      "4.196s: Visual shows text sort order 'Catatan_1.txt, Catatan_10.txt, Catatan_2.txt' demonstrating the problem.",
+      "10.196s: Visual shows renaming step 'Ganti nama jadi Catatan_01,' matching plan stage 3.",
+      "21.596s: Payoff displays 'Hasil: 01 -> 02 -> 10.' matching plan stage 4.",
+      "Audio review: Whisper segments 0-24s show high caption overlap (0.545-0.897), confirming narration sync and intelligibility."
+    ],
+    "repair_instructions": [],
+    "delete_source": false,
+    "upload_allowed": true
+  }
+}

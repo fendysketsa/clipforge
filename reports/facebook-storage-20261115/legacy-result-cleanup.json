@@ -1,0 +1,42 @@
+{
+  "checked_at": "2026-11-15T14:56:02.294924+00:00",
+  "targets": [
+    {
+      "job_id": "81ba4cdd02ca435897729d8e733e1e82",
+      "title": "Periksa sampah sebelum menghapus permanen",
+      "bytes_before": 3883591,
+      "api_result": {
+        "status": "ok",
+        "removed_jobs": 1,
+        "removed_outputs": 6
+      },
+      "workspace_exists_after": false
+    },
+    {
+      "job_id": "f982e689d4274d9496d7416a412107cf",
+      "title": "Tanggal yang mudah diurutkan",
+      "bytes_before": 0,
+      "api_result": {
+        "status": "ok",
+        "removed_jobs": 1,
+        "removed_outputs": 0
+      },
+      "workspace_exists_after": false
+    }
+  ],
+  "confirmed_uploads_preserved": [
+    {
+      "id": "d27a9dd3518b4f01a3a9cec3a41f3ac9",
+      "job_id": "d3c240acaab44c53b518732a21a2a61b",
+      "video_url": "https://www.facebook.com/reel/1844917023309992/",
+      "sha256": "67d9ed15193897e6fb37bb04ae77b64321a2995a6203cc39ae4663f5641c965b"
+    }
+  ],
+  "remaining_jobs": [
+    {
+      "job_id": "cccd4129e1ef451f9f330a991ee2af28",
+      "status": "queued",
+      "title": "Folder sesuai keperluan"
+    }
+  ]
+}

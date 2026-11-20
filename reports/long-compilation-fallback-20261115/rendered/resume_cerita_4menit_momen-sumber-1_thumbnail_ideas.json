@@ -1,0 +1,92 @@
+{
+  "schema": "clipforge-thumbnail-ideas-v1",
+  "source_clip": "resume_cerita_4menit_momen-sumber-1.mp4",
+  "format": "16:9",
+  "truthfulness": {
+    "grounded_in_clip_evidence": true,
+    "invented_claims_allowed": false,
+    "reference_design_copying_allowed": false,
+    "shorts_custom_thumbnail_guaranteed": false
+  },
+  "variants": [
+    {
+      "id": "A",
+      "angle": "human_tension",
+      "eyebrow": "FAKTA / PELAJARAN",
+      "headline": "KOMPILASI MOMEN: MOMEN SUMBER 1",
+      "support": "Momen terpilih: momen sumber 1 → momen sumber 2 →",
+      "keyframe_direction": "Sorot ketegangan manusia dari momen asli, dengan ekspresi/subjek tetap autentik.",
+      "composition": "9:16 actual-video keyframe; one dominant subject; headline kept in the central Shorts-safe area; preserve face and evidence visibility.",
+      "palette": "source-derived dark contrast with one theme accent and white type",
+      "image_prompt": "Use only the supplied frame from resume_cerita_4menit_momen-sumber-1.mp4. Preserve all people, objects, identity, and event context. Add the exact headline 'KOMPILASI MOMEN: MOMEN SUMBER 1' with high mobile legibility and a restrained cinematic grade.",
+      "negative_prompt": "no invented people, no face replacement, no fake evidence, no copied channel branding, no fabricated quote, no unrelated object, no gore, no tiny text",
+      "evidence": [
+        "title: Kompilasi Momen: Momen sumber 1",
+        "hook: Momen sumber 1",
+        "core_message: Momen terpilih: Momen sumber 1 → Momen sumber 2 → Momen sumber 3 → Momen sumber 4"
+      ],
+      "filename": "resume_cerita_4menit_momen-sumber-1_thumb.jpg",
+      "score": 91,
+      "score_breakdown": {
+        "clarity": 19,
+        "curiosity": 19,
+        "emotion": 19,
+        "contrast": 17,
+        "legibility": 17
+      }
+    },
+    {
+      "id": "B",
+      "angle": "object_or_evidence",
+      "eyebrow": "FAKTA / PELAJARAN",
+      "headline": "MOMEN TERPILIH: MOMEN SUMBER 1 →",
+      "support": "Momen terpilih: momen sumber 1 → momen sumber 2 →",
+      "keyframe_direction": "Tonjolkan bukti atau detail visual yang benar-benar tampak pada keyframe.",
+      "composition": "9:16 actual-video keyframe; one dominant subject; headline kept in the central Shorts-safe area; preserve face and evidence visibility.",
+      "palette": "source-derived dark contrast with one theme accent and white type",
+      "image_prompt": "Use only the supplied frame from resume_cerita_4menit_momen-sumber-1.mp4. Preserve all people, objects, identity, and event context. Add the exact headline 'MOMEN TERPILIH: MOMEN SUMBER 1 →' with high mobile legibility and a restrained cinematic grade.",
+      "negative_prompt": "no invented people, no face replacement, no fake evidence, no copied channel branding, no fabricated quote, no unrelated object, no gore, no tiny text",
+      "evidence": [
+        "title: Kompilasi Momen: Momen sumber 1",
+        "hook: Momen sumber 1",
+        "core_message: Momen terpilih: Momen sumber 1 → Momen sumber 2 → Momen sumber 3 → Momen sumber 4"
+      ],
+      "filename": "resume_cerita_4menit_momen-sumber-1_thumb_b.jpg",
+      "score": 87,
+      "score_breakdown": {
+        "clarity": 18,
+        "curiosity": 18,
+        "emotion": 16,
+        "contrast": 18,
+        "legibility": 17
+      }
+    },
+    {
+      "id": "C",
+      "angle": "cinematic_story",
+      "eyebrow": "FAKTA / PELAJARAN",
+      "headline": "MOMEN SUMBER 4",
+      "support": "Momen terpilih: momen sumber 1 → momen sumber 2 →",
+      "keyframe_direction": "Bangun rasa cerita dan payoff tanpa menambah tokoh, kejadian, atau klaim baru.",
+      "composition": "9:16 actual-video keyframe; one dominant subject; headline kept in the central Shorts-safe area; preserve face and evidence visibility.",
+      "palette": "source-derived dark contrast with one theme accent and white type",
+      "image_prompt": "Use only the supplied frame from resume_cerita_4menit_momen-sumber-1.mp4. Preserve all people, objects, identity, and event context. Add the exact headline 'MOMEN SUMBER 4' with high mobile legibility and a restrained cinematic grade.",
+      "negative_prompt": "no invented people, no face replacement, no fake evidence, no copied channel branding, no fabricated quote, no unrelated object, no gore, no tiny text",
+      "evidence": [
+        "title: Kompilasi Momen: Momen sumber 1",
+        "hook: Momen sumber 1",
+        "core_message: Momen terpilih: Momen sumber 1 → Momen sumber 2 → Momen sumber 3 → Momen sumber 4"
+      ],
+      "filename": "resume_cerita_4menit_momen-sumber-1_thumb_c.jpg",
+      "score": 89,
+      "score_breakdown": {
+        "clarity": 18,
+        "curiosity": 19,
+        "emotion": 18,
+        "contrast": 17,
+        "legibility": 17
+      }
+    }
+  ],
+  "recommended_variant": "A"
+}

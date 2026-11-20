@@ -1,0 +1,17 @@
+[
+  {
+    "key": "published-youtube",
+    "error_type": "DownloadError",
+    "available": false
+  },
+  {
+    "key": "official-statement",
+    "error_type": "DownloadError",
+    "available": false
+  },
+  {
+    "key": "published-tiktok",
+    "error_type": "DownloadError",
+    "available": false
+  }
+]

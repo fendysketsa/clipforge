@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "passed": false,
+  "reasons": [
+    "coherent_topic",
+    "progression",
+    "resolved_ending",
+    "adds_value_beyond_short",
+    "no_filler",
+    "promise_matches_content",
+    "missing_viewer_need",
+    "missing_title_promise",
+    "missing_reason",
+    "missing_ordered_story_arc"
+  ],
+  "review": {},
+  "output_seconds": 240,
+  "new_material_fraction": 0.8958,
+  "basis": "ai_editorial_review_with_exact_transcript_quotes",
+  "actual_retention_verified": false,
+  "future_views_guaranteed": false
+}

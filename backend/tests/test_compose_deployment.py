@@ -122,9 +122,11 @@ def test_bot_preparation_requires_verified_frontend(project,tmp_path,monkeypatch
 
 def test_backend_contract_does_not_resume_disabled_cron(monkeypatch):
     payloads={'/api/health':{'status':'ok'},'/api/tiktok/config':{'duplicate_guard_version':2,'cron_draft_policy':'discard'},
-      '/api/facebook/config':{'version':1,'max_seconds':55,'target_email':'fendysketsa@gmail.com'},
+      '/api/facebook/config':{'version':1,'monetization_version':1,'autopilot_version':1,'activity_version':1,'bonus_priority_version':1,'creative_policy_version':2,'local_cleanup_version':1,'educational_motion_version':1,'originals_request_version':1,'max_seconds':55,'target_email':'fendysketsa@gmail.com'},
+      '/api/facebook/autopilot':{'version':1,'scheduler_running':True},
       '/api/automation/viral-cc/schedule':{'short_schedule_policy_version':1,'short_schedule_daily_limit':5,'short_schedule_timezone':'Asia/Jakarta','daily_plan_version':1,'activity_version':1,'activity':{'state':'disabled'},'cron_director_effects_policy_version':4,'cron_source_process_limit':2,'enabled':False,'scheduler_running':False},
-      '/api/automation/viral-cc/long-strategy':{'version':2,'semantic_story_review_required':True,'themes':[
+      '/api/automation/viral-cc/long-strategy':{'version':2,'semantic_story_review_required':True,
+          'compilation_fallback_policy_version':1,'compilation_fallback_enabled':True,'fallback_preserves_long_qc':True,'themes':[
           {'key':key,'manual_review_required':key=='domestic_politics'} for key in
           ('mystery_story','legend_folklore','domestic_politics','food_healthy_review','food_taste_review')]}}
     monkeypatch.setattr(deploy,'get_json',lambda url:payloads[url.removeprefix('http://local')])
@@ -168,7 +170,7 @@ for(const name of ['package.json','package-lock.json','next.config.ts','tsconfig
 for(const dir of ['app','public','.next/static'])fs.mkdirSync(dir,{recursive:true});
 fs.writeFileSync('app/page.tsx','original source');
 fs.writeFileSync('.next/BUILD_ID','build-a');
-const js='jobDirectorRecovery history-four-columns jobPlatformQueue /reconcile dijadwalkan ulang otomatis pengaturan privasi tertunda Hasil posting perlu diperiksa cronActivityHeading Detail pemeriksaan cronDailyLanes studioSidebar studioQueueRow connectionCard studioThemeToggle fbWorkspace facebook/uploads Facebook Reels';
+const js='jobDirectorRecovery history-four-columns jobPlatformQueue /reconcile dijadwalkan ulang otomatis pengaturan privasi tertunda Hasil posting perlu diperiksa cronActivityHeading Detail pemeriksaan cronDailyLanes studioSidebar studioQueueRow connectionCard studioThemeToggle fbWorkspace facebook/uploads Facebook Reels fbMonetization facebook/monetization fbAutopilot facebook/autopilot fbAutoBonus fbPublished File lokal dibersihkan otomatis animasi objek 2D Buat Reel animasi';
 const css='.outputWorkspacePane .jobList{grid-template-columns:repeat(4,minmax(0,1fr))}.clipGrid{grid-template-columns:repeat(3,minmax(0,1fr))}:root[data-theme=light]{color-scheme:light}';
 fs.writeFileSync('.next/static/app.js',js);fs.writeFileSync('.next/static/app.css',css);
 const deploy=require('./scripts/deployment-health.cjs');

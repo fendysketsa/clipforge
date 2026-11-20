@@ -1,0 +1,90 @@
+{
+  "media_sha256": "e73a6d1fc42ae0dc7d77330a31485ea6a654e69ee458631547d6cc1b4838e3ac",
+  "method": "actual_encoded_audio_local_whisper_medium",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 2.52,
+      "text": " Disalin, koh file aslinya masih ada?"
+    },
+    {
+      "start": 3.24,
+      "end": 5.44,
+      "text": " Contoh ini punya satu catatan di asal."
+    },
+    {
+      "start": 6.12,
+      "end": 7.5200000000000005,
+      "text": " Cadangan masih kosong."
+    },
+    {
+      "start": 8.28,
+      "end": 11.6,
+      "text": " Saat disalin, yang bergerak ke cadangan adalah salinannya."
+    },
+    {
+      "start": 12.32,
+      "end": 13.88,
+      "text": " File di asal tetap ada."
+    },
+    {
+      "start": 14.56,
+      "end": 18.2,
+      "text": " Lihat dua lokasi ini, masing-masing sekarang berisi satu catatan."
+    },
+    {
+      "start": 19.0,
+      "end": 23.0,
+      "text": " Jadi, menyalin membuat duplikat, bukan memindahkan file asal."
+    },
+    {
+      "start": 23.72,
+      "end": 27.0,
+      "text": " Periksa salinan di folder tujuan sebelum melanjutkan pekerjaanmu."
+    }
+  ],
+  "volumes": {
+    "mean_volume": -16.3,
+    "max_volume": -1.9
+  },
+  "last_spoken_end_seconds": 27.0,
+  "ending_recognized": true,
+  "sound_events": [
+    {
+      "kind": "tap",
+      "start": 0.35,
+      "duration": 0.065,
+      "gain_db": -23,
+      "event": "opening_question"
+    },
+    {
+      "kind": "tap",
+      "start": 8.701,
+      "duration": 0.065,
+      "gain_db": -23,
+      "event": "object_selected"
+    },
+    {
+      "kind": "swoosh",
+      "start": 9.051,
+      "duration": 0.24,
+      "gain_db": -25,
+      "event": "object_travels"
+    },
+    {
+      "kind": "chime",
+      "start": 12.251,
+      "duration": 0.38,
+      "gain_db": -24,
+      "event": "object_arrives"
+    },
+    {
+      "kind": "tap",
+      "start": 23.742,
+      "duration": 0.065,
+      "gain_db": -25,
+      "event": "inspect_existing_copy"
+    }
+  ],
+  "review_only": true
+}

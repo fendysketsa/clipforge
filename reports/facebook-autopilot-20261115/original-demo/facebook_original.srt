@@ -1,0 +1,76 @@
+1
+00:00:00,100 --> 00:00:02,308
+Ruang file terasa
+penuh?
+
+2
+00:00:02,308 --> 00:00:04,333
+Periksa ukurannya
+dulu.
+
+3
+00:00:04,444 --> 00:00:06,050
+Daftar contoh ini
+berisi satu dokumen
+
+4
+00:00:06,050 --> 00:00:07,655
+kecil dan dua video
+dengan ukuran
+
+5
+00:00:07,655 --> 00:00:09,261
+berbeda.
+
+6
+00:00:09,261 --> 00:00:10,710
+Semua ukuran
+ditampilkan di
+
+7
+00:00:10,710 --> 00:00:12,160
+samping nama.
+
+8
+00:00:12,292 --> 00:00:14,949
+Urutkan ukuran dari
+besar ke kecil.
+
+9
+00:00:14,949 --> 00:00:16,562
+Video terbesar naik
+ke atas, sehingga
+
+10
+00:00:16,562 --> 00:00:18,176
+mudah diperiksa
+sebelum
+
+11
+00:00:18,176 --> 00:00:19,789
+memutuskan
+tindakan.
+
+12
+00:00:19,948 --> 00:00:21,252
+Mengurutkan belum
+menghapus apa
+
+13
+00:00:21,252 --> 00:00:22,557
+pun.
+
+14
+00:00:22,557 --> 00:00:24,073
+Periksa file yang
+masih diperlukan
+
+15
+00:00:24,073 --> 00:00:25,590
+dan salin yang
+penting sebelum
+
+16
+00:00:25,590 --> 00:00:27,106
+merapikan
+penyimpanan.

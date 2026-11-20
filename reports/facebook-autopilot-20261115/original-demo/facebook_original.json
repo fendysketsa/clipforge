@@ -1,0 +1,111 @@
+{
+  "title": "Periksa file besar sebelum merapikan",
+  "text": "Ruang file terasa penuh? Periksa ukurannya dulu. Daftar contoh ini berisi satu dokumen kecil dan dua video dengan ukuran berbeda. Semua ukuran ditampilkan di samping nama. Urutkan ukuran dari besar ke kecil. Video terbesar naik ke atas, sehingga mudah diperiksa sebelum memutuskan tindakan. Mengurutkan belum menghapus apa pun. Periksa file yang masih diperlukan dan salin yang penting sebelum merapikan penyimpanan.",
+  "source_identity": "2026-11-15:reel:0",
+  "narrative_arc_complete": true,
+  "original_demo": {
+    "version": 1,
+    "seed": "2026-11-15:reel:0",
+    "kind": "reel",
+    "topic": "size",
+    "title": "Periksa file besar sebelum merapikan",
+    "stages": [
+      {
+        "title": "Masalahnya",
+        "text": "Ruang file terasa penuh? Periksa ukurannya dulu.",
+        "start": 0.0,
+        "end": 4.344
+      },
+      {
+        "title": "Perhatikan contoh",
+        "text": "Daftar contoh ini berisi satu dokumen kecil dan dua video dengan ukuran berbeda. Semua ukuran ditampilkan di samping nama.",
+        "start": 4.344,
+        "end": 12.192
+      },
+      {
+        "title": "Coba langkahnya",
+        "text": "Urutkan ukuran dari besar ke kecil. Video terbesar naik ke atas, sehingga mudah diperiksa sebelum memutuskan tindakan.",
+        "start": 12.192,
+        "end": 19.848
+      },
+      {
+        "title": "Lihat hasilnya",
+        "text": "Mengurutkan belum menghapus apa pun. Periksa file yang masih diperlukan dan salin yang penting sebelum merapikan penyimpanan.",
+        "start": 19.848,
+        "end": 27.144
+      }
+    ],
+    "files": [
+      {
+        "id": "a",
+        "label": "Catatan_Kegiatan_21.txt",
+        "size": 2,
+        "type": "document"
+      },
+      {
+        "id": "b",
+        "label": "Video_Kegiatan_21.mp4",
+        "size": 120,
+        "type": "video"
+      },
+      {
+        "id": "c",
+        "label": "Video_taman_21.mp4",
+        "size": 48,
+        "type": "video"
+      }
+    ],
+    "caption": "Periksa file besar sebelum merapikan. Mengurutkan belum menghapus apa pun. Periksa file yang masih diperlukan dan salin yang penting sebelum merapikan penyimpanan.\n\n#TipsDigital #TeknologiSehariHari",
+    "visual_type": "authored_animated_simulation",
+    "third_party_footage": false,
+    "third_party_music": false,
+    "synthetic_voice": true,
+    "narration_provider": "edge_neural_id-ID-ArdiNeural",
+    "example": "Kegiatan_21",
+    "plan_sha256": "0cde3d93963b18063e53d39994aa4501bf6c8dbb367324cba185e4fa04328ca5"
+  },
+  "facebook": {
+    "version": 1,
+    "caption": "Periksa file besar sebelum merapikan. Mengurutkan belum menghapus apa pun. Periksa file yang masih diperlukan dan salin yang penting sebelum merapikan penyimpanan.\n\n#TipsDigital #TeknologiSehariHari",
+    "watermark": {
+      "style_version": 2,
+      "style": "channel_monogram_champagne_seal",
+      "asset": "ryuundy-watermark-v2.svg",
+      "channel_url": "https://www.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ",
+      "position": "center_46_percent",
+      "size_px": 208,
+      "opacity": 0.24,
+      "wordmark_opacity": 0.34,
+      "backplate_opacity": 0.0,
+      "ornament": "original_channel_r_crescent_ring",
+      "animated": false,
+      "source_ownership_claimed": false
+    }
+  },
+  "render_quality_qc": {
+    "quality_gate_passed": true,
+    "blocking": false,
+    "full_decode_passed": true,
+    "frame_timestamps_seconds": [
+      0.5,
+      4.844,
+      12.692,
+      20.348
+    ]
+  },
+  "render_source_sha256": "a4352a74cc9d45c11f697c9c09ca3a2a8cddb68a401e0c4bf89084ac5c619be3",
+  "media_sha256": "9e24ce7bc43bbb60b8ef9b60057bced0fcaa9b662760fedfb9b29aa3b0eee2d2",
+  "output_duration_seconds": 27.144,
+  "source_provenance": {
+    "kind": "authored_original_simulation",
+    "original_script_and_visuals": true,
+    "third_party_video": false,
+    "music": false,
+    "neural_narration": true
+  },
+  "growth_readiness": {
+    "measured_retention": null,
+    "predicted_score": null,
+    "not_a_monetization_approval": true
+  }
+}

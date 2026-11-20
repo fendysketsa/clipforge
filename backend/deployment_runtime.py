@@ -86,6 +86,9 @@ def verify_dependencies() -> None:
     decoders = subprocess.check_output(['ffmpeg', '-hide_banner', '-decoders'], stderr=subprocess.STDOUT, text=True, timeout=15)
     if 'librsvg' not in decoders:
         raise RuntimeError('FFmpeg SVG decoder required by the director is missing')
+    filters=subprocess.check_output(['ffmpeg','-hide_banner','-filters'],stderr=subprocess.STDOUT,text=True,timeout=15)
+    if not all(name in filters for name in ('loudnorm','sidechaincompress','amix','alimiter')):
+        raise RuntimeError('FFmpeg audio filters required by Facebook sound design are missing')
     subprocess.run(['node', '--version'], check=True, stdout=subprocess.DEVNULL, timeout=5)
     if not (ROOT / 'remotion/node_modules/remotion/package.json').is_file():
         raise RuntimeError('Remotion dependencies missing from image')
@@ -124,18 +127,31 @@ def backend_contract(base: str) -> dict:
     long = get_json(base + '/api/automation/viral-cc/long-strategy')
     themes = {row.get('key'): row for row in long.get('themes', [])}
     if (long.get('version') != 2 or long.get('semantic_story_review_required') is not True
+            or long.get('compilation_fallback_policy_version') != 1
+            or long.get('compilation_fallback_enabled') is not True
+            or long.get('fallback_preserves_long_qc') is not True
             or not {'mystery_story', 'legend_folklore', 'domestic_politics',
                     'food_healthy_review', 'food_taste_review'} <= themes.keys()
             or themes['domestic_politics'].get('manual_review_required') is not True):
         raise RuntimeError('Cron Long strategy or RYUUNDY theme policy is stale')
     facebook = get_json(base + '/api/facebook/config')
-    if (facebook.get('version') != 1 or facebook.get('max_seconds') != 55
+    if (facebook.get('version') != 1 or facebook.get('monetization_version') != 1
+            or facebook.get('autopilot_version') != 1 or facebook.get('activity_version') != 1
+            or facebook.get('bonus_priority_version') != 1
+            or facebook.get('creative_policy_version') != 2
+            or facebook.get('local_cleanup_version') != 1
+            or facebook.get('educational_motion_version') != 1
+            or facebook.get('originals_request_version') != 1
+            or facebook.get('max_seconds') != 55
             or facebook.get('target_email') != 'fendysketsa@gmail.com'):
         raise RuntimeError('Facebook workspace or duration policy is stale')
+    facebook_worker=get_json(base + '/api/facebook/autopilot')
+    if facebook_worker.get('version')!=1 or facebook_worker.get('scheduler_running') is not True:
+        raise RuntimeError('Facebook automatic worker has not started')
     return {**expected, 'facebook_workspace_version': facebook['version'], 'cron_enabled': schedule.get('enabled'),
             'scheduler_running': schedule.get('scheduler_running'),
-            'director_policy': 4, 'source_process_limit': 2,
-            'long_strategy_version': 2, 'long_theme_count': len(themes)}
+            'director_policy': 4, 'source_process_limit': 2, 'facebook_autopilot_version': 1,
+            'long_strategy_version': 2, 'long_compilation_fallback_version': 1, 'long_theme_count': len(themes)}
 
 
 def report_path(role: str) -> Path:

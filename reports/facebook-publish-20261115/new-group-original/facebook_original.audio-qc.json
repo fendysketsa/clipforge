@@ -1,0 +1,88 @@
+{
+  "identity": {
+    "media_sha256": "bfe9d2ee0e9f9e9ed283d1a71fa9e629e70d36b2506e6aa11876c31d2711aca4",
+    "subtitles_sha256": "d2d57db2b9a7f7bbd3d37cdb6b0ddfbd97c5922d7ced470c99e11b5266d96556",
+    "windows": [
+      {
+        "start_seconds": 0.0,
+        "duration_seconds": 6.0
+      },
+      {
+        "start_seconds": 6.0,
+        "duration_seconds": 6.0
+      },
+      {
+        "start_seconds": 12.0,
+        "duration_seconds": 6.0
+      },
+      {
+        "start_seconds": 18.0,
+        "duration_seconds": 6.0
+      },
+      {
+        "start_seconds": 24.0,
+        "duration_seconds": 6.0
+      },
+      {
+        "start_seconds": 30.0,
+        "duration_seconds": 2.833333000000003
+      }
+    ]
+  },
+  "review": [
+    {
+      "start_seconds": 0.0,
+      "duration_seconds": 6.0,
+      "recognized_text": "Foto bercampur dengan catatan. Pisahkan dengan folder. Ini simulasi.",
+      "expected_captions": "Foto bercampur\ndengan catatan? Pisahkan dengan\nfolder. Ini simulasi: satu\ncatatan dan dua",
+      "caption_overlap_f1": 0.842,
+      "mean_log_probability": -0.4434858837297984,
+      "method": "local_whisper_medium_cpu_int8_actual_output_audio"
+    },
+    {
+      "start_seconds": 6.0,
+      "duration_seconds": 6.0,
+      "recognized_text": "Satu catatan dan dua foto ada di dokumen. Folder foto kegiatan masih kosong.",
+      "expected_captions": "Ini simulasi: satu\ncatatan dan dua foto ada di\nDokumen. Folder Foto kegiatan\nmasih kosong. Pilih kedua foto, lalu\npindahkan ke Foto",
+      "caption_overlap_f1": 0.774,
+      "mean_log_probability": -0.277601563504764,
+      "method": "local_whisper_medium_cpu_int8_actual_output_audio"
+    },
+    {
+      "start_seconds": 12.0,
+      "duration_seconds": 6.0,
+      "recognized_text": "Pilih kedua foto, lalu pindahkan ke foto kegiatan. Perhatikan pergerakannya.",
+      "expected_captions": "Pilih kedua foto, lalu\npindahkan ke Foto kegiatan. Perhatikan\npergerakannya. Catatan tetap di\nDokumen; kedua",
+      "caption_overlap_f1": 0.818,
+      "mean_log_probability": -0.26814154422644415,
+      "method": "local_whisper_medium_cpu_int8_actual_output_audio"
+    },
+    {
+      "start_seconds": 18.0,
+      "duration_seconds": 6.0,
+      "recognized_text": "Catatan tetap di Dokumen, kedua foto sekarang ada di folder tujuan. Jumlahnya tetap 3.",
+      "expected_captions": "Catatan tetap di\nDokumen; kedua foto sekarang ada di\nfolder tujuan. Jumlahnya tetap\ntiga, tanpa salinan",
+      "caption_overlap_f1": 0.846,
+      "mean_log_probability": -0.26728973723948,
+      "method": "local_whisper_medium_cpu_int8_actual_output_audio"
+    },
+    {
+      "start_seconds": 24.0,
+      "duration_seconds": 6.0,
+      "recognized_text": "tanpa salinan tambahan. Nama folder membantu kita mengenali isinya. Periksa hasil pembiayaan.",
+      "expected_captions": "Jumlahnya tetap\ntiga, tanpa salinan tambahan. Nama folder\nmembantu kita mengenali isinya. Periksa hasil\npemindahan",
+      "caption_overlap_f1": 0.815,
+      "mean_log_probability": -0.42463042607178564,
+      "method": "local_whisper_medium_cpu_int8_actual_output_audio"
+    },
+    {
+      "start_seconds": 30.0,
+      "duration_seconds": 2.833333000000003,
+      "recognized_text": "memindahkan sebelum rapikan file yang lain.",
+      "expected_captions": "Periksa hasil\npemindahan sebelum merapikan\nfile yang lain.",
+      "caption_overlap_f1": 0.571,
+      "mean_log_probability": -0.34164191484451295,
+      "method": "local_whisper_medium_cpu_int8_actual_output_audio"
+    }
+  ]
+}

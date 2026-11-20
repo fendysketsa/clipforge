@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="1.458" timestamp="2026-11-15T16:23:57.982412+07:00" hostname="fendycnugraha"><testcase classname="tests.test_facebook_autopilot" name="test_stopped_autopilot_does_not_render_or_enqueue" time="0.019" /></testsuite></testsuites>

@@ -1,0 +1,1250 @@
+{
+  "enabled": true,
+  "daily_target": 2,
+  "attempts": [
+    {
+      "day": "2026-11-06",
+      "short_job_id": "7d07d87619814350a4a9ba1e2d2c5900",
+      "job_id": "62e39379843d4f019cca79cc7415182c",
+      "source_run_id": "8b79fcdf86e049c7ae20cbc411c29871",
+      "status": "completed",
+      "review_required": true,
+      "error": null,
+      "relevance": {
+        "passed": true,
+        "same_source": true,
+        "source_url": "https://www.youtube.com/watch?v=MtoYogBMyII",
+        "required_short_count": 1,
+        "matched_short_count": 1,
+        "matches": [
+          {
+            "short_index": 1,
+            "long_part_index": 7,
+            "source_overlap_seconds": 43.56,
+            "short_coverage": 1.0,
+            "passed": true
+          }
+        ]
+      },
+      "confirmed_upload_id": "2e2e0aacf7044cf7897cbe167bfa5494",
+      "confirmed_video_url": "https://www.youtube.com/watch?v=H0dB6_lP89c"
+    },
+    {
+      "day": "2026-11-07",
+      "short_job_id": "582fb850ce30461d8f7f5eb54cd15c04",
+      "job_id": "d14fe9c4666a441799a4033509e93df3",
+      "source_run_id": "7e8dbb47d93a4172a0a9dde13133ebd7",
+      "status": "completed",
+      "review_required": true,
+      "error": null,
+      "relevance": {
+        "passed": true,
+        "same_source": true,
+        "source_url": "https://www.youtube.com/watch?v=5-BdF3thmQA",
+        "required_short_count": 1,
+        "matched_short_count": 1,
+        "matches": [
+          {
+            "short_index": 1,
+            "long_part_index": 7,
+            "source_overlap_seconds": 27.667,
+            "short_coverage": 1.0,
+            "passed": true
+          }
+        ]
+      },
+      "confirmed_upload_id": "3f4ec8d0166342d9a7d03063da3fb869",
+      "confirmed_video_url": "https://www.youtube.com/watch?v=4wOZFjhatxg"
+    },
+    {
+      "day": "2026-11-07",
+      "short_job_id": "e09f658360544a76a5d8ac5e6859f69c",
+      "job_id": "60da3eb153194ef9ac443c184bdbd8c9",
+      "source_run_id": "c1abe8b22c16473b9795d33e989a4b59",
+      "status": "completed",
+      "review_required": true,
+      "error": null,
+      "relevance": {
+        "passed": true,
+        "same_source": true,
+        "source_url": "https://www.youtube.com/watch?v=wI824P99uQk",
+        "required_short_count": 1,
+        "matched_short_count": 1,
+        "matches": [
+          {
+            "short_index": 1,
+            "long_part_index": 3,
+            "source_overlap_seconds": 42.339,
+            "short_coverage": 1.0,
+            "passed": true
+          }
+        ]
+      },
+      "confirmed_upload_id": "06f2a7e9f0f04855a2a85f90f44bcff1",
+      "confirmed_video_url": "https://www.youtube.com/watch?v=Pmg3KKaLRRo"
+    },
+    {
+      "day": "2026-11-07",
+      "short_job_id": "837214a9973245b593bab55592af1da6",
+      "job_id": "60646d1b4607453180c42595a49699a2",
+      "source_run_id": "4ec62d1110dd428ab314d592b579caaa",
+      "status": "completed",
+      "review_required": true,
+      "confirmed_upload_id": "925166f50c5e4fec98228922acb09bb9",
+      "confirmed_video_url": "https://www.youtube.com/watch?v=i3Zgdibvib8",
+      "error": null
+    },
+    {
+      "day": "2026-11-09",
+      "short_job_id": "c2a3351a269b48b9a794e266f5eeb8e6",
+      "job_id": "755bd27102f64802980b2b66d6be99e3",
+      "source_run_id": "b801a992ef054d579e7342dabbb94649",
+      "status": "completed",
+      "review_required": true,
+      "error": null,
+      "relevance": {
+        "passed": true,
+        "same_source": true,
+        "source_url": "https://www.youtube.com/watch?v=Km5di1jQtp4",
+        "required_short_count": 1,
+        "matched_short_count": 1,
+        "matches": [
+          {
+            "short_index": 1,
+            "long_part_index": 1,
+            "source_overlap_seconds": 25.361,
+            "short_coverage": 1.0,
+            "passed": true
+          }
+        ]
+      },
+      "confirmed_upload_id": "49d2a65d12484c05ad1a445aca6f67e9",
+      "confirmed_video_url": "https://www.youtube.com/watch?v=1peJcSIbMbM"
+    },
+    {
+      "day": "2026-11-10",
+      "short_job_id": "837707501f294e6e871a6d4de7e35be0",
+      "job_id": "ba8226bb1e104699a20b36a285001d24",
+      "source_run_id": "8c1f5746160945be80a470c42d296a48",
+      "status": "completed",
+      "review_required": true,
+      "error": null,
+      "relevance": {
+        "passed": true,
+        "same_source": true,
+        "source_url": "https://www.youtube.com/watch?v=ujpASa-8tWg",
+        "required_short_count": 1,
+        "matched_short_count": 1,
+        "matches": [
+          {
+            "short_index": 1,
+            "long_part_index": 1,
+            "source_overlap_seconds": 35.21,
+            "short_coverage": 1.0,
+            "passed": true
+          }
+        ]
+      },
+      "confirmed_upload_id": "e4adc0f1fd4a4dcc8ff35826f5f3a465",
+      "confirmed_video_url": "https://www.youtube.com/watch?v=R7yQx8bchUY"
+    },
+    {
+      "day": "2026-11-10",
+      "short_job_id": "82cf9657a36e4dcea341cfbb86cd7cbd",
+      "job_id": "0093888d10ba4c7290ab1673be7fd24e",
+      "source_run_id": "b801a992ef054d579e7342dabbb94649",
+      "status": "completed",
+      "review_required": true,
+      "error": null,
+      "relevance": {
+        "passed": true,
+        "same_source": true,
+        "source_url": "https://www.youtube.com/watch?v=uP8yMRXy5g8",
+        "required_short_count": 1,
+        "matched_short_count": 1,
+        "matches": [
+          {
+            "short_index": 1,
+            "long_part_index": 4,
+            "source_overlap_seconds": 40.369,
+            "short_coverage": 1.0,
+            "passed": true
+          }
+        ]
+      },
+      "qc_decision": "DROP_SOURCE",
+      "confirmed_upload_id": "9df70aeceb4d4d44a5fef28b2057bc8b",
+      "confirmed_video_url": "https://www.youtube.com/watch?v=PFVPqg4vlTs"
+    },
+    {
+      "day": "2026-11-10",
+      "short_job_id": "818a39daa0d44005941cc2265b2aaf06",
+      "job_id": "2662c7f7802a478dae2e3a2526486b18",
+      "source_run_id": "b801a992ef054d579e7342dabbb94649",
+      "status": "failed",
+      "review_required": true,
+      "error": "clipper.py exited with code 1 Workspace dan seluruh file sementara proses gagal telah dihapus."
+    },
+    {
+      "day": "2026-11-11",
+      "short_job_id": "fad974d18c6b47138917d7b06e08d400",
+      "job_id": "2a08735031e3425faa863fd198665238",
+      "source_run_id": "4a9bb370f8824b37bc26dfab29a1c705",
+      "status": "completed",
+      "review_required": true,
+      "error": null,
+      "relevance": {
+        "passed": true,
+        "same_source": true,
+        "source_url": "https://www.youtube.com/watch?v=B3anNkNUqrg",
+        "required_short_count": 1,
+        "matched_short_count": 1,
+        "matches": [
+          {
+            "short_index": 1,
+            "long_part_index": 2,
+            "source_overlap_seconds": 44.87,
+            "short_coverage": 1.0,
+            "passed": true
+          }
+        ]
+      },
+      "confirmed_upload_id": "78327eb475a54311b44335810e99617b",
+      "confirmed_video_url": "https://www.youtube.com/watch?v=rMyZT-8cUjo"
+    },
+    {
+      "day": "2026-11-12",
+      "short_job_id": "05105d334b1542858dd68e90eae044ea",
+      "job_id": "7b00e5e4412a487694c8216eb865d503",
+      "source_run_id": "ac6a74c65dd9437b80edc7f3a45adca3",
+      "status": "completed",
+      "review_required": true,
+      "error": null,
+      "relevance": {
+        "passed": true,
+        "same_source": true,
+        "source_url": "https://www.youtube.com/watch?v=5l7TRbiB4Yg",
+        "required_short_count": 1,
+        "matched_short_count": 1,
+        "matches": [
+          {
+            "short_index": 1,
+            "long_part_index": 1,
+            "source_overlap_seconds": 45.0,
+            "short_coverage": 1.0,
+            "passed": true
+          }
+        ]
+      },
+      "qc_decision": "DROP_SOURCE",
+      "confirmed_upload_id": "cacb28fca3994b039c0e7f4b9f33f781",
+      "confirmed_video_url": "https://www.youtube.com/watch?v=6LrGbyMS_0c"
+    },
+    {
+      "day": "2026-11-12",
+      "short_job_id": "57e1e264a9c44759a3c15d422f34f6cf",
+      "job_id": "ea85e504653c45d2b17a1e1953a6181d",
+      "source_run_id": "a7a1cf1c0bea48848fe75867d5945040",
+      "status": "completed",
+      "review_required": true,
+      "qc_decision": "DROP_SOURCE",
+      "confirmed_upload_id": "063cc4c42efc4d4495f4bc1ff7b77fcc",
+      "confirmed_video_url": "https://www.youtube.com/watch?v=l_Xb9zvBoDA",
+      "error": null
+    },
+    {
+      "day": "2026-11-12",
+      "short_job_id": "345d39d8cc7647bc8a2608b544840bc0",
+      "job_id": "dd7aab52da5b47629a5a5f7db5f93b39",
+      "source_run_id": "39b0b707a3864d69b904b5f17c188ff6",
+      "status": "completed",
+      "review_required": true,
+      "error": null,
+      "relevance": {
+        "passed": true,
+        "same_source": true,
+        "source_url": "https://www.youtube.com/watch?v=Jr2AVxsP3Vk",
+        "required_short_count": 1,
+        "matched_short_count": 1,
+        "matches": [
+          {
+            "short_index": 1,
+            "long_part_index": 1,
+            "source_overlap_seconds": 41.37,
+            "short_coverage": 1.0,
+            "passed": true
+          }
+        ]
+      },
+      "qc_decision": "DROP_SOURCE",
+      "confirmed_upload_id": "fb5266884b38498d883f99fb14014371",
+      "confirmed_video_url": "https://www.youtube.com/watch?v=SWBoYM6ul0s"
+    },
+    {
+      "day": "2026-11-13",
+      "short_job_id": "c19efa03f597447982ca6b31b69aa43c",
+      "job_id": "74a52b6c25ef45fba32d4ab83279ae09",
+      "source_run_id": "300f5dfd2f7a4cc5ac400c4d5829bd3d",
+      "status": "failed",
+      "review_required": true,
+      "error": "clipper.py exited with code 1 Workspace dan seluruh file sementara proses gagal telah dihapus."
+    },
+    {
+      "day": "2026-11-13",
+      "short_job_id": "bf6c2c5e46564cc1bf14104066956158",
+      "job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+      "source_run_id": "205e2e10b4174889afd615470a207097",
+      "status": "completed",
+      "review_required": true,
+      "qc_decision": "DROP_SOURCE",
+      "error": null
+    },
+    {
+      "day": "2026-11-13",
+      "short_job_id": "e4958d6247d347a082628eb2fc0f6eb5",
+      "job_id": "85fde21850f548b4af607f99edca5db5",
+      "source_run_id": "c62e66976f094d4aaa69f28a029fdd2a",
+      "status": "completed",
+      "review_required": true,
+      "confirmed_upload_id": "2f546df2dfe545559f12fdd4fd1fc2eb",
+      "confirmed_video_url": "https://www.youtube.com/watch?v=2PRl4z8aSx4",
+      "error": null
+    },
+    {
+      "day": "2026-11-14",
+      "short_job_id": "15f9a0c62993427b92f62a59ae9db422",
+      "job_id": "7e45d9158017488d95de6f8525dd0be9",
+      "source_run_id": "302091f427bf442d95e2de9f07ca6ba2",
+      "status": "completed",
+      "review_required": true,
+      "error": null,
+      "relevance": {
+        "passed": true,
+        "same_source": true,
+        "source_url": "https://www.youtube.com/watch?v=TXSEO8RDy8c",
+        "required_short_count": 1,
+        "matched_short_count": 1,
+        "matches": [
+          {
+            "short_index": 1,
+            "long_part_index": 6,
+            "source_overlap_seconds": 37.139,
+            "short_coverage": 1.0,
+            "passed": true
+          }
+        ]
+      },
+      "qc_decision": "DROP_SOURCE",
+      "disposition": "deleted_terminal_output",
+      "cleanup_reason": "long_qc_drop_source",
+      "cleaned_at": "2026-11-13T17:41:12.893386+00:00"
+    },
+    {
+      "day": "2026-11-14",
+      "short_job_id": "65fab5f51186406ba23a904189474ccf",
+      "job_id": "b2ab97d636e04518b47c76f402a52227",
+      "source_run_id": "5fcacd0612834e5d8623949bfe994038",
+      "status": "completed",
+      "review_required": true,
+      "error": null,
+      "relevance": {
+        "passed": true,
+        "same_source": true,
+        "source_url": "https://www.youtube.com/watch?v=dehO9QA4p7A",
+        "required_short_count": 1,
+        "matched_short_count": 1,
+        "matches": [
+          {
+            "short_index": 1,
+            "long_part_index": 4,
+            "source_overlap_seconds": 36.9,
+            "short_coverage": 0.9483,
+            "passed": true
+          }
+        ]
+      },
+      "qc_decision": "DROP_SOURCE",
+      "disposition": "deleted_terminal_output",
+      "cleanup_reason": "long_qc_drop_source",
+      "cleaned_at": "2026-11-13T18:58:00.409671+00:00"
+    },
+    {
+      "day": "2026-11-14",
+      "short_job_id": "f73d7456928946a79f2b8b7a40667cd6",
+      "job_id": "9829ef7a3b9b40c9b6e33b06c659c59b",
+      "source_run_id": "60766fa97da14461ba0c410389f5c120",
+      "status": "completed",
+      "review_required": true,
+      "error": null,
+      "relevance": {
+        "passed": true,
+        "same_source": true,
+        "source_url": "https://www.youtube.com/watch?v=wQGhRLkgaqE",
+        "required_short_count": 1,
+        "matched_short_count": 1,
+        "matches": [
+          {
+            "short_index": 1,
+            "long_part_index": 2,
+            "source_overlap_seconds": 26.06,
+            "short_coverage": 1.0,
+            "passed": true
+          }
+        ]
+      },
+      "qc_decision": "DROP_SOURCE",
+      "disposition": "deleted_terminal_output",
+      "cleanup_reason": "long_qc_drop_source",
+      "cleaned_at": "2026-11-13T20:10:39.549532+00:00"
+    },
+    {
+      "day": "2026-11-14",
+      "short_job_id": "c3a06640926844009d9fd308c8ae85ec",
+      "job_id": "e7bba938cf7a4260ae34d6db6c8e5c45",
+      "source_run_id": "7e8dbb47d93a4172a0a9dde13133ebd7",
+      "status": "failed",
+      "review_required": true,
+      "long_source_profile": {
+        "version": 1,
+        "eligible": true,
+        "reasons": [],
+        "source_views": 3405482.0,
+        "source_duration_seconds": 4120.0,
+        "rank": 18.108,
+        "basis": "public_long_source_metadata",
+        "actual_retention_verified": false,
+        "future_views_guaranteed": false
+      },
+      "error": "RuntimeError: Metadata terbaru sumber belum layak Long cron: public_long_demand_missing_or_under_1000_views Workspace dan seluruh file sementara proses gagal telah dihapus."
+    },
+    {
+      "day": "2026-11-14",
+      "short_job_id": "361eacdcdb6846e2852b1ac089289b85",
+      "job_id": "43e3da4e6d314cd28916b55f430e378d",
+      "source_run_id": "2f89230fb6f84d7dade51a5212b92709",
+      "status": "failed",
+      "review_required": true,
+      "long_source_profile": {
+        "version": 1,
+        "eligible": true,
+        "reasons": [],
+        "source_views": 2833668.0,
+        "source_duration_seconds": 3659.0,
+        "rank": 17.4887,
+        "basis": "public_long_source_metadata",
+        "actual_retention_verified": false,
+        "future_views_guaranteed": false
+      },
+      "error": "RuntimeError: Metadata terbaru sumber belum layak Long cron: public_long_demand_missing_or_under_1000_views Workspace dan seluruh file sementara proses gagal telah dihapus."
+    },
+    {
+      "day": "2026-11-14",
+      "short_job_id": "c2dd85703b964e5bb54794585401ffbf",
+      "job_id": "2fa93b288bb04798a4244c9934046aa1",
+      "source_run_id": "7e8dbb47d93a4172a0a9dde13133ebd7",
+      "status": "failed",
+      "review_required": true,
+      "long_source_profile": {
+        "version": 1,
+        "eligible": true,
+        "reasons": [],
+        "source_views": 2315488.0,
+        "source_duration_seconds": 4033.0,
+        "rank": 17.2142,
+        "basis": "public_long_source_metadata",
+        "actual_retention_verified": false,
+        "future_views_guaranteed": false
+      },
+      "error": "RuntimeError: Metadata terbaru sumber belum layak Long cron: public_long_demand_missing_or_under_1000_views Workspace dan seluruh file sementara proses gagal telah dihapus."
+    },
+    {
+      "day": "2026-11-15",
+      "short_job_id": "00cae4dc0ec7481587a2f51b10f23dfa",
+      "job_id": "a3574a286de34a5e99a8711ac2db5877",
+      "source_run_id": "9f7796aaa6b2489caee6171c4b3de279",
+      "status": "failed",
+      "review_required": true,
+      "long_source_profile": {
+        "version": 1,
+        "eligible": true,
+        "reasons": [],
+        "source_views": 2254394.0,
+        "source_duration_seconds": 1274.0,
+        "rank": 17.2061,
+        "basis": "public_long_source_metadata",
+        "actual_retention_verified": false,
+        "future_views_guaranteed": false
+      },
+      "error": "RuntimeError: Long cron belum punya alur utuh; render ditahan: missing_reason, ungrounded_or_duplicate_beat, missing_ordered_story_arc Workspace dan seluruh file sementara proses gagal telah dihapus."
+    },
+    {
+      "day": "2026-11-15",
+      "short_job_id": "8bac4ff56b1040c599f874fb857b23a2",
+      "job_id": "db4b32f91756466dab70666cdf4a6cc6",
+      "source_run_id": "41b7fbb5929d47f1adf75cc467b8bfb4",
+      "status": "failed",
+      "review_required": true,
+      "long_source_profile": {
+        "version": 1,
+        "eligible": true,
+        "reasons": [],
+        "source_views": 1688314.0,
+        "source_duration_seconds": 1654.0,
+        "rank": 16.8805,
+        "basis": "public_long_source_metadata",
+        "actual_retention_verified": false,
+        "future_views_guaranteed": false
+      },
+      "error": "RuntimeError: Long cron belum punya alur utuh; render ditahan: missing_reason, ungrounded_or_duplicate_beat, missing_ordered_story_arc Workspace dan seluruh file sementara proses gagal telah dihapus."
+    },
+    {
+      "day": "2026-11-15",
+      "short_job_id": "3846ff934cb9473f9eb99e4e5465dddb",
+      "job_id": "ed3558e66ffd4b22920813468950d0b5",
+      "source_run_id": "e297e1bbb0634109a3325ec74e210996",
+      "status": "failed",
+      "review_required": true,
+      "long_source_profile": {
+        "version": 1,
+        "eligible": true,
+        "reasons": [],
+        "source_views": 1047484.0,
+        "source_duration_seconds": 1457.0,
+        "rank": 16.2997,
+        "basis": "public_long_source_metadata",
+        "actual_retention_verified": false,
+        "future_views_guaranteed": false
+      },
+      "error": "RuntimeError: Long cron belum punya alur utuh; render ditahan: resolved_ending, ungrounded_or_duplicate_beat, missing_ordered_story_arc Workspace dan seluruh file sementara proses gagal telah dihapus."
+    }
+  ],
+  "auto_qc_enabled": true,
+  "auto_qc_private_upload": true,
+  "auto_qc_tiktok_upload": true,
+  "daily_attempt_limit": 6,
+  "last_source_selection": [
+    {
+      "short_job_id": "3846ff934cb9473f9eb99e4e5465dddb",
+      "source_url": "https://www.youtube.com/watch?v=A7Fcd1u6VuY",
+      "version": 1,
+      "eligible": true,
+      "reasons": [],
+      "source_views": 1047484.0,
+      "source_duration_seconds": 1457.0,
+      "rank": 16.2997,
+      "basis": "public_long_source_metadata",
+      "actual_retention_verified": false,
+      "future_views_guaranteed": false
+    }
+  ],
+  "active_jobs": [],
+  "qc_reviews": [
+    {
+      "status": "waiting_for_ai_or_evidence",
+      "audit": null,
+      "reason": "ValueError",
+      "retry_after_seconds": 600,
+      "fingerprint": "90b7966d2ad969c3fc0b54ecb6879710a9a70a0ae349264888076da9e5590003",
+      "source_job_id": "2a08735031e3425faa863fd198665238",
+      "source_clip_url": "/outputs/2a08735031e3425faa863fd198665238/atun-momon-menjadi-besar-dan-balas-dendam-pada-desa-feat-sapipurba-minecraft/clips/resume_cerita_5menit_ok-berarti-intinya-adalah-kita-butuh-bahan-dan.mp4",
+      "updated_at": "2026-11-11T13:05:18.488283+00:00",
+      "retry_at": "2026-11-11T13:15:18.488300+00:00"
+    },
+    {
+      "status": "waiting_for_ai_or_evidence",
+      "audit": null,
+      "reason": "ValueError",
+      "retry_after_seconds": 600,
+      "fingerprint": "9212d95ff6ebe480dbc5b7220181bae2de24d4669851391d6d2043880791b880",
+      "source_job_id": "85fde21850f548b4af607f99edca5db5",
+      "source_clip_url": "/outputs/85fde21850f548b4af607f99edca5db5/yuta-mio-main-charlie-charlie-jam-3-malam-serem-banget-roblox/clips/resume_cerita_5menit_mio-mio-dimana-mio-mio-mio-dimana-mio.mp4",
+      "updated_at": "2026-11-13T03:22:27.815312+00:00",
+      "retry_at": "2026-11-13T03:32:27.815332+00:00"
+    },
+    {
+      "status": "reviewed",
+      "audit": {
+        "schema_version": 1,
+        "source_job_id": "ea85e504653c45d2b17a1e1953a6181d",
+        "source_clip_url": "/outputs/ea85e504653c45d2b17a1e1953a6181d/suamiku-hina-ibuku-di-depan-20-saudara-aku-cuma-bayar-2-porsi-saat-tagihan-27-ju/clips/resume_cerita_5menit_yang-penting-kamu-transfer-dulu-uang-tabunganmu-.mp4",
+        "repair_attempted": false,
+        "decision": "DROP_SOURCE",
+        "confidence": 1.0,
+        "hard_gates": {
+          "rights": true,
+          "media_integrity": true,
+          "meaning_preserved": true,
+          "context_safe": false
+        },
+        "ai_checks": {
+          "hook": null,
+          "standalone_clarity": null,
+          "payoff": null,
+          "caption": null,
+          "crop": null,
+          "visual_quality": null,
+          "audio_quality": null
+        },
+        "evidence": [
+          "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+        ],
+        "repair_instructions": [],
+        "delete_source": true,
+        "upload_allowed": false
+      },
+      "fingerprint": "5765b88300ec626210194b37ffcb07f0f8f89ce59efbd301613ee15b29a2e1f0",
+      "source_job_id": "ea85e504653c45d2b17a1e1953a6181d",
+      "source_clip_url": "/outputs/ea85e504653c45d2b17a1e1953a6181d/suamiku-hina-ibuku-di-depan-20-saudara-aku-cuma-bayar-2-porsi-saat-tagihan-27-ju/clips/resume_cerita_5menit_yang-penting-kamu-transfer-dulu-uang-tabunganmu-.mp4",
+      "updated_at": "2026-11-12T06:35:43.426494+00:00"
+    },
+    {
+      "status": "reviewed",
+      "audit": {
+        "schema_version": 1,
+        "source_job_id": "d14fe9c4666a441799a4033509e93df3",
+        "source_clip_url": "/outputs/d14fe9c4666a441799a4033509e93df3/kisah-viral-di-bogor-urban-legend-angkot-biru-gaib-semua-penumpang-sudah-meningg/clips/resume_cerita_5menit_kenapa-mas-waktu-itu-sempat-ngirim-cerita-ke.mp4",
+        "repair_attempted": false,
+        "decision": "DROP_SOURCE",
+        "confidence": 1.0,
+        "hard_gates": {
+          "rights": true,
+          "media_integrity": true,
+          "meaning_preserved": null,
+          "context_safe": false
+        },
+        "ai_checks": {
+          "hook": null,
+          "standalone_clarity": null,
+          "payoff": null,
+          "caption": null,
+          "crop": null,
+          "visual_quality": null,
+          "audio_quality": null
+        },
+        "evidence": [
+          "AI provider explicitly declined this source during content safety screening; automatic upload rejected without resubmitting the same source."
+        ],
+        "repair_instructions": [],
+        "delete_source": true,
+        "upload_allowed": false
+      },
+      "reason": "ai_http_422",
+      "provider_error": "{\"error\":{\"message\":\"Provider returned error\",\"code\":422,\"metadata\":{\"raw\":\"{\\\"error\\\": {\\\"message\\\": \\\"input rejected by content safety screening\\\"}}\",\"provider_name\":\"Nvidia\",\"is_byok\":false}},\"user_id\":\"user_3D6vLqnNu2pbYsF9qWbysUfrXed\"}",
+      "retry_after_seconds": 600,
+      "source_job_id": "d14fe9c4666a441799a4033509e93df3",
+      "source_clip_url": "/outputs/d14fe9c4666a441799a4033509e93df3/kisah-viral-di-bogor-urban-legend-angkot-biru-gaib-semua-penumpang-sudah-meningg/clips/resume_cerita_5menit_kenapa-mas-waktu-itu-sempat-ngirim-cerita-ke.mp4",
+      "fingerprint": "3eaa3b362d04097cd3e38d72033e8a46edf10e2e4586a6d2f3631480704953d9",
+      "updated_epoch": 1794065730.4222596
+    },
+    {
+      "status": "reviewed",
+      "audit": {
+        "schema_version": 1,
+        "source_job_id": "dd7aab52da5b47629a5a5f7db5f93b39",
+        "source_clip_url": "/outputs/dd7aab52da5b47629a5a5f7db5f93b39/lantai-dua-khw-part-403/clips/resume_cerita_5menit_desi-bilang-mbak-ini-ternyata-tempat-aku-selanju.mp4",
+        "repair_attempted": false,
+        "decision": "DROP_SOURCE",
+        "confidence": 1.0,
+        "hard_gates": {
+          "rights": true,
+          "media_integrity": true,
+          "meaning_preserved": true,
+          "context_safe": false
+        },
+        "ai_checks": {
+          "hook": null,
+          "standalone_clarity": null,
+          "payoff": null,
+          "caption": null,
+          "crop": null,
+          "visual_quality": null,
+          "audio_quality": null
+        },
+        "evidence": [
+          "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+        ],
+        "repair_instructions": [],
+        "delete_source": true,
+        "upload_allowed": false
+      },
+      "fingerprint": "0e75de5ca7b60165dd992828bf0f9b5f08cd9253cf53d089384ffb3d9a524b70",
+      "source_job_id": "dd7aab52da5b47629a5a5f7db5f93b39",
+      "source_clip_url": "/outputs/dd7aab52da5b47629a5a5f7db5f93b39/lantai-dua-khw-part-403/clips/resume_cerita_5menit_desi-bilang-mbak-ini-ternyata-tempat-aku-selanju.mp4",
+      "updated_at": "2026-11-12T08:15:59.228384+00:00"
+    },
+    {
+      "status": "reviewed",
+      "audit": {
+        "schema_version": 1,
+        "source_job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+        "source_clip_url": "/outputs/403b1cdef5dd4a669c5af49c40b207f3/menantu-super-kaya-nyamar-penjual-kaki-lima-tes-keluarga-istri-tak-duga-diremehk/clips/resume_cerita_5menit_lilang-sebaiknya-kamu-bangun-dari-mimpi-jangan-b.mp4",
+        "repair_attempted": false,
+        "decision": "DROP_SOURCE",
+        "confidence": 1.0,
+        "hard_gates": {
+          "rights": true,
+          "media_integrity": true,
+          "meaning_preserved": true,
+          "context_safe": false
+        },
+        "ai_checks": {
+          "hook": null,
+          "standalone_clarity": null,
+          "payoff": null,
+          "caption": null,
+          "crop": null,
+          "visual_quality": null,
+          "audio_quality": null
+        },
+        "evidence": [
+          "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+        ],
+        "repair_instructions": [],
+        "delete_source": true,
+        "upload_allowed": false
+      },
+      "fingerprint": "04aeb6fed7c15a69c2d957e4b7bed3c9c33d056319bcdb62dd93ba9b1c08ac10",
+      "source_job_id": "403b1cdef5dd4a669c5af49c40b207f3",
+      "source_clip_url": "/outputs/403b1cdef5dd4a669c5af49c40b207f3/menantu-super-kaya-nyamar-penjual-kaki-lima-tes-keluarga-istri-tak-duga-diremehk/clips/resume_cerita_5menit_lilang-sebaiknya-kamu-bangun-dari-mimpi-jangan-b.mp4",
+      "updated_at": "2026-11-13T00:30:18.784267+00:00"
+    },
+    {
+      "status": "reviewed",
+      "stage": "local_audio",
+      "audit": {
+        "schema_version": 1,
+        "source_job_id": "9829ef7a3b9b40c9b6e33b06c659c59b",
+        "source_clip_url": "/outputs/9829ef7a3b9b40c9b6e33b06c659c59b/full-ustaz-bachtiar-nasir-blak-blakan-soal-rezim-jokowi-dan-satu-dekade-aksi-411/clips/resume_cerita_5menit_tapi-sigit-melihatnya-barangkali-saya-sebagai-mu.mp4",
+        "repair_attempted": false,
+        "decision": "DROP_SOURCE",
+        "confidence": 1.0,
+        "hard_gates": {
+          "rights": true,
+          "media_integrity": false,
+          "meaning_preserved": true,
+          "context_safe": true
+        },
+        "ai_checks": {
+          "hook": null,
+          "standalone_clarity": null,
+          "payoff": null,
+          "caption": null,
+          "crop": null,
+          "visual_quality": null,
+          "audio_quality": null
+        },
+        "evidence": [
+          "Rendered audio does not sufficiently match timed captions at output 283.006-289.006s"
+        ],
+        "repair_instructions": [],
+        "delete_source": true,
+        "upload_allowed": false
+      },
+      "review_attempts": 1,
+      "fingerprint": "533d7d34c4215fffac1dcd7af5aa0d307c0de820072832084c524beda6ca9d56",
+      "source_job_id": "9829ef7a3b9b40c9b6e33b06c659c59b",
+      "source_clip_url": "/outputs/9829ef7a3b9b40c9b6e33b06c659c59b/full-ustaz-bachtiar-nasir-blak-blakan-soal-rezim-jokowi-dan-satu-dekade-aksi-411/clips/resume_cerita_5menit_tapi-sigit-melihatnya-barangkali-saya-sebagai-mu.mp4",
+      "updated_at": "2026-11-13T20:10:37.498746+00:00"
+    },
+    {
+      "status": "reviewed",
+      "audit": {
+        "schema_version": 1,
+        "source_job_id": "7b00e5e4412a487694c8216eb865d503",
+        "source_clip_url": "/outputs/7b00e5e4412a487694c8216eb865d503/drama-korea-sedih-terbaru-berpisah-dengan-kekasih-demi-menyelamatkanya-alur-ceri/clips/resume_cerita_5menit_namun-ketika-mengetahui-inhe-sedang-mengandung-k.mp4",
+        "repair_attempted": false,
+        "decision": "DROP_SOURCE",
+        "confidence": 1.0,
+        "hard_gates": {
+          "rights": true,
+          "media_integrity": true,
+          "meaning_preserved": true,
+          "context_safe": false
+        },
+        "ai_checks": {
+          "hook": null,
+          "standalone_clarity": null,
+          "payoff": null,
+          "caption": null,
+          "crop": null,
+          "visual_quality": null,
+          "audio_quality": null
+        },
+        "evidence": [
+          "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+        ],
+        "repair_instructions": [],
+        "delete_source": true,
+        "upload_allowed": false
+      },
+      "fingerprint": "798ff3e1a6d74870e992a98c9044461c81d5d44e95d94bf2a28e93f0f2692807",
+      "source_job_id": "7b00e5e4412a487694c8216eb865d503",
+      "source_clip_url": "/outputs/7b00e5e4412a487694c8216eb865d503/drama-korea-sedih-terbaru-berpisah-dengan-kekasih-demi-menyelamatkanya-alur-ceri/clips/resume_cerita_5menit_namun-ketika-mengetahui-inhe-sedang-mengandung-k.mp4",
+      "updated_at": "2026-11-12T04:51:47.743423+00:00"
+    },
+    {
+      "status": "reviewed",
+      "audit": {
+        "schema_version": 1,
+        "source_job_id": "ba8226bb1e104699a20b36a285001d24",
+        "source_clip_url": "/outputs/ba8226bb1e104699a20b36a285001d24/mio-baby-celine-kesel-yuta-prank-jadi-admin-di-game-steal-an-egg-roblox/clips/resume_cerita_5menit_makasih-ayo-kita-kejarin-lagi-nis-ya-mamam.mp4",
+        "repair_attempted": false,
+        "decision": "DROP_SOURCE",
+        "confidence": 1.0,
+        "hard_gates": {
+          "rights": true,
+          "media_integrity": true,
+          "meaning_preserved": true,
+          "context_safe": false
+        },
+        "ai_checks": {
+          "hook": null,
+          "standalone_clarity": null,
+          "payoff": null,
+          "caption": null,
+          "crop": null,
+          "visual_quality": null,
+          "audio_quality": null
+        },
+        "evidence": [
+          "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+        ],
+        "repair_instructions": [],
+        "delete_source": true,
+        "upload_allowed": false
+      },
+      "source_job_id": "ba8226bb1e104699a20b36a285001d24",
+      "source_clip_url": "/outputs/ba8226bb1e104699a20b36a285001d24/mio-baby-celine-kesel-yuta-prank-jadi-admin-di-game-steal-an-egg-roblox/clips/resume_cerita_5menit_makasih-ayo-kita-kejarin-lagi-nis-ya-mamam.mp4",
+      "fingerprint": "0c41f6ef6c745b7a3bd2e59fe47823c866a466867d24419aa21b23f15f80bb7e",
+      "updated_epoch": 1794264293.1740866
+    },
+    {
+      "status": "reviewed",
+      "audit": {
+        "schema_version": 1,
+        "source_job_id": "60da3eb153194ef9ac443c184bdbd8c9",
+        "source_clip_url": "/outputs/60da3eb153194ef9ac443c184bdbd8c9/mio-baby-celine-sakit-tapi-yuta-tidak-peduli-sedih-banget-roblox/clips/resume_cerita_5menit_hah-yuta-ada-apa-lihat-lihat-mio-baby.mp4",
+        "repair_attempted": false,
+        "decision": "DROP_SOURCE",
+        "confidence": 1.0,
+        "hard_gates": {
+          "rights": true,
+          "media_integrity": true,
+          "meaning_preserved": true,
+          "context_safe": false
+        },
+        "ai_checks": {
+          "hook": null,
+          "standalone_clarity": null,
+          "payoff": null,
+          "caption": null,
+          "crop": null,
+          "visual_quality": null,
+          "audio_quality": null
+        },
+        "evidence": [
+          "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+        ],
+        "repair_instructions": [],
+        "delete_source": true,
+        "upload_allowed": false
+      },
+      "source_job_id": "60da3eb153194ef9ac443c184bdbd8c9",
+      "source_clip_url": "/outputs/60da3eb153194ef9ac443c184bdbd8c9/mio-baby-celine-sakit-tapi-yuta-tidak-peduli-sedih-banget-roblox/clips/resume_cerita_5menit_hah-yuta-ada-apa-lihat-lihat-mio-baby.mp4",
+      "fingerprint": "74fd0e443294b2b6d0e88128ff79d380515d40a3eaaaf667b71646e3eec0df32",
+      "updated_epoch": 1794067947.2127252
+    },
+    {
+      "status": "reviewed",
+      "audit": {
+        "schema_version": 1,
+        "source_job_id": "0093888d10ba4c7290ab1673be7fd24e",
+        "source_clip_url": "/outputs/0093888d10ba4c7290ab1673be7fd24e/yuta-mio-dan-baby-celine-digigit-nyamuk-sampai-kurus-roblox/clips/resume_cerita_5menit_apakah-ini-akan-bagus-guys-lihat-nih-ini.mp4",
+        "repair_attempted": false,
+        "decision": "DROP_SOURCE",
+        "confidence": 1.0,
+        "hard_gates": {
+          "rights": true,
+          "media_integrity": true,
+          "meaning_preserved": true,
+          "context_safe": false
+        },
+        "ai_checks": {
+          "hook": null,
+          "standalone_clarity": null,
+          "payoff": null,
+          "caption": null,
+          "crop": null,
+          "visual_quality": null,
+          "audio_quality": null
+        },
+        "evidence": [
+          "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+        ],
+        "repair_instructions": [],
+        "delete_source": true,
+        "upload_allowed": false
+      },
+      "source_job_id": "0093888d10ba4c7290ab1673be7fd24e",
+      "source_clip_url": "/outputs/0093888d10ba4c7290ab1673be7fd24e/yuta-mio-dan-baby-celine-digigit-nyamuk-sampai-kurus-roblox/clips/resume_cerita_5menit_apakah-ini-akan-bagus-guys-lihat-nih-ini.mp4",
+      "fingerprint": "912c19a3744df8261d6b1097bda9284673e674d5f16e57f5a4407fae388cd1ab",
+      "updated_epoch": 1794267472.8613224
+    },
+    {
+      "status": "reviewed",
+      "audit": {
+        "schema_version": 1,
+        "source_job_id": "60646d1b4607453180c42595a49699a2",
+        "source_clip_url": "/outputs/60646d1b4607453180c42595a49699a2/hidayah-mertua-galak-kamu-tidak-pantas-jadi-menantuku-tapi-akhirnya-menyesal/clips/resume_cerita_5menit_nisa-menyusun-semua-ini-dari-siang-sampai-malam.mp4",
+        "repair_attempted": false,
+        "decision": "DROP_SOURCE",
+        "confidence": 1.0,
+        "hard_gates": {
+          "rights": true,
+          "media_integrity": false,
+          "meaning_preserved": null,
+          "context_safe": true
+        },
+        "ai_checks": {
+          "hook": null,
+          "standalone_clarity": null,
+          "payoff": null,
+          "caption": null,
+          "crop": null,
+          "visual_quality": null,
+          "audio_quality": null
+        },
+        "evidence": [
+          "Invalid or overlapping output caption timing"
+        ],
+        "repair_instructions": [],
+        "delete_source": true,
+        "upload_allowed": false
+      },
+      "source_job_id": "60646d1b4607453180c42595a49699a2",
+      "source_clip_url": "/outputs/60646d1b4607453180c42595a49699a2/hidayah-mertua-galak-kamu-tidak-pantas-jadi-menantuku-tapi-akhirnya-menyesal/clips/resume_cerita_5menit_nisa-menyusun-semua-ini-dari-siang-sampai-malam.mp4",
+      "fingerprint": "1b32b4a89218cb0270f28b718b50c282432c64fb59955a57629970cd09cdf49b",
+      "updated_epoch": 1794194100.1829653
+    },
+    {
+      "stage": "vision_review",
+      "provider_http_status": 422,
+      "provider_error": "{\"error\":{\"message\":\"Provider returned error\",\"code\":422,\"metadata\":{\"raw\":\"{\\\"error\\\": {\\\"message\\\": \\\"input rejected by content safety screening\\\"}}\",\"provider_name\":\"Nvidia\",\"is_byok\":false}},\"user_id\":\"user_3D6vLqnNu2pbYsF9qWbysUfrXed\"}",
+      "status": "reviewed",
+      "audit": {
+        "schema_version": 1,
+        "source_job_id": "7e45d9158017488d95de6f8525dd0be9",
+        "source_clip_url": "/outputs/7e45d9158017488d95de6f8525dd0be9/yuta-mio-dan-baby-celine-terjebak-dirumah-hantu-sikembar-upin-ipin-roblox/clips/resume_cerita_5menit_mana-ya-nggak-ada-oh-dia-pergi-kesana.mp4",
+        "repair_attempted": false,
+        "decision": "DROP_SOURCE",
+        "confidence": 1.0,
+        "hard_gates": {
+          "rights": true,
+          "media_integrity": true,
+          "meaning_preserved": true,
+          "context_safe": false
+        },
+        "ai_checks": {
+          "hook": null,
+          "standalone_clarity": null,
+          "payoff": null,
+          "caption": null,
+          "crop": null,
+          "visual_quality": null,
+          "audio_quality": null
+        },
+        "evidence": [
+          "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+        ],
+        "repair_instructions": [],
+        "delete_source": true,
+        "upload_allowed": false
+      },
+      "review_attempts": 1,
+      "fingerprint": "7c686c1d7f3b8b994dafafcefef1d0d01b85314e43b74ea59178d69b31f9da08",
+      "source_job_id": "7e45d9158017488d95de6f8525dd0be9",
+      "source_clip_url": "/outputs/7e45d9158017488d95de6f8525dd0be9/yuta-mio-dan-baby-celine-terjebak-dirumah-hantu-sikembar-upin-ipin-roblox/clips/resume_cerita_5menit_mana-ya-nggak-ada-oh-dia-pergi-kesana.mp4",
+      "updated_at": "2026-11-13T17:40:57.978339+00:00"
+    },
+    {
+      "stage": "vision_review",
+      "provider_http_status": 422,
+      "provider_error": "{\"error\":{\"message\":\"Provider returned error\",\"code\":422,\"metadata\":{\"raw\":\"{\\\"error\\\": {\\\"message\\\": \\\"input rejected by content safety screening\\\"}}\",\"provider_name\":\"Nvidia\",\"is_byok\":false}},\"user_id\":\"user_3D6vLqnNu2pbYsF9qWbysUfrXed\"}",
+      "status": "reviewed",
+      "audit": {
+        "schema_version": 1,
+        "source_job_id": "b2ab97d636e04518b47c76f402a52227",
+        "source_clip_url": "/outputs/b2ab97d636e04518b47c76f402a52227/yuta-mio-pergi-ke-rumah-atok-dalang-upin-ipin-tapi-berubah-jadi-anomali-roblox/clips/resume_cerita_5menit_oh-kaka-berarti-sepertinya-kalau-kita-mau-memusn.mp4",
+        "repair_attempted": false,
+        "decision": "DROP_SOURCE",
+        "confidence": 1.0,
+        "hard_gates": {
+          "rights": true,
+          "media_integrity": true,
+          "meaning_preserved": true,
+          "context_safe": false
+        },
+        "ai_checks": {
+          "hook": null,
+          "standalone_clarity": null,
+          "payoff": null,
+          "caption": null,
+          "crop": null,
+          "visual_quality": null,
+          "audio_quality": null
+        },
+        "evidence": [
+          "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+        ],
+        "repair_instructions": [],
+        "delete_source": true,
+        "upload_allowed": false
+      },
+      "review_attempts": 1,
+      "fingerprint": "55934623269e2d190a406d34237a44a5cbdcbf2492de8ea0d18cb0a4548016f6",
+      "source_job_id": "b2ab97d636e04518b47c76f402a52227",
+      "source_clip_url": "/outputs/b2ab97d636e04518b47c76f402a52227/yuta-mio-pergi-ke-rumah-atok-dalang-upin-ipin-tapi-berubah-jadi-anomali-roblox/clips/resume_cerita_5menit_oh-kaka-berarti-sepertinya-kalau-kita-mau-memusn.mp4",
+      "updated_at": "2026-11-13T18:57:56.178389+00:00"
+    },
+    {
+      "status": "reviewed",
+      "audit": {
+        "schema_version": 1,
+        "source_job_id": "755bd27102f64802980b2b66d6be99e3",
+        "source_clip_url": "/outputs/755bd27102f64802980b2b66d6be99e3/yuta-mio-buat-rumah-rahasia-di-dalam-patung-super-bear-adventure-roblox/clips/resume_cerita_5menit_temen-temen-hari-ini-kak-yuta-mio-dan.mp4",
+        "repair_attempted": false,
+        "decision": "DROP_SOURCE",
+        "confidence": 1.0,
+        "hard_gates": {
+          "rights": true,
+          "media_integrity": true,
+          "meaning_preserved": true,
+          "context_safe": false
+        },
+        "ai_checks": {
+          "hook": null,
+          "standalone_clarity": null,
+          "payoff": null,
+          "caption": null,
+          "crop": null,
+          "visual_quality": null,
+          "audio_quality": null
+        },
+        "evidence": [
+          "AI provider explicitly declined this source during content safety screening; semantic/visual approval is unavailable, so automatic upload is rejected."
+        ],
+        "repair_instructions": [],
+        "delete_source": true,
+        "upload_allowed": false
+      },
+      "source_job_id": "755bd27102f64802980b2b66d6be99e3",
+      "source_clip_url": "/outputs/755bd27102f64802980b2b66d6be99e3/yuta-mio-buat-rumah-rahasia-di-dalam-patung-super-bear-adventure-roblox/clips/resume_cerita_5menit_temen-temen-hari-ini-kak-yuta-mio-dan.mp4",
+      "fingerprint": "2b45731a46af43587beb86927bc1a1092f69115ddebfceec39548a09f1b7928a",
+      "updated_epoch": 1794221626.1289926
+    }
+  ],
+  "qc_vision_configured": true,
+  "tiktok_qc_upload_supported": true,
+  "long_strategy": {
+    "version": 2,
+    "scope": "new_cron_long_jobs",
+    "target_views": 1000,
+    "minimum_source_views": 1000,
+    "minimum_source_seconds": 300,
+    "minimum_output_seconds": 180,
+    "minimum_new_material_fraction": 0.6,
+    "semantic_story_review_required": true,
+    "future_views_guaranteed": false,
+    "editorial_brief": "Konsep khusus Long: satu pertanyaan atau perjalanan tokoh dengan konteks, perkembangan, bukti/konsekuensi, dan jawaban tuntas. Penonton harus mendapat informasi baru sepanjang video. Dalam 30 detik awal jelaskan masalah dan alasan mengikuti cerita; teaser singkat tidak boleh membocorkan seluruh jawaban. Pertahankan hubungan sebab-akibat dan akhir sumber. Short hanya satu momen; Long harus memberi penjelasan dan perkembangan yang belum ada di Short. Pilih durasi sesuai bahan, buang pengulangan, salam panjang, dan filler; jangan memanjangkan Short demi lima menit. Judul dan thumbnail harus cocok dengan isi pembuka dan jawaban. Untuk game/fiksi ikuti tujuan, pilihan, akibat dan penyelesaian tokoh; untuk pengetahuan ikuti pertanyaan, penjelasan, contoh/bukti dan simpulan. Caption stabil, visual mengikuti kejadian. Misteri boleh berakhir dengan batas pengetahuan yang jelas; jangan mengarang penyelesaian. Legenda diberi atribusi sebagai cerita rakyat. Politik membedakan fakta, opini dan tuduhan serta memerlukan review manusia. Review makanan membedakan pengalaman rasa dengan fakta bahan/gizi; jangan menjanjikan manfaat medis atau mengarang harga dan angka nutrisi. Target eksperimen 1000+ views, bukan jaminan. Ukur CTR, retensi 30 detik, durasi tonton rata-rata dan bagian penonton keluar setelah publikasi; bandingkan hanya Long bertopik dan usia setara.",
+    "themes": [
+      {
+        "key": "legend_folklore",
+        "label": "Legenda, Cerita Rakyat & Asal-Usul Nusantara",
+        "manual_review_required": false
+      },
+      {
+        "key": "domestic_politics",
+        "label": "Politik Dalam Negeri, Kronologi & Dampak Kebijakan",
+        "manual_review_required": true
+      },
+      {
+        "key": "food_healthy_review",
+        "label": "Review Makanan Sehat & Pilihan Menu",
+        "manual_review_required": false
+      },
+      {
+        "key": "food_taste_review",
+        "label": "Review Makanan Enak & Cerita Kuliner",
+        "manual_review_required": false
+      },
+      {
+        "key": "chinese_drama_story",
+        "label": "Drama China: Pilihan, Keluarga & Plot Twist",
+        "manual_review_required": false
+      },
+      {
+        "key": "korean_drama_story",
+        "label": "Drama Korea: Hubungan, Konsekuensi & Pelajaran Hidup",
+        "manual_review_required": false
+      },
+      {
+        "key": "love_betrayal",
+        "label": "Cinta, Pengkhianatan & Sakit Hati",
+        "manual_review_required": false
+      },
+      {
+        "key": "family_conflict",
+        "label": "Konflik Keluarga & Rumah Tangga",
+        "manual_review_required": false
+      },
+      {
+        "key": "friendship_twist",
+        "label": "Persahabatan, Kepercayaan & Plot Twist",
+        "manual_review_required": false
+      },
+      {
+        "key": "life_comeback",
+        "label": "Jatuh, Bangkit & Pelajaran Hidup",
+        "manual_review_required": false
+      },
+      {
+        "key": "mystery_story",
+        "label": "Misteri & Kisah Tak Terduga",
+        "manual_review_required": false
+      },
+      {
+        "key": "humor_interlude",
+        "label": "Jeda Humor Kehidupan",
+        "manual_review_required": false
+      },
+      {
+        "key": "gaming_story",
+        "label": "Game, Mabar & Cerita Pemain",
+        "manual_review_required": false
+      },
+      {
+        "key": "famous_game_reaction",
+        "label": "Reaction Game Populer, Gagal Lucu & Comeback",
+        "manual_review_required": false
+      },
+      {
+        "key": "quirky_animation",
+        "label": "Kartun Nyeleneh, Animasi Absurd & Plot Twist",
+        "manual_review_required": false
+      },
+      {
+        "key": "reaction_clip_story",
+        "label": "Clip Lucu, Reaction Natural & Cerita Singkat",
+        "manual_review_required": false
+      },
+      {
+        "key": "islamic_animation_kids",
+        "label": "Animasi Islami Anak & Keluarga",
+        "manual_review_required": false
+      },
+      {
+        "key": "islamic_animation_general",
+        "label": "Animasi Kisah Islami Umum & Dewasa",
+        "manual_review_required": false
+      },
+      {
+        "key": "podcast_conversation",
+        "label": "Podcast, Wawancara & Cerita Narasumber",
+        "manual_review_required": false
+      },
+      {
+        "key": "football_story",
+        "label": "Bola, Rivalitas & Cerita Pertandingan",
+        "manual_review_required": false
+      },
+      {
+        "key": "history_geography_nusantara",
+        "label": "Sejarah, Geografi & Budaya Nusantara",
+        "manual_review_required": false
+      },
+      {
+        "key": "faith_life",
+        "label": "Iman, Hijrah & Ujian Hidup",
+        "manual_review_required": false
+      },
+      {
+        "key": "lecture_wisdom",
+        "label": "Ceramah, Kajian & Tanya Jawab Kehidupan",
+        "manual_review_required": false
+      }
+    ]
+  },
+  "manual_review_holds": [],
+  "terminal_output_cleanup": {
+    "enabled": true,
+    "max_recovery_attempts": 3,
+    "recent": [
+      {
+        "job_id": "9829ef7a3b9b40c9b6e33b06c659c59b",
+        "clip_url": "/outputs/9829ef7a3b9b40c9b6e33b06c659c59b/full-ustaz-bachtiar-nasir-blak-blakan-soal-rezim-jokowi-dan-satu-dekade-aksi-411/clips/resume_cerita_5menit_tapi-sigit-melihatnya-barangkali-saya-sebagai-mu.mp4",
+        "reason": "long_qc_drop_source",
+        "status": "deleted",
+        "updated_at": "2026-11-13T20:10:39.549532+00:00",
+        "artifact_paths": [
+          "/app/outputs/9829ef7a3b9b40c9b6e33b06c659c59b/full-ustaz-bachtiar-nasir-blak-blakan-soal-rezim-jokowi-dan-satu-dekade-aksi-411/clips/resume_cerita_5menit_tapi-sigit-melihatnya-barangkali-saya-sebagai-mu.dynamic.ass",
+          "/app/outputs/9829ef7a3b9b40c9b6e33b06c659c59b/full-ustaz-bachtiar-nasir-blak-blakan-soal-rezim-jokowi-dan-satu-dekade-aksi-411/clips/resume_cerita_5menit_tapi-sigit-melihatnya-barangkali-saya-sebagai-mu.json",
+          "/app/outputs/9829ef7a3b9b40c9b6e33b06c659c59b/full-ustaz-bachtiar-nasir-blak-blakan-soal-rezim-jokowi-dan-satu-dekade-aksi-411/clips/resume_cerita_5menit_tapi-sigit-melihatnya-barangkali-saya-sebagai-mu.mp4",
+          "/app/outputs/9829ef7a3b9b40c9b6e33b06c659c59b/full-ustaz-bachtiar-nasir-blak-blakan-soal-rezim-jokowi-dan-satu-dekade-aksi-411/clips/resume_cerita_5menit_tapi-sigit-melihatnya-barangkali-saya-sebagai-mu.srt",
+          "/app/outputs/9829ef7a3b9b40c9b6e33b06c659c59b/full-ustaz-bachtiar-nasir-blak-blakan-soal-rezim-jokowi-dan-satu-dekade-aksi-411/clips/resume_cerita_5menit_tapi-sigit-melihatnya-barangkali-saya-sebagai-mu_ai_qc.json",
+          "/app/outputs/9829ef7a3b9b40c9b6e33b06c659c59b/full-ustaz-bachtiar-nasir-blak-blakan-soal-rezim-jokowi-dan-satu-dekade-aksi-411/clips/resume_cerita_5menit_tapi-sigit-melihatnya-barangkali-saya-sebagai-mu_caption.txt",
+          "/app/outputs/9829ef7a3b9b40c9b6e33b06c659c59b/full-ustaz-bachtiar-nasir-blak-blakan-soal-rezim-jokowi-dan-satu-dekade-aksi-411/clips/resume_cerita_5menit_tapi-sigit-melihatnya-barangkali-saya-sebagai-mu_thumb.jpg",
+          "/app/outputs/9829ef7a3b9b40c9b6e33b06c659c59b/full-ustaz-bachtiar-nasir-blak-blakan-soal-rezim-jokowi-dan-satu-dekade-aksi-411/clips/resume_cerita_5menit_tapi-sigit-melihatnya-barangkali-saya-sebagai-mu_thumb.txt",
+          "/app/outputs/9829ef7a3b9b40c9b6e33b06c659c59b/full-ustaz-bachtiar-nasir-blak-blakan-soal-rezim-jokowi-dan-satu-dekade-aksi-411/clips/resume_cerita_5menit_tapi-sigit-melihatnya-barangkali-saya-sebagai-mu_thumb_b.jpg",
+          "/app/outputs/9829ef7a3b9b40c9b6e33b06c659c59b/full-ustaz-bachtiar-nasir-blak-blakan-soal-rezim-jokowi-dan-satu-dekade-aksi-411/clips/resume_cerita_5menit_tapi-sigit-melihatnya-barangkali-saya-sebagai-mu_thumb_c.jpg",
+          "/app/outputs/9829ef7a3b9b40c9b6e33b06c659c59b/full-ustaz-bachtiar-nasir-blak-blakan-soal-rezim-jokowi-dan-satu-dekade-aksi-411/clips/resume_cerita_5menit_tapi-sigit-melihatnya-barangkali-saya-sebagai-mu_thumbnail_ideas.json",
+          "/app/outputs/9829ef7a3b9b40c9b6e33b06c659c59b/full-ustaz-bachtiar-nasir-blak-blakan-soal-rezim-jokowi-dan-satu-dekade-aksi-411/clips/resume_cerita_5menit_tapi-sigit-melihatnya-barangkali-saya-sebagai-mu_tiktok_caption.txt"
+        ],
+        "retained_upload_ids": []
+      },
+      {
+        "job_id": "b2ab97d636e04518b47c76f402a52227",
+        "clip_url": "/outputs/b2ab97d636e04518b47c76f402a52227/yuta-mio-pergi-ke-rumah-atok-dalang-upin-ipin-tapi-berubah-jadi-anomali-roblox/clips/resume_cerita_5menit_oh-kaka-berarti-sepertinya-kalau-kita-mau-memusn.mp4",
+        "reason": "long_qc_drop_source",
+        "status": "deleted",
+        "updated_at": "2026-11-13T18:58:00.409671+00:00",
+        "artifact_paths": [
+          "/app/outputs/b2ab97d636e04518b47c76f402a52227/yuta-mio-pergi-ke-rumah-atok-dalang-upin-ipin-tapi-berubah-jadi-anomali-roblox/clips/resume_cerita_5menit_oh-kaka-berarti-sepertinya-kalau-kita-mau-memusn.dynamic.ass",
+          "/app/outputs/b2ab97d636e04518b47c76f402a52227/yuta-mio-pergi-ke-rumah-atok-dalang-upin-ipin-tapi-berubah-jadi-anomali-roblox/clips/resume_cerita_5menit_oh-kaka-berarti-sepertinya-kalau-kita-mau-memusn.json",
+          "/app/outputs/b2ab97d636e04518b47c76f402a52227/yuta-mio-pergi-ke-rumah-atok-dalang-upin-ipin-tapi-berubah-jadi-anomali-roblox/clips/resume_cerita_5menit_oh-kaka-berarti-sepertinya-kalau-kita-mau-memusn.mp4",
+          "/app/outputs/b2ab97d636e04518b47c76f402a52227/yuta-mio-pergi-ke-rumah-atok-dalang-upin-ipin-tapi-berubah-jadi-anomali-roblox/clips/resume_cerita_5menit_oh-kaka-berarti-sepertinya-kalau-kita-mau-memusn.srt",
+          "/app/outputs/b2ab97d636e04518b47c76f402a52227/yuta-mio-pergi-ke-rumah-atok-dalang-upin-ipin-tapi-berubah-jadi-anomali-roblox/clips/resume_cerita_5menit_oh-kaka-berarti-sepertinya-kalau-kita-mau-memusn_ai_qc.json",
+          "/app/outputs/b2ab97d636e04518b47c76f402a52227/yuta-mio-pergi-ke-rumah-atok-dalang-upin-ipin-tapi-berubah-jadi-anomali-roblox/clips/resume_cerita_5menit_oh-kaka-berarti-sepertinya-kalau-kita-mau-memusn_caption.txt",
+          "/app/outputs/b2ab97d636e04518b47c76f402a52227/yuta-mio-pergi-ke-rumah-atok-dalang-upin-ipin-tapi-berubah-jadi-anomali-roblox/clips/resume_cerita_5menit_oh-kaka-berarti-sepertinya-kalau-kita-mau-memusn_thumb.jpg",
+          "/app/outputs/b2ab97d636e04518b47c76f402a52227/yuta-mio-pergi-ke-rumah-atok-dalang-upin-ipin-tapi-berubah-jadi-anomali-roblox/clips/resume_cerita_5menit_oh-kaka-berarti-sepertinya-kalau-kita-mau-memusn_thumb.txt",
+          "/app/outputs/b2ab97d636e04518b47c76f402a52227/yuta-mio-pergi-ke-rumah-atok-dalang-upin-ipin-tapi-berubah-jadi-anomali-roblox/clips/resume_cerita_5menit_oh-kaka-berarti-sepertinya-kalau-kita-mau-memusn_thumb_b.jpg",
+          "/app/outputs/b2ab97d636e04518b47c76f402a52227/yuta-mio-pergi-ke-rumah-atok-dalang-upin-ipin-tapi-berubah-jadi-anomali-roblox/clips/resume_cerita_5menit_oh-kaka-berarti-sepertinya-kalau-kita-mau-memusn_thumb_c.jpg",
+          "/app/outputs/b2ab97d636e04518b47c76f402a52227/yuta-mio-pergi-ke-rumah-atok-dalang-upin-ipin-tapi-berubah-jadi-anomali-roblox/clips/resume_cerita_5menit_oh-kaka-berarti-sepertinya-kalau-kita-mau-memusn_thumbnail_ideas.json",
+          "/app/outputs/b2ab97d636e04518b47c76f402a52227/yuta-mio-pergi-ke-rumah-atok-dalang-upin-ipin-tapi-berubah-jadi-anomali-roblox/clips/resume_cerita_5menit_oh-kaka-berarti-sepertinya-kalau-kita-mau-memusn_tiktok_caption.txt"
+        ],
+        "retained_upload_ids": []
+      },
+      {
+        "job_id": "7e45d9158017488d95de6f8525dd0be9",
+        "clip_url": "/outputs/7e45d9158017488d95de6f8525dd0be9/yuta-mio-dan-baby-celine-terjebak-dirumah-hantu-sikembar-upin-ipin-roblox/clips/resume_cerita_5menit_mana-ya-nggak-ada-oh-dia-pergi-kesana.mp4",
+        "reason": "long_qc_drop_source",
+        "status": "deleted",
+        "updated_at": "2026-11-13T17:41:12.893386+00:00",
+        "artifact_paths": [
+          "/app/outputs/7e45d9158017488d95de6f8525dd0be9/yuta-mio-dan-baby-celine-terjebak-dirumah-hantu-sikembar-upin-ipin-roblox/clips/resume_cerita_5menit_mana-ya-nggak-ada-oh-dia-pergi-kesana.dynamic.ass",
+          "/app/outputs/7e45d9158017488d95de6f8525dd0be9/yuta-mio-dan-baby-celine-terjebak-dirumah-hantu-sikembar-upin-ipin-roblox/clips/resume_cerita_5menit_mana-ya-nggak-ada-oh-dia-pergi-kesana.json",
+          "/app/outputs/7e45d9158017488d95de6f8525dd0be9/yuta-mio-dan-baby-celine-terjebak-dirumah-hantu-sikembar-upin-ipin-roblox/clips/resume_cerita_5menit_mana-ya-nggak-ada-oh-dia-pergi-kesana.mp4",
+          "/app/outputs/7e45d9158017488d95de6f8525dd0be9/yuta-mio-dan-baby-celine-terjebak-dirumah-hantu-sikembar-upin-ipin-roblox/clips/resume_cerita_5menit_mana-ya-nggak-ada-oh-dia-pergi-kesana.srt",
+          "/app/outputs/7e45d9158017488d95de6f8525dd0be9/yuta-mio-dan-baby-celine-terjebak-dirumah-hantu-sikembar-upin-ipin-roblox/clips/resume_cerita_5menit_mana-ya-nggak-ada-oh-dia-pergi-kesana_ai_qc.json",
+          "/app/outputs/7e45d9158017488d95de6f8525dd0be9/yuta-mio-dan-baby-celine-terjebak-dirumah-hantu-sikembar-upin-ipin-roblox/clips/resume_cerita_5menit_mana-ya-nggak-ada-oh-dia-pergi-kesana_caption.txt",
+          "/app/outputs/7e45d9158017488d95de6f8525dd0be9/yuta-mio-dan-baby-celine-terjebak-dirumah-hantu-sikembar-upin-ipin-roblox/clips/resume_cerita_5menit_mana-ya-nggak-ada-oh-dia-pergi-kesana_thumb.jpg",
+          "/app/outputs/7e45d9158017488d95de6f8525dd0be9/yuta-mio-dan-baby-celine-terjebak-dirumah-hantu-sikembar-upin-ipin-roblox/clips/resume_cerita_5menit_mana-ya-nggak-ada-oh-dia-pergi-kesana_thumb.txt",
+          "/app/outputs/7e45d9158017488d95de6f8525dd0be9/yuta-mio-dan-baby-celine-terjebak-dirumah-hantu-sikembar-upin-ipin-roblox/clips/resume_cerita_5menit_mana-ya-nggak-ada-oh-dia-pergi-kesana_thumb_b.jpg",
+          "/app/outputs/7e45d9158017488d95de6f8525dd0be9/yuta-mio-dan-baby-celine-terjebak-dirumah-hantu-sikembar-upin-ipin-roblox/clips/resume_cerita_5menit_mana-ya-nggak-ada-oh-dia-pergi-kesana_thumb_c.jpg",
+          "/app/outputs/7e45d9158017488d95de6f8525dd0be9/yuta-mio-dan-baby-celine-terjebak-dirumah-hantu-sikembar-upin-ipin-roblox/clips/resume_cerita_5menit_mana-ya-nggak-ada-oh-dia-pergi-kesana_thumbnail_ideas.json",
+          "/app/outputs/7e45d9158017488d95de6f8525dd0be9/yuta-mio-dan-baby-celine-terjebak-dirumah-hantu-sikembar-upin-ipin-roblox/clips/resume_cerita_5menit_mana-ya-nggak-ada-oh-dia-pergi-kesana_tiktok_caption.txt"
+        ],
+        "retained_upload_ids": []
+      }
+    ]
+  }
+}

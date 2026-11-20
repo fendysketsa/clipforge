@@ -1,0 +1,8 @@
+1
+00:00:00,100 --> 00:00:04,832
+Jadi, menyalin membuat duplikat, bukan memindahkan file asal.
+
+2
+00:00:04,782 --> 00:00:08,762
+Periksa salinan di folder tujuan sebelum melanjutkan pekerjaanmu.
+

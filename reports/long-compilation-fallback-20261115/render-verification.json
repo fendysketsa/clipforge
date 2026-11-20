@@ -1,0 +1,33 @@
+{
+  "fixture_only": true,
+  "full_export_pipeline": true,
+  "output": "rendered/resume_cerita_4menit_momen-sumber-1.mp4",
+  "duration": "240.021333",
+  "resolution": "1920x1080",
+  "source_sha256_preserved": true,
+  "full_media_decode_passed": true,
+  "long_format": "compilation",
+  "story_review_passed": false,
+  "compilation_review": {
+    "version": 1,
+    "passed": true,
+    "reasons": [],
+    "format": "chronological_compilation",
+    "output_seconds": 240.0,
+    "part_count": 4,
+    "new_material_fraction": 0.8958,
+    "short_anchor_ranges": [
+      [
+        0.0,
+        25.0
+      ]
+    ],
+    "material_sha256": "20b357a00b99046d16eb4b8af261feaffd00c982367551a3c87473edee0d6f90",
+    "source_chronology_preserved": true,
+    "filler_padding_added": false,
+    "resolved_source_story_claimed": false,
+    "independent_long_qc_required": true,
+    "actual_retention_verified": false
+  },
+  "independent_publication_qc_not_granted": true
+}

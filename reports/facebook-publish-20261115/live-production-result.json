@@ -1,0 +1,21 @@
+{
+  "checked_at": "2026-11-15T15:10:24.722718+00:00",
+  "job_id": "cccd4129e1ef451f9f330a991ee2af28",
+  "job_status": "completed",
+  "phase": "running",
+  "progress": 100,
+  "detail": "Reel asli selesai; menunggu QC independen.",
+  "upload_status": "completed",
+  "submission_started": true,
+  "upload_confirmed": true,
+  "video_url": "https://www.facebook.com/reel/2063533484364509/",
+  "cleanup": {
+    "state": "deleted",
+    "started_at": "2026-11-15T15:10:00.561095+00:00",
+    "remote_url": "https://www.facebook.com/reel/2063533484364509/",
+    "sha256": "54706418b527e9ff270539bfc2688c8978443dc4412ed6e551b4e7f7b7a31e0f",
+    "removed_files": 24,
+    "freed_bytes": 13956330,
+    "completed_at": "2026-11-15T15:10:00.569813+00:00"
+  }
+}

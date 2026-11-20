@@ -503,6 +503,7 @@ class ClipJobRequest(BaseModel):
     target_platform: Literal["standard", "facebook"] = "standard"
     facebook_niche: Literal["tech_daily", "digital_simple"] = "tech_daily"
     facebook_source_rights: Literal["", "owned", "permission_no_credit"] = ""
+    facebook_autopilot_key: str = ""
     cron_daily_lane: Literal["", "scheduled_short", "private_short", "long"] = ""
     cron_production_day: str = ""
     paired_short_job_id: str = ""
@@ -802,6 +803,8 @@ class ClipFile(BaseModel):
     name: str
     url: str
     size_bytes: int
+    long_format: Literal['story', 'compilation'] | None = None
+    long_fallback_reasons: list[str] = Field(default_factory=list)
     title: str | None = None
     thumbnail_url: str | None = None
     thumbnail_variants: list[str] = Field(default_factory=list)
@@ -7170,6 +7173,9 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
                 "Upload diblokir: quality gate Long Story belum lolos. "
                 "Pilih materi dengan sedikitnya tiga beat unik dan render ulang tanpa filler."
             )
+    if sidecar.get('long_format') == 'compilation' and cron_long_strategy.long_evidence_issue(
+            sidecar, job.request.compilation_anchor_ranges):
+        return "Upload diblokir: bukti kompilasi kronologis belum valid atau potongan sumber berubah."
     production_model = str(sidecar.get("production_model") or "")
     if production_model.startswith("codex_scene_cinema_v") or production_model == "codex_original_rebuild_v1":
         readiness = sidecar.get("growth_readiness")
@@ -13579,6 +13585,9 @@ def resume_interrupted_clipping_jobs() -> None:
         for job_id, job in sorted(jobs.items(), key=lambda item: item[1].created_at):
             if job.status not in {"queued", "running"}:
                 continue
+            if job.request.target_platform == 'facebook' and job.request.facebook_autopilot_key:
+                # The durable Facebook worker owns original generation/resume.
+                continue
             if (
                 job.repair_source_job_id
                 and job.repair_source_clip_url
@@ -14690,6 +14699,8 @@ def discover_clips(started_at: float, output_root: Path | None = None) -> list[C
                 name=path.name,
                 url=clip_url(path),
                 size_bytes=path.stat().st_size,
+                long_format=sidecar.get('long_format') if sidecar.get('long_format') in {'story','compilation'} else None,
+                long_fallback_reasons=sidecar_list('long_fallback_reasons', limit=10),
                 title=title,
                 thumbnail_url=clip_url(thumb_path) if thumb_path.exists() else None,
                 thumbnail_variants=[clip_url(item) for item in thumb_variant_paths],
@@ -15893,6 +15904,7 @@ def clipper_worker_environment(request: ClipJobRequest) -> dict[str, str]:
         environment["CLIPFORGE_FACEBOOK_NICHE"] = request.facebook_niche
         environment["SHORTS_BACKGROUND_MUSIC_ENABLED"] = "false"
         environment["SHORTS_ALLOW_THIRD_PARTY_MUSIC"] = "false"
+        environment["QURAN_OUTRO_ENABLED"] = "false"
     if request.clip_mode == "long_animate" and not is_hypit_quick_prompt(
         request.script_text
     ):
@@ -20611,7 +20623,8 @@ def long_qc_context(job: ClipJob, clip: ClipFile) -> dict[str, Any]:
         "rights_risks": source_rights_risk_reasons(metadata_for_job(job)),
         "claim_block": youtube_clip_claim_block(job.id, clip.url),
         "news_hot": job.request.scheduled_news_hot,
-        **({"cron_long_strategy_required": True} if job.request.cron_long_strategy else {}),
+        **({"cron_long_strategy_required": True,
+            "short_anchor_ranges": job.request.compilation_anchor_ranges} if job.request.cron_long_strategy else {}),
         "repair_attempted": bool(job.repair_source_job_id or job.repair_source_clip_url
             or any(line.startswith(AUTO_REPAIR_ATTEMPT_PREFIX) for line in job.logs)),
         "score_floor_met": (clip.fyp_score is not None and clip.fyp_score >= SHORT_FYP_TARGET_SCORE
@@ -20627,8 +20640,8 @@ def long_upload_review_hold(job: ClipJob, clip: ClipFile) -> str | None:
         return "Long politik menunggu review manusia atas fakta, tanggal kejadian, konteks, judul dan hak penggunaan."
     if job.request.cron_long_strategy:
         sidecar = clip_sidecar_payload(clip)
-        if (sidecar.get("cron_long_story_review") or {}).get("passed") is not True:
-            return "Long cron menunggu audit alur khusus Long dengan bukti transkrip."
+        if cron_long_strategy.long_evidence_issue(sidecar, job.request.compilation_anchor_ranges):
+            return "Long cron menunggu audit alur cerita atau kompilasi dengan bukti transkrip yang valid."
     try:
         path = long_qc_path(job.id, clip.url)
         record = json.loads(path.read_text()) if path.exists() else {}
@@ -25980,6 +25993,10 @@ def get_cron_long_strategy() -> dict[str, Any]:
         "minimum_source_views": 1000, "minimum_source_seconds": 300,
         "minimum_output_seconds": 180, "minimum_new_material_fraction": 0.6,
         "semantic_story_review_required": True, "future_views_guaranteed": False,
+        "semantic_story_review_scope": "story_output",
+        "compilation_fallback_policy_version": cron_long_strategy.COMPILATION_FALLBACK_VERSION,
+        "compilation_fallback_enabled": True, "compilation_review_required": True,
+        "fallback_preserves_long_qc": True,
         "editorial_brief": cron_long_strategy.LONG_EDITOR_BRIEF,
         "themes": [{"key": key, "label": profile["label"],
                     "manual_review_required": ryuundy_editorial_themes.requires_manual_review(key)}
@@ -27743,6 +27760,7 @@ def create_job(request: ClipJobRequest) -> ClipJob:
             "scheduled_social_card_layout": False,
             "scheduled_reaction_avatar_layout": False,
             "scheduled_subscribe_pulse": False,
+            "facebook_autopilot_key": "",
         }
     )
     if request.clip_mode not in ACTIVE_CLIP_MODES:

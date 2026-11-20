@@ -9,6 +9,7 @@ import pytest
 
 import api
 import long_video_qc as qc
+import cron_long_strategy
 
 ORIGINAL_YOUTUBE_PREFLIGHT = api.youtube_monetization_preflight_issue
 
@@ -71,6 +72,51 @@ def test_cron_long_cannot_reuse_media_without_its_story_evidence(media):
     result = qc.audit_long(media, c, reviewer=forbidden)
     assert result["audit"]["decision"] == "DROP_SOURCE"
     assert not result["audit"]["upload_allowed"]
+
+
+def test_compilation_label_cannot_hide_truncated_encoded_media(media):
+    sidecar=json.loads(media.with_suffix('.json').read_text())
+    parts=[{'start':i*60,'end':(i+1)*60,'text':text} for i,text in enumerate([
+        'Pemain membuka pintu pertama dan melihat ruangan kosong.',
+        'Temannya berhasil menemukan kunci biru di lantai berikutnya.',
+        'Keduanya memutuskan beristirahat di dekat jembatan kecil.'])]
+    sidecar.update(long_format='compilation',parts=parts,
+        cron_long_compilation_review=cron_long_strategy.validate_compilation(parts))
+    media.with_suffix('.json').write_text(json.dumps(sidecar))
+    result=qc.audit_long(media,{**context(),'cron_long_strategy_required':True},
+                         reviewer=lambda *args:pytest.fail('Truncated media must not reach AI'))
+    assert result['audit']['decision']=='DROP_SOURCE'
+    assert 'duration' in result['audit']['evidence'][0]
+
+
+def test_valid_compilation_still_undergoes_full_independent_media_review(tmp_path):
+    media=tmp_path/'compilation.mp4'
+    subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=blue:s=640x360:r=12:d=180',
+        '-f','lavfi','-i','sine=frequency=440:duration=180','-c:v','libx264','-preset','ultrafast',
+        '-threads','1','-pix_fmt','yuv420p','-c:a','aac','-shortest',str(media)],check=True)
+    parts=[{'start':i*60,'end':(i+1)*60,'text':text} for i,text in enumerate([
+        'Pemain membuka pintu pertama dan melihat ruangan kosong.',
+        'Temannya berhasil menemukan kunci biru di lantai berikutnya.',
+        'Keduanya memutuskan beristirahat di dekat jembatan kecil.'])]
+    media.with_suffix('.json').write_text(json.dumps({
+        'long_format':'compilation','parts':parts,
+        'cron_long_story_review':{'passed':False,'reasons':['resolved_ending']},
+        'cron_long_compilation_review':cron_long_strategy.validate_compilation(parts),
+        'source_provenance':{'url':context()['source_url']},
+        'editorial_safety':{'safe_for_selection':True}}))
+    media.with_suffix('.srt').write_text('1\n00:00:00,100 --> 00:00:59,800\nMomen pertama lengkap.\n\n'
+        '2\n00:01:00,100 --> 00:01:59,800\nMomen kedua lengkap.\n\n'
+        '3\n00:02:00,100 --> 00:02:59,800\nMomen ketiga lengkap.\n')
+    subprocess.run(['ffmpeg','-v','error','-i',str(media),'-frames:v','1','-threads','1',
+                    str(media.with_name('compilation_thumb.jpg'))],check=True)
+    calls=[]
+    def reviewer(evidence,frames):
+        calls.append(evidence)
+        assert evidence['long_format']=='compilation'
+        assert evidence['audio_samples'] and frames
+        return model_result()
+    result=qc.audit_long(media,{**context(),'cron_long_strategy_required':True},reviewer=reviewer)
+    assert calls and result['audit']['decision']=='PASS_UPLOAD', result
 
 
 @pytest.mark.parametrize("failure", ["rights", "claim", "source", "context", "render", "hash"])

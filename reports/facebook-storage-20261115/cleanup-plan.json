@@ -1,0 +1,34 @@
+{
+  "checked_at": "2026-11-15T09:16:43.581009+00:00",
+  "health": {
+    "status": "ok"
+  },
+  "cleanup_version": null,
+  "scheduler_running": true,
+  "candidates": [
+    {
+      "upload_id": "d27a9dd3518b4f01a3a9cec3a41f3ac9",
+      "job_id": "d3c240acaab44c53b518732a21a2a61b",
+      "clip_url": "/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b/facebook_original.mp4",
+      "video_url": "https://www.facebook.com/reel/1844917023309992/",
+      "status": "completed",
+      "submission_started": true,
+      "profile_id": "100000284326847",
+      "hash_match": true,
+      "job_status": "completed",
+      "autopilot_key": "2026-11-15:reel:0",
+      "publication_hold": false,
+      "workspace": "backend/outputs/facebook_autopilot/d3c240acaab44c53b518732a21a2a61b",
+      "file_count": 17,
+      "bytes": 3755558,
+      "foreign_uploads": [],
+      "shared_jobs": []
+    }
+  ],
+  "active_jobs": [
+    {
+      "id": "f7ebfb63a2ea43168449257964c23111",
+      "status": "running"
+    }
+  ]
+}

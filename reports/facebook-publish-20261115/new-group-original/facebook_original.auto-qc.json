@@ -1,0 +1,66 @@
+{
+  "status": "reviewed",
+  "fingerprint": "04293e5379942416e5ac1d4c3698a56f9f02757483928f95161b4850629c5160",
+  "media_sha256": "bfe9d2ee0e9f9e9ed283d1a71fa9e629e70d36b2506e6aa11876c31d2711aca4",
+  "frame_timestamps_seconds": [
+    0.44999999999999996,
+    0.5,
+    1.1,
+    1.75,
+    1.8,
+    5.156,
+    12.283999999999999,
+    12.584,
+    13.283999999999999,
+    13.642,
+    13.741999999999999,
+    13.783999999999999,
+    14.092,
+    14.344000000000001,
+    14.696000000000002,
+    15.592,
+    16.4166665,
+    16.488,
+    16.872,
+    17.292,
+    17.392,
+    22.892,
+    29.701,
+    32.033333000000006
+  ],
+  "audit": {
+    "schema_version": 1,
+    "source_job_id": "group_bde81c95c3d0422d9d7ce35dfe676109",
+    "source_clip_url": "/outputs/facebook_review/group_bde81c95c3d0422d9d7ce35dfe676109/facebook_original.mp4",
+    "repair_attempted": false,
+    "decision": "PASS_UPLOAD",
+    "confidence": 0.92,
+    "hard_gates": {
+      "rights": true,
+      "media_integrity": true,
+      "meaning_preserved": true,
+      "context_safe": true
+    },
+    "ai_checks": {
+      "hook": true,
+      "standalone_clarity": true,
+      "payoff": true,
+      "caption": true,
+      "crop": true,
+      "visual_quality": true,
+      "audio_quality": true
+    },
+    "evidence": [
+      "Full media decode and generated source identity verified.",
+      "0.0-4.7s: Immediate hook question 'Foto bercampur dengan catatan?' under title 'Foto rapi, catatan tetap di tempatnya' with 'SIMULASI EDUKASI: DATA CONTOH' label; Dokumen folder shows 3 berkas (1 TXT Catatan + 2 Foto), Foto kegiatan shows 0 berkas; folders slide in and settle by ~1.1s, no persistent crop cut.",
+      "11.88-15.7s: Caption 'Pilih kedua foto, lalu pindahkan ke Foto kegiatan.' matches narration; at 13.642s both Foto files gain teal selection outlines and stage indicator switches KENALI -> LAKUKAN with 'IKUTI PERGERAKANNYA'.",
+      "13.99-17.2s: The two selected photos visibly travel from Dokumen into Foto kegiatan (dotted arc, swoosh at 13.992s, chime at 17.192s) while Catatan.txt stays behind, exactly as narrated.",
+      "17.39-22.9s: Result state shows Dokumen 1 berkas, Foto kegiatan 2 berkas, checkmark note 'Jenis berkas terpisah. Jumlah tetap.'; total remains 3 with no duplicate copies, supporting 'Jumlahnya tetap tiga, tanpa salinan tambahan.' Stage switches to PERIKSA.",
+      "29.2-32.8s: Supported ending 'Periksa hasil pemindahan sebelum merapikan file yang lain.' over stable result frame; local Whisper 30.0-32.8s recognizes the same tail words ('...sebelum ... file yang lain'), confirming caption/audio sync; earlier 24-30s excerpt contains 'Periksa hasil pembiayaan' which is ASR confusion for 'pemindahan', not a caption error.",
+      "Local Whisper excerpts 0-24s match supplied captions (F1 0.77-0.85, mean log-prob -0.27 to -0.44); synthetic voice edge_neural_id-ID-ArdiNeural declared, no third-party footage/music, authored simulation only."
+    ],
+    "repair_instructions": [],
+    "delete_source": false,
+    "upload_allowed": true
+  }
+}

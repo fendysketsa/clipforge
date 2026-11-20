@@ -1,0 +1,30 @@
+{
+  "start": 0,
+  "ended": 0,
+  "width": 0,
+  "height": 0,
+  "tracks": [
+    {
+      "kind": "audio",
+      "ready": "live"
+    },
+    {
+      "kind": "video",
+      "ready": "live"
+    }
+  ],
+  "recovered_from": "browser_playback_of_verified_owned_youtube_upload",
+  "video_id": "GXbnjrwSte0",
+  "lossless_original": false,
+  "quality_options": [
+    "hd1080",
+    "hd720",
+    "large",
+    "medium",
+    "small",
+    "auto"
+  ],
+  "bytes": 13850391,
+  "sha256": "37beaf4d59d6d0766b16632d9d51b8b3ff51f09d16d9f33e7ad337125597fa69",
+  "checked_at": "2026-11-15T09:41:12.116177+00:00"
+}

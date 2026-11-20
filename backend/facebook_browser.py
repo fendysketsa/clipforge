@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
+import base64
 import os
 from pathlib import Path
 import re
@@ -141,8 +142,20 @@ def exact_caption_visible(page, caption: str) -> bool:
     # Check the content region, not global text where navigation/sidebar can match.
     for region in page.locator('[role="article"], [role="main"]').all():
         try:
-            if normalize(caption) in normalize(region.inner_text(timeout=3000)):
+            current=normalize(region.inner_text(timeout=3000))
+            if normalize(caption) in current:
                 return True
+            # Reels hide hashtags and the rest of long captions behind this
+            # read-only expansion. A matching prefix selects this post only.
+            first_line=next((line for line in caption.splitlines() if line.strip()),'')
+            prefix=normalize(first_line)[:60]
+            if len(prefix)>=20 and prefix in current:
+                expand=region.get_by_role('button',name=re.compile(r'^(Lihat selengkapnya|See more)$',re.I))
+                for button in expand.all()[:3]:
+                    if not button.is_visible():continue
+                    button.press('Enter',timeout=5000)
+                    page.wait_for_timeout(300)
+                    if normalize(caption) in normalize(region.inner_text(timeout=3000)):return True
         except Exception:
             continue
     return False
@@ -155,6 +168,7 @@ def verify_remote(context, url: str, caption: str, profile_id: str) -> bool:
     own = own_profile(context, profile_id).get('profile_url')
     own_path = urlparse(own).path.rstrip('/') if own else None
     page = context.new_page()
+    activity=start_background_page_activity(page)
     try:
         page.goto(canonical, wait_until='domcontentloaded', timeout=45000)
         page.wait_for_timeout(3000)
@@ -168,7 +182,28 @@ def verify_remote(context, url: str, caption: str, profile_id: str) -> bool:
                     for link in authors)
         return bool(owner and page.locator('video').count() and exact_caption_visible(page, caption))
     finally:
+        stop_background_page_activity(activity)
         page.close()
+
+
+def recent_reel_urls(context,profile_id: str,profile_url: str='') -> list[str]:
+    """Read the verified owner's Reel tab; never infer success from a toast."""
+    if active_user(context)!=profile_id:raise RuntimeError('Profil berubah saat mencari Reel.')
+    own=profile_url or own_profile(context,profile_id).get('profile_url')
+    if not own or urlparse(own).hostname not in {'www.facebook.com','facebook.com'}:
+        raise RuntimeError('Alamat profil pemilik belum terverifikasi.')
+    page=context.new_page();activity=start_background_page_activity(page)
+    try:
+        page.goto(own+('&' if '?' in own else '?')+'sk=reels_tab',wait_until='domcontentloaded',timeout=45000)
+        page.wait_for_timeout(3000)
+        if active_user(context)!=profile_id or '/login' in page.url:
+            raise RuntimeError('Sesi berubah saat membaca daftar Reel.')
+        text=page.locator('body').inner_text(timeout=5000)
+        if re.search(r'Halaman Ini Tidak Tersedia|This page isn.t available',text,re.I):
+            raise RuntimeError('Daftar Reel belum dapat dibaca.')
+        links=page.locator('a[href*="/reel/"]').evaluate_all('(els)=>els.map(e=>e.href)')
+        return list(dict.fromkeys(url for link in links if (url:=reel_url(link))))[:12]
+    finally:stop_background_page_activity(activity);page.close()
 
 
 def upload(path: Path, caption: str, profile_id: str, checkpoint) -> dict:
@@ -178,6 +213,7 @@ def upload(path: Path, caption: str, profile_id: str, checkpoint) -> dict:
         status = session(context, expected_profile=profile_id)
         if not status['account_verified'] or status['profile_id'] != profile_id:
             raise RuntimeError(status['message'])
+        existing=set(recent_reel_urls(context,profile_id,status.get('profile_url','')))
         page = context.new_page()
         submitted = False
         activity = start_background_page_activity(page)
@@ -218,16 +254,26 @@ def upload(path: Path, caption: str, profile_id: str, checkpoint) -> dict:
             post = post.first
             post.wait_for(state='visible', timeout=60000)
             expect(post).to_be_enabled(timeout=120000)
-            checkpoint(submission_started=True, status='running', message='Mengirim Reel; menunggu identitas remote.')
+            checkpoint(submission_started=True, status='running', existing_reel_urls=sorted(existing),
+                       message='Mengirim Reel; menunggu identitas remote.')
             submitted = True
             post.press('Enter', timeout=15000)
             deadline = time.monotonic() + 90
+            next_profile_check=0.0;observed=set()
             while time.monotonic() < deadline:
                 links = page.locator('a[href*="/reel/"]').evaluate_all('(nodes) => nodes.map(node => node.href)')
                 candidates = [page.url, *links]
+                if time.monotonic()>=next_profile_check:
+                    next_profile_check=time.monotonic()+20
+                    try:candidates+=recent_reel_urls(context,profile_id,status.get('profile_url',''))
+                    except Exception:pass
                 for candidate in candidates:
                     canonical = reel_url(candidate)
-                    if canonical and verify_remote(context, canonical, caption, profile_id):
+                    if not canonical or canonical in existing:continue
+                    if canonical not in observed:
+                        observed.add(canonical)
+                        checkpoint(candidate_video_urls=sorted(observed)[:12])
+                    if verify_remote(context, canonical, caption, profile_id):
                         return dict(status='completed', upload_confirmed=True, video_url=canonical,
                                     message='Reel terkonfirmasi pada akun target.')
                 page.wait_for_timeout(3000)
@@ -238,3 +284,126 @@ def upload(path: Path, caption: str, profile_id: str, checkpoint) -> dict:
             # Preserve ambiguous submitted composer for the operator to inspect.
             if not submitted:
                 page.close()
+
+
+def story_url(value: str, profile_id: str) -> str | None:
+    parsed=urlparse(value)
+    if parsed.scheme!='https' or parsed.hostname not in {'www.facebook.com','facebook.com'}:
+        return None
+    match=re.fullmatch(r'/stories/(\d+)/(\d+)/?',parsed.path)
+    return f'https://www.facebook.com/stories/{profile_id}/{match[2]}/' if match and match[1]==profile_id else None
+
+
+def created_story_url(payload: dict,profile_id: str) -> str | None:
+    """Only a story-create mutation with matching actor can identify this post."""
+    def visit(value,inside=False):
+        if isinstance(value,dict):
+            for key,node in value.items():
+                entered=inside or key in {'story_create','story_create_with_relay'}
+                if entered and key=='story' and isinstance(node,dict):
+                    actors=node.get('actors') or []
+                    if not any(isinstance(actor,dict) and str(actor.get('id'))==profile_id for actor in actors):continue
+                    direct=story_url(str(node.get('url','')),profile_id)
+                    if direct:return direct
+                    identifier=str(node.get('id',''))
+                    try:decoded=base64.b64decode(identifier+'===').decode()
+                    except (ValueError,UnicodeError):decoded=''
+                    match=re.fullmatch(r'S:_I:'+re.escape(profile_id)+r':(\d+)',decoded)
+                    if match:return f'https://www.facebook.com/stories/{profile_id}/{match[1]}/'
+                result=visit(node,entered)
+                if result:return result
+        elif isinstance(value,list):
+            for node in value:
+                result=visit(node,inside)
+                if result:return result
+        return None
+    return visit(payload)
+
+
+def verify_story(context,url: str,caption: str,profile_id: str) -> bool:
+    """Caller must supply an ID returned by this exact story-create mutation."""
+    canonical=story_url(url,profile_id)
+    if not canonical or active_user(context)!=profile_id:return False
+    page=context.new_page()
+    try:
+        page.goto(canonical,wait_until='domcontentloaded',timeout=45000)
+        page.wait_for_timeout(2000)
+        page.locator('video').first.wait_for(state='visible',timeout=15000)
+        return active_user(context)==profile_id and story_url(page.url,profile_id)==canonical
+    except Exception:return False
+    finally:page.close()
+
+
+def story_public_audience(page) -> bool:
+    """Inspect the selected radio paired with Public; never change Story privacy."""
+    settings=page.get_by_role('button',name=re.compile(r'^(Pengaturan privasi cerita|Story privacy settings)$',re.I))
+    settings.press('Enter',timeout=15000)
+    dialog=page.get_by_role('dialog').last
+    dialog.wait_for(state='visible',timeout=15000)
+    public=dialog.get_by_text('Publik',exact=True).filter(visible=True)
+    if not public.count():public=dialog.get_by_text('Public',exact=True).filter(visible=True)
+    verified=False
+    if public.count()==1:
+        verified=public.evaluate('''el => {
+          let node=el;
+          while(node && node.getAttribute('role')!=='dialog') {
+            const inputs=node.querySelectorAll('[role="radio"],input[type="radio"]');
+            if(inputs.length===1) {
+              return inputs[0].getAttribute('aria-checked')==='true' || inputs[0].checked===true;
+            }
+            if(inputs.length>1) return false;
+            node=node.parentElement;
+          }
+          return false;
+        }''') is True
+    # Cancel leaves all account-wide choices untouched.
+    dialog.get_by_role('button',name=re.compile(r'^(Batal|Cancel)$',re.I)).press('Enter')
+    dialog.wait_for(state='hidden',timeout=10000)
+    return verified
+
+
+def upload_story(path: Path,caption: str,profile_id: str,checkpoint) -> dict:
+    """Publish once, reconcile only the matching create response, never replay Post."""
+    from playwright.sync_api import expect
+    with connection() as context:
+        identity=session(context,expected_profile=profile_id)
+        if not identity.get('account_verified'):raise RuntimeError(identity['message'])
+        page=context.new_page();submitted=False;created=[]
+        activity=start_background_page_activity(page)
+        def response_received(response):
+            if not submitted or '/api/graphql' not in response.url:return
+            try:
+                text=response.text()
+                # GraphQL may stream newline-delimited objects. Never persist
+                # response bodies, upload tokens, browser cookies or signed URLs.
+                for line in text.splitlines():
+                    if 'story_create' not in line:continue
+                    result=created_story_url(json.loads(line.removeprefix('for (;;);')),profile_id)
+                    if result:created.append(result)
+            except Exception:pass
+        page.on('response',response_received)
+        try:
+            page.goto('https://www.facebook.com/stories/create/',wait_until='domcontentloaded',timeout=45000)
+            page.locator('input[type="file"]').first.set_input_files(str(path),timeout=90000)
+            post=page.get_by_role('button',name=re.compile(r'^(Bagikan ke Cerita|Share to story)$',re.I))
+            post.wait_for(state='visible',timeout=120000)
+            expect(post).to_be_enabled(timeout=120000)
+            # Require visible Public proof. Do not silently change global Story privacy.
+            if not story_public_audience(page):
+                raise RuntimeError('Audiens publik Story belum terbukti; ditahan sebelum Bagikan.')
+            if active_user(context)!=profile_id:raise RuntimeError('Profil berubah sebelum Story dikirim.')
+            checkpoint(submission_started=True,status='running',message='Mengirim Story; menunggu ID dari respons Facebook.')
+            submitted=True;post.press('Enter',timeout=15000)
+            deadline=time.monotonic()+90
+            while time.monotonic()<deadline:
+                for url in list(created):
+                    checkpoint(remote_story_url=url)
+                    if verify_story(context,url,caption,profile_id):
+                        return dict(status='completed',upload_confirmed=True,video_url=url,
+                                    message='Story terkonfirmasi dari ID publikasi pada akun target.')
+                page.wait_for_timeout(2000)
+            return dict(status='needs_review',upload_confirmed=False,
+                message='Story sudah dikirim, tetapi identitas remote belum terbukti. Upload ulang diblokir.')
+        finally:
+            stop_background_page_activity(activity)
+            if not submitted:page.close()

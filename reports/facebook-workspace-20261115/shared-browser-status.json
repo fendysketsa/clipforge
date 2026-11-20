@@ -1,0 +1,13 @@
+{
+  "youtube": {
+    "url": "https://studio.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ",
+    "dashboard_visible": true,
+    "login_prompt_visible": false
+  },
+  "tiktok": {
+    "url": "https://www.tiktok.com/tiktokstudio/upload",
+    "upload_workspace_visible": true,
+    "target_handle_visible": false,
+    "login_prompt_visible": false
+  }
+}

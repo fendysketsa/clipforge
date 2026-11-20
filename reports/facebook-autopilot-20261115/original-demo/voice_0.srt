@@ -1,0 +1,8 @@
+1
+00:00:00,100 --> 00:00:02,308
+Ruang file terasa penuh?
+
+2
+00:00:02,258 --> 00:00:04,333
+Periksa ukurannya dulu.
+

@@ -1,0 +1,75 @@
+{
+  "fixture_only": true,
+  "full_export_pipeline": true,
+  "source_sha256_preserved": true,
+  "duration": "30.000000",
+  "output": "rendered/clip_01_mengatur-notifikasi-aplikasi-hp.mp4",
+  "facebook": {
+    "version": 1,
+    "niche": "tech_daily",
+    "target_seconds": 30,
+    "max_seconds": 55,
+    "caption_style": "stable_phrase_white_58px",
+    "caption": "Mengatur notifikasi aplikasi HP.\n\n#TipsHP #TeknologiSehariHari",
+    "public_source_credit": false,
+    "watermark": {
+      "style_version": 2,
+      "style": "channel_monogram_champagne_seal",
+      "asset": "ryuundy-watermark-v2.svg",
+      "channel_url": "https://www.youtube.com/channel/UCAOZF9Qzj6DYoXKtLnP4UUQ",
+      "position": "center_46_percent",
+      "size_px": 208,
+      "opacity": 0.24,
+      "wordmark_opacity": 0.34,
+      "backplate_opacity": 0.0,
+      "ornament": "original_channel_r_crescent_ring",
+      "animated": false,
+      "source_ownership_claimed": false
+    }
+  },
+  "render_qc": {
+    "version": 1,
+    "available": true,
+    "status": "passed",
+    "quality_gate_passed": true,
+    "requires_manual_review": false,
+    "blocking": false,
+    "sample_count": 7,
+    "frame_timestamps_seconds": [
+      3.75,
+      7.5,
+      11.25,
+      15.0,
+      18.75,
+      22.5,
+      26.25
+    ],
+    "exposure": {
+      "passed": true,
+      "median_luminance": 43.0,
+      "shadow_clip_percent": 0.004,
+      "highlight_clip_percent": 0.718,
+      "dark_frame_ratio": 0.0
+    },
+    "sharpness": {
+      "passed": true,
+      "median_laplacian_variance": 763.75,
+      "minimum": 18.0
+    },
+    "head_crop": {
+      "assessed": false,
+      "passed": null,
+      "detected_faces": 0,
+      "safe_face_ratio": null
+    },
+    "subtitle_safe_area": {
+      "assessed": true,
+      "passed": true,
+      "position": "bottom",
+      "method": "renderer_geometry_contract",
+      "shorts_ui_safe": true
+    },
+    "warnings": []
+  },
+  "media_issues": []
+}

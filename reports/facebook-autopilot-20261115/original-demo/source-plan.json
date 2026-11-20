@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "seed": "2026-11-15:reel:0",
+  "kind": "reel",
+  "topic": "size",
+  "title": "Periksa file besar sebelum merapikan",
+  "stages": [
+    {
+      "title": "Masalahnya",
+      "text": "Ruang file terasa penuh? Periksa ukurannya dulu.",
+      "start": 0.0,
+      "end": 4.344
+    },
+    {
+      "title": "Perhatikan contoh",
+      "text": "Daftar contoh ini berisi satu dokumen kecil dan dua video dengan ukuran berbeda. Semua ukuran ditampilkan di samping nama.",
+      "start": 4.344,
+      "end": 12.192
+    },
+    {
+      "title": "Coba langkahnya",
+      "text": "Urutkan ukuran dari besar ke kecil. Video terbesar naik ke atas, sehingga mudah diperiksa sebelum memutuskan tindakan.",
+      "start": 12.192,
+      "end": 19.848
+    },
+    {
+      "title": "Lihat hasilnya",
+      "text": "Mengurutkan belum menghapus apa pun. Periksa file yang masih diperlukan dan salin yang penting sebelum merapikan penyimpanan.",
+      "start": 19.848,
+      "end": 27.144
+    }
+  ],
+  "files": [
+    {
+      "id": "a",
+      "label": "Catatan_Kegiatan_21.txt",
+      "size": 2,
+      "type": "document"
+    },
+    {
+      "id": "b",
+      "label": "Video_Kegiatan_21.mp4",
+      "size": 120,
+      "type": "video"
+    },
+    {
+      "id": "c",
+      "label": "Video_taman_21.mp4",
+      "size": 48,
+      "type": "video"
+    }
+  ],
+  "caption": "Periksa file besar sebelum merapikan. Mengurutkan belum menghapus apa pun. Periksa file yang masih diperlukan dan salin yang penting sebelum merapikan penyimpanan.\n\n#TipsDigital #TeknologiSehariHari",
+  "visual_type": "authored_animated_simulation",
+  "third_party_footage": false,
+  "third_party_music": false,
+  "synthetic_voice": true,
+  "narration_provider": "edge_neural_id-ID-ArdiNeural",
+  "example": "Kegiatan_21",
+  "plan_sha256": "0cde3d93963b18063e53d39994aa4501bf6c8dbb367324cba185e4fa04328ca5"
+}

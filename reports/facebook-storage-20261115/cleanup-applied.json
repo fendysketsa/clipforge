@@ -1,0 +1,12 @@
+{
+  "completed_at": "2026-11-15T09:19:51.868479+00:00",
+  "upload_id": "d27a9dd3518b4f01a3a9cec3a41f3ac9",
+  "video_url": "https://www.facebook.com/reel/1844917023309992/",
+  "removed_files": 17,
+  "freed_bytes": 3755558,
+  "workspace_absent": true,
+  "remote_ledger_preserved": true,
+  "local_job_removed": true,
+  "used_existing_guarded_local_delete_api": true,
+  "remote_delete_attempted": false
+}

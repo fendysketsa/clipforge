@@ -1,0 +1,27 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Caption,DejaVu Sans,53,&H00FFFFFF,&H0000D7FF,&H00000000,&H90000000,-1,0,0,0,100,100,0,0,1,3.0,1.2,2,110,230,368,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.12,0:00:03.10,Caption,,0,0,0,,kemudian pengabusan\N{\c&H001673F9&\fscx108\fscy108}bukti{\rCaption} elektronik dan
+Dialogue: 0,0:00:03.10,0:00:06.09,Caption,,0,0,0,,{\c&H001673F9&\fscx108\fscy108}termasuk{\rCaption} illegal\Naccess, baik kepada
+Dialogue: 0,0:00:06.09,0:00:09.07,Caption,,0,0,0,,Kepala Negara maupun\Nkepada {\c&H001673F9&\fscx108\fscy108}peminan{\rCaption}
+Dialogue: 0,0:00:09.07,0:00:12.06,Caption,,0,0,0,,-{\c&H001673F9&\fscx108\fscy108}peminan{\rCaption} dan tokoh\N-tokoh lainnya
+Dialogue: 0,0:00:12.06,0:00:15.64,Caption,,0,0,0,,yang tentunya dalam\N{\c&H001673F9&\fscx108\fscy108}kesempatan{\rCaption} ini Bapak
+Dialogue: 0,0:00:15.64,0:00:19.23,Caption,,0,0,0,,{\c&H001673F9&\fscx108\fscy108}Presiden{\rCaption} kami mewakili\Nbeliau, Bapak Presiden
+Dialogue: 0,0:00:19.23,0:00:21.03,Caption,,0,0,0,,sekali lagi\N{\c&H001673F9&\fscx108\fscy108}menyampaikan{\rCaption}
+Dialogue: 0,0:00:21.03,0:00:24.61,Caption,,0,0,0,,{\c&H001673F9&\fscx108\fscy108}keperhatian{\rCaption} yang luar\Nbiasa oleh karena
+Dialogue: 0,0:00:24.61,0:00:26.41,Caption,,0,0,0,,{\c&H001673F9&\fscx108\fscy108}terjadinya{\rCaption} dinamika\Ntersebut
+Dialogue: 0,0:00:26.41,0:00:32.73,Caption,,0,0,0,,dan ada konsekuensi\Nlogis yang {\c&H001673F9&\fscx108\fscy108}harus{\rCaption}
+Dialogue: 0,0:00:32.73,0:00:37.99,Caption,,0,0,0,,diputuskan karena\N{\c&H001673F9&\fscx108\fscy108}salah{\rCaption} satu persangka
+Dialogue: 0,0:00:37.99,0:00:40.10,Caption,,0,0,0,,adalah beliau
+Dialogue: 0,0:00:40.88,0:00:42.82,Caption,,0,0,0,,{\c&H001673F9&\fscx108\fscy108}menjabat{\rCaption} sebagai\NKepala Staf
+Dialogue: 0,0:00:42.82,0:00:43.31,Caption,,0,0,0,,{\c&H001673F9&\fscx108\fscy108}Kepersidenan{\rCaption}.

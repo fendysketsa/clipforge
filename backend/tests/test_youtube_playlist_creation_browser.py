@@ -17,10 +17,10 @@ def studio_page(monkeypatch):
         page.set_content('''
         <ytcp-video-metadata-playlists><button role="button" id="dropdown" onclick="dialog.hidden=false">Pilih</button></ytcp-video-metadata-playlists>
         <ytcp-playlist-dialog><tp-yt-paper-dialog id="dialog" hidden>
-          <input id="search-input" placeholder="Telusuri playlist">
-          <div id="playlists-list"><ul></ul></div>
-          <ytcp-button class="new-playlist-button"><button onclick="menu.hidden=false">Playlist baru</button></ytcp-button>
-          <div id="action-menu" hidden><button role="menuitem" onclick="creation.hidden=false;menu.hidden=true">Playlist baru</button></div>
+          <ytcp-search-bar id="search-input"><input id="search-input" placeholder="Telusuri playlist" oninput="syncNewButton()"></ytcp-search-bar>
+          <div id="playlists-list"><div id="items"></div></div>
+          <ytcp-button class="new-playlist-button" aria-disabled="false"><button onclick="menu.hidden=false">Playlist baru</button></ytcp-button>
+          <div id="action-menu" hidden><button role="menuitem" test-id="new_playlist" onclick="creation.hidden=false;menu.hidden=true">Playlist baru</button></div>
           <ytcp-button class="done-button"><button onclick="dialog.hidden=true;dropdown.textContent=chosen">Selesai</button></ytcp-button>
         </tp-yt-paper-dialog></ytcp-playlist-dialog>
         <ytcp-playlist-creation-dialog id="creation" hidden>
@@ -31,12 +31,24 @@ def studio_page(monkeypatch):
         const dialog=document.querySelector('tp-yt-paper-dialog');
         const menu=document.querySelector('#action-menu');
         let creates=0, chosen='', nextId=0;
+        function syncNewButton() {
+          const query=document.querySelector('ytcp-search-bar input#search-input').value.trim();
+          const host=document.querySelector('.new-playlist-button');
+          const button=host.querySelector('button');
+          const disabled=query.length>0;
+          button.disabled=disabled;
+          button.setAttribute('aria-disabled', disabled?'true':'false');
+          host.setAttribute('aria-disabled', disabled?'true':'false');
+        }
         function addPlaylist(name) {
-          const row=document.createElement('li');row.className='row';
-          const label=document.createElement('span');label.className='checkbox-label';label.textContent=name;
+          const row=document.createElement('div');row.className='row';row.setAttribute('role','listitem');
+          const label=document.createElement('label');label.className='ytcp-checkbox-label';
+          const outer=document.createElement('span');outer.className='checkbox-label';
+          const text=document.createElement('span');text.className='label label-text';text.textContent=name;
+          outer.append(text);
           const check=document.createElement('input');check.type='checkbox';
-          check.onchange=()=>{if(check.checked)chosen=name};row.append(label,check);
-          document.querySelector('#playlists-list ul').append(row);
+          check.onchange=()=>{if(check.checked)chosen=name};label.append(outer,check);row.append(label);
+          document.querySelector('#playlists-list #items').append(row);
         }
         function createPlaylist() {
           creates++;addPlaylist(document.querySelector('#title-textarea [contenteditable]').innerText);

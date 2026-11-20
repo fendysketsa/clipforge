@@ -1,0 +1,9 @@
+{
+  "checked_at": "2026-11-15T10:53:11.135476+00:00",
+  "health": {
+    "status": "ok"
+  },
+  "educational_motion_version": null,
+  "scheduler_running": true,
+  "active_jobs": []
+}

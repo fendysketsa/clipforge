@@ -1,0 +1,35 @@
+1
+00:00:00,000 --> 00:00:45,000
+Pemain membuka pintu
+pertama dan menemukan
+
+2
+00:00:45,000 --> 00:01:00,000
+ruangan kosong.
+
+3
+00:01:00,000 --> 00:01:37,500
+Di lantai berikutnya
+pemain berhasil
+
+4
+00:01:37,500 --> 00:02:00,000
+menemukan kunci biru.
+
+5
+00:02:00,000 --> 00:02:37,500
+Temannya menunjukkan
+jalan menuju taman
+
+6
+00:02:37,500 --> 00:03:00,000
+yang lebih terang.
+
+7
+00:03:00,000 --> 00:03:42,857
+Keduanya memutuskan
+beristirahat di rumah
+
+8
+00:03:42,857 --> 00:04:00,000
+dekat jembatan.

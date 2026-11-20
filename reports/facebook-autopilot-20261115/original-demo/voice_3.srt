@@ -1,0 +1,8 @@
+1
+00:00:00,100 --> 00:00:02,709
+Mengurutkan belum menghapus apa pun.
+
+2
+00:00:02,659 --> 00:00:07,258
+Periksa file yang masih diperlukan dan salin yang penting sebelum merapikan penyimpanan.
+

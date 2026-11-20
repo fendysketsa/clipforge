@@ -1,0 +1,19 @@
+{
+  "checked_at": "2026-11-15T09:23:18.014863+00:00",
+  "health": {
+    "status": "ok"
+  },
+  "local_workspace_absent": true,
+  "remote_ledger_preserved": true,
+  "video_url": "https://www.facebook.com/reel/1844917023309992/",
+  "facebook_jobs": 0,
+  "scheduler_running": true,
+  "local_cleanup_version": null,
+  "new_ui_activated": false,
+  "deployment": {
+    "command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+    "exit_code": 1,
+    "activated": false,
+    "error": "sudo requires a password; no interactive terminal available"
+  }
+}

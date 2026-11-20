@@ -1,0 +1,12 @@
+{
+  "offline_pure_planner_checks_passed": true,
+  "network_used": false,
+  "publication_attempted": false,
+  "bonus_first_sunday_two_slots": true,
+  "story_deferred": true,
+  "no_same_day_burst": true,
+  "three_local_uploads_do_not_award_bonus": true,
+  "expired_evidence_not_prioritized": true,
+  "regular_weekly_plan_preserved": true,
+  "full_api_regression_not_rerun": true
+}

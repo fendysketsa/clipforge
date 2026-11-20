@@ -1,0 +1,54 @@
+{
+  "duration_seconds": 30.666667,
+  "resolution": "1080x1920",
+  "audio_sample_rate": 48000,
+  "mean_dbfs": -16.1,
+  "max_dbfs": -2.0,
+  "sound_design": {
+    "version": 1,
+    "author": "ClipForge procedural UI synthesis",
+    "third_party_audio": false,
+    "attribution_required": false,
+    "music": false,
+    "narration_priority": true,
+    "ducked_under_voice": true,
+    "limiter_peak_dbfs": -1.5,
+    "inserted_timeline_seconds": 0,
+    "events": [
+      {
+        "kind": "tap",
+        "start": 0.35,
+        "duration": 0.065,
+        "gain_db": -23,
+        "event": "opening_result_preview"
+      },
+      {
+        "kind": "tap",
+        "start": 9.776,
+        "duration": 0.065,
+        "gain_db": -23,
+        "event": "operation_selected"
+      },
+      {
+        "kind": "swoosh",
+        "start": 9.876,
+        "duration": 0.24,
+        "gain_db": -25,
+        "event": "objects_change"
+      },
+      {
+        "kind": "chime",
+        "start": 21.216,
+        "duration": 0.38,
+        "gain_db": -24,
+        "event": "complete_result_explained"
+      }
+    ],
+    "sha256": "39324260a3bdcd46833db17e9c735efa3d96469c58dea207b4c18a6be73acde9",
+    "sample_rate": 48000,
+    "generated_peak_dbfs": -23.0
+  },
+  "no_publication_attempted": true,
+  "artifact_status": "rejected_and_retired",
+  "upload_allowed": false
+}

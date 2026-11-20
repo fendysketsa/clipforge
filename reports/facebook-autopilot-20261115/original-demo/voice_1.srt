@@ -1,0 +1,8 @@
+1
+00:00:00,100 --> 00:00:04,917
+Daftar contoh ini berisi satu dokumen kecil dan dua video dengan ukuran berbeda.
+
+2
+00:00:04,867 --> 00:00:07,816
+Semua ukuran ditampilkan di samping nama.
+

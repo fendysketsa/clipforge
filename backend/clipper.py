@@ -55,6 +55,7 @@ from hypit_quick import (
 from article_presenter import is_article_presenter_prompt
 from evidence_director import build_evidence_plan, evidence_overlay_filter
 from portrait_framing import landscape_portrait_plan, portrait_source_filter
+import caption_clearance
 from religious_review import (
     RELIGIOUS_ATTRIBUTION_MARKERS, RELIGIOUS_RULING_WORDS, religious_ruling_terms,
 )
@@ -6896,6 +6897,9 @@ def one_k_long_form_readiness(
     base = five_k_experiment_readiness(clip, "landscape_compilation")
     story = story_director or {}
     story_gate = bool(story.get("quality_gate_passed"))
+    compilation_gate = bool(story.get('output_format') == 'compilation'
+                            and story.get('compilation_quality_gate_passed') is True)
+    format_gate = story_gate or compilation_gate
     base.update(
         {
             "version": 2,
@@ -6904,10 +6908,10 @@ def one_k_long_form_readiness(
             "stretch_target_views": 10000,
             "target_metric": "youtube_views",
             "quality_metric": "watch_time",
-            "quality_gate_passed": story_gate and bool((clip.hook or clip.title).strip()),
+            "quality_gate_passed": format_gate and bool((clip.hook or clip.title).strip()),
             "status": (
                 base["status"]
-                if story_gate
+                if format_gate
                 else "revise_story_before_publishing"
             ),
             "review_checkpoints": [100, 500, 1000, 5000],
@@ -6929,9 +6933,10 @@ def one_k_long_form_readiness(
                 "strengthen_end_screen_to_related_video",
             ],
             "story_director_quality_gate": story_gate,
+            "compilation_structure_gate": compilation_gate,
             "next_action": (
                 "Review Private, cocokkan promise judul-thumbnail dengan 30 detik awal, lalu jalankan A/B packaging native YouTube."
-                if story_gate
+                if format_gate
                 else "Susun ulang minimal tiga beat unik dari cold-open sampai payoff sebelum publikasi."
             ),
             "guarantee": False,
@@ -13688,6 +13693,7 @@ def landscape_compilation_edit_filter(
         "development": "PERKEMBANGAN",
         "evidence_and_answer": "PENJELASAN",
         "payoff_conclusion": "KESIMPULAN",
+        "compilation_moment": "MOMEN TERPILIH",
     }
     badge = role_badges.get(narrative_role) or (
         str(profile.get("badge") or "RANGKUMAN UTAMA")
@@ -14209,6 +14215,7 @@ def analyze_render_quality(
     subtitles_rendered: bool,
     caption_position: str,
     sample_count: int = 7,
+    content_region: dict | None = None,
 ) -> dict:
     """Audit representative final frames without blocking a successful export."""
     skipped = {
@@ -14264,6 +14271,11 @@ def analyze_render_quality(
             ]
             if not roi.size:
                 roi = small
+            if content_region:
+                x,y,rw,rh=(int(content_region[k]) for k in ('x','y','width','height'))
+                if x<0 or y<0 or rw<=0 or rh<=0 or x+rw>frame.shape[1] or y+rh>frame.shape[0]:
+                    raise ValueError('Content QC rectangle is outside the encoded frame')
+                roi=small[round(y*scale):round((y+rh)*scale),round(x*scale):round((x+rw)*scale)]
             gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
             medians.append(float(np.median(gray_roi)))
             shadow_ratios.append(float(np.mean(gray_roi <= 16) * 100))
@@ -14793,7 +14805,7 @@ def clean_detail_edit_filter(
         filters.extend(topic_motion_overlay_filters(safe_duration, profile, emphasis_times))
 
     if show_text_overlays and preserve_source_geometry:
-        presented = (portrait_presentation or {}).get('layout') in {'source_context_stage','source_context_detail'}
+        presented = (portrait_presentation or {}).get('layout') in {'source_context_stage','source_context_detail','source_caption_clearance'}
         hook_y = int(portrait_presentation['hook_y']) if presented else 140
         windows = editorial_card_windows(safe_duration, title_overlay_seconds)
         cards = [(hook_text_filename, 0.0, min(safe_duration, title_overlay_seconds))]
@@ -15855,7 +15867,8 @@ def write_dynamic_ass(
             if facebook else subtitle_cues(segments, offset, clip_duration))
     if facebook:
         font_size, outline = 58, 3.5
-        alignment, margin_v = 2, 430
+        alignment, margin_v = 2, (1920-max(SHORTS_SAFE_TOP+180,min(SHORTS_SAFE_BOTTOM-8,int(caption.baseline_y)))
+                                 if caption.baseline_y is not None else 430)
         primary, outline_color = _hex_to_ass_color("#FFFFFF"), _hex_to_ass_color("#10243A")
     header = f"""[Script Info]
 ScriptType: v4.00+
@@ -16671,7 +16684,10 @@ def export_clip(
     progress_count = max(progress_number, int(progress_unit_count or compilation_part_count or 1))
     progress_span_start = 68 if output_format == "vertical_short" else 70
     progress_span_size = 25 if output_format == "vertical_short" else 20
-    progress_unit_label = "klip pendek" if output_format == "vertical_short" else "bagian cerita"
+    progress_unit_label = (
+        "klip pendek" if output_format == "vertical_short" else
+        "momen kompilasi" if compilation_narrative_role == "compilation_moment" else "bagian cerita"
+    )
 
     def emit_render_task(fraction: float, task: str) -> None:
         """Expose real per-clip work so telemetry can segment resource samples."""
@@ -17140,7 +17156,8 @@ def export_clip(
     auditor_identity = fendy_auditor_identity(clip, output_format)
     growth_blueprint = codex_growth_blueprint(clip, output_format)
     tiktok_strategy = growth_blueprint.get("tiktok")
-    if output_format == "vertical_short" and isinstance(tiktok_strategy, dict):
+    if (output_format == "vertical_short" and isinstance(tiktok_strategy, dict)
+            and not os.environ.get("CLIPFORGE_FACEBOOK_NICHE")):
         series_eyebrow = str(tiktok_strategy.get("series_eyebrow") or "").strip()
         if series_eyebrow:
             cover_copy = {**cover_copy, "eyebrow": series_eyebrow}
@@ -17264,11 +17281,13 @@ def export_clip(
         reaction_avatar_selected = False
         reaction_avatar_profile["selected"] = False
         reaction_avatar_profile["reason"] = "required_ffmpeg_filters_unavailable"
-    quran_outro_configured = env_enabled("QURAN_OUTRO_ENABLED", True)
+    quran_outro_configured = (env_enabled("QURAN_OUTRO_ENABLED", True)
+                              and not os.environ.get("CLIPFORGE_FACEBOOK_NICHE"))
     quran_outro_requested = quran_outro_configured and (
         output_format == "vertical_short"
         or compilation_part_number == compilation_part_count
-    ) and (not cron_short_requested or clip_has_islamic_context(clip))
+    ) and (not cron_short_requested or clip_has_islamic_context(clip)) and (
+        compilation_narrative_role != 'compilation_moment' or clip_has_islamic_context(clip))
     quran_outro_duration = QURAN_OUTRO_SECONDS
     quran_outro_enabled = bool(
         quran_outro_requested
@@ -17312,6 +17331,7 @@ def export_clip(
         and output_format == "vertical_short"
         and drawtext_supported
         and editorial_contract["passed"]
+        and not os.environ.get("CLIPFORGE_FACEBOOK_NICHE")
     )
     if social_card_selected and not visible_editorial_framing:
         social_card_selected = False
@@ -17529,6 +17549,20 @@ def export_clip(
         enabled=cron_presentation_requested, sensitive=presentation_sensitive)
     if portrait_framing.get('caption_baseline') is not None and effective_caption.position == 'bottom':
         effective_caption = replace(effective_caption, baseline_y=portrait_framing['caption_baseline'])
+    source_caption_clearance={'version':caption_clearance.VERSION,'enabled':False,'requires_review':False}
+    if (burn_subtitles and enhanced_edit and clean_detail_pipeline and source_size
+            and abs(source_size[0]/source_size[1]-9/16)<.02
+            and not portrait_framing.get('enabled') and background_mode=='keep'
+            and not social_card_selected and not reaction_avatar_selected
+            and effective_caption.position=='bottom' and effective_caption.baseline_y is None):
+        size=max(42,min(72,round(40+max(6,min(36,effective_caption.font_size))*1.6)))
+        source_caption_clearance=caption_clearance.analyze(video_path,clip.start,duration,
+            font_size=58 if os.environ.get('CLIPFORGE_FACEBOOK_NICHE') else size)
+        if source_caption_clearance.get('enabled'):
+            effective_caption=replace(effective_caption,baseline_y=source_caption_clearance['caption_baseline'])
+            applied_edits.append('Frame sumber utuh dipisahkan dari jalur subtitle tambahan; teks bawaan dan identitas sumber tetap terlihat.')
+            visible_editorial_framing=False
+            automatic_short_title=False
     write_srt(srt_path, clip_segments, clip.start, duration)
     dynamic_caption_cues = 0
     if enhanced_edit and output_format == "vertical_short":
@@ -17743,6 +17777,7 @@ def export_clip(
             "shorts_ui_safe_area": bool(dynamic_caption_cues),
             'baseline_y': effective_caption.baseline_y,
         },
+        'source_caption_clearance':source_caption_clearance,
         "content_edit_signature": {
             "version": 1,
             "variation": edit_variation,
@@ -18156,6 +18191,13 @@ def export_clip(
             sidecar_payload["layout"] = "cinematic_bordered_frame"
             if should_try_split:
                 sidecar_payload["split_fallback_reason"] = "two_speakers_not_detected"
+    elif source_caption_clearance.get('enabled'):
+        vf=('scale=720:1280:force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos,'
+            'pad=720:1280:(ow-iw)/2:(oh-ih)/2:color=0x0B1720,'
+            'pad=1080:1920:180:40:color=0x0B1720,setsar=1')
+        sidecar_payload['layout']='source_with_caption_band'
+        camera_angle_cues=[]
+        sidecar_payload['virtual_camera_angles']=[]
     elif portrait_framing["enabled"]:
         vf = (cron_short_director.source_filter(portrait_framing)
               if portrait_framing['layout'] in {'source_context_stage','source_context_detail'}
@@ -18615,6 +18657,7 @@ def export_clip(
                         emphasis_times=emphasis_times,
                         show_text_overlays=(
                             drawtext_supported
+                            and not source_caption_clearance.get('enabled')
                             and (
                                 not reaction_avatar_selected
                                 or visible_editorial_framing
@@ -18641,16 +18684,17 @@ def export_clip(
                         social_card_mode=(
                             social_card_selected or reaction_avatar_selected
                         ),
-                        preserve_source_geometry=preserve_landscape,
-                        portrait_presentation=portrait_framing,
+                        preserve_source_geometry=preserve_landscape or source_caption_clearance.get('enabled',False),
+                        portrait_presentation=({'layout':'source_caption_clearance','hook_y':320}
+                                              if source_caption_clearance.get('enabled') else portrait_framing),
                     )}"
                 )
                 sidecar_payload["motion_impact"] = {
                     "style": "clean_detail",
                     "cinematic_finish_version": 2 if cinematic_finish_enabled else 0,
                     "editorial_motion_style": theme_profile.get("motion_style", "editorial_clean"),
-                    "procedural_topic_animation": not preserve_landscape,
-                    "source_frame_geometry_preserved": preserve_landscape,
+                    "procedural_topic_animation": not preserve_landscape and not source_caption_clearance.get('enabled'),
+                    "source_frame_geometry_preserved": preserve_landscape or source_caption_clearance.get('enabled',False),
                     "third_party_visual_assets": False,
                     "continuous_motion": False,
                     "blurred_frame": False,
@@ -18887,7 +18931,8 @@ def export_clip(
         authored_motion = load_motion_manifest(clips_dir.parent / "motion.json", clip)
         if authored_motion is not None:
             motion_plan = build_motion_plan(clip, clip_segments, auto_visual_plan, manifest=authored_motion)
-        if portrait_framing.get('layout') in {'source_context_stage','source_context_detail'}:
+        if (portrait_framing.get('layout') in {'source_context_stage','source_context_detail'}
+                or source_caption_clearance.get('enabled')):
             motion_plan.update(enabled=False, reason='preserve_source_context_layout_and_readable_captions')
         if motion_plan.get("enabled"):
             if preserve_landscape and source_size:
@@ -19470,6 +19515,7 @@ def export_clip(
                 burn_subtitles and clip_segments and subtitles_supported
             ),
             caption_position=effective_caption.position,
+            content_region=source_caption_clearance.get('source_panel'),
         )
     else:
         render_quality_qc = {
@@ -19483,6 +19529,9 @@ def export_clip(
             "sample_count": 0,
             "warnings": ["QC frame dinonaktifkan; lakukan review visual manual."],
         }
+    if source_caption_clearance.get('requires_review'):
+        render_quality_qc.update(quality_gate_passed=False,blocking=True,requires_manual_review=True)
+        render_quality_qc.setdefault('warnings',[]).append('Ruang subtitle terhadap teks/wajah sumber belum dapat dipastikan.')
     if render_quality_qc.get("quality_gate_passed") is False:
         console.print(
             "[yellow]QC frame meminta review manual:[/yellow] "
@@ -19629,6 +19678,36 @@ def export_clip(
     return out_path
 
 
+def build_long_compilation_fallback(candidates, transcript, short_anchor_ranges=()):
+    """Use original moments, without the failed story's reordering/teaser cuts."""
+    sequence = []
+    for original in sorted(candidates, key=lambda item: item.start):
+        candidate = copy.deepcopy(original)
+        rows = [row for row in transcript if row.start >= candidate.start - .05
+                and row.end <= candidate.end + .05 and row.text.strip()]
+        if not rows:
+            continue
+        candidate.start, candidate.end = rows[0].start, rows[-1].end
+        candidate.duration = candidate.end - candidate.start
+        candidate.text = ' '.join(row.text.strip() for row in rows)
+        if (candidate.duration < 10 or candidate.boundary_quality == 'menggantung'
+                or not refresh_candidate_export_context(candidate, transcript)
+                or not candidate_is_editorially_safe(candidate)):
+            continue
+        if sequence and candidate.start < sequence[-1].end - .001:
+            continue
+        candidate.index = len(sequence) + 1
+        sequence.append(candidate)
+    material = cron_long_strategy.story_material(sequence, transcript)
+    audit = cron_long_strategy.validate_compilation(material, short_anchor_ranges)
+    director = {'version':3, 'strategy':'chronological_compilation_after_story_rejection',
+                'output_format':'compilation', 'quality_gate_passed':False,
+                'compilation_quality_gate_passed':audit['passed'],
+                'filler_padding_added':False, 'duplicated_teaser_content':False,
+                'source_chronology_preserved':True, 'independent_long_qc_required':True}
+    return sequence, ['compilation_moment'] * len(sequence), director, audit
+
+
 def write_compilation_srt(
     path: Path,
     transcript: list[TranscriptSegment],
@@ -19671,11 +19750,13 @@ def export_compilation(
     short_anchor_ranges: list[tuple[float, float]] | None = None,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
+    source_candidates = copy.deepcopy(candidates)
     candidates, narrative_roles, story_director = build_long_form_story_sequence(
         candidates,
         transcript,
     )
     long_review = None
+    compilation_review = None
     if cron_long_strategy_required:
         material = cron_long_strategy.story_material(candidates, transcript)
         if not ai_config.enabled:
@@ -19690,16 +19771,26 @@ def export_compilation(
             except Exception as exc:
                 # Missing provider/JSON evidence never becomes an automatic pass.
                 long_review = {"version": 1, "passed": False,
-                               "reasons": ["editorial_review_unavailable"], "error_type": type(exc).__name__}
+                               "reasons": ["provider_content_rejected" if getattr(exc, 'code', None) == 422
+                                           else "editorial_review_unavailable"], "error_type": type(exc).__name__}
         save_json(clips_dir.parent / "cron_long_story_review.json", long_review)
         if not long_review["passed"]:
-            raise RuntimeError("Long cron belum punya alur utuh; render ditahan: " + ", ".join(long_review["reasons"]))
+            if 'provider_content_rejected' in long_review['reasons'] or ai_config.terminal_failure == 'provider_rejected':
+                raise RuntimeError("Long ditahan: provider menolak sumber; fallback kompilasi tidak dijalankan.")
+            candidates, narrative_roles, story_director, compilation_review = build_long_compilation_fallback(
+                source_candidates, transcript, short_anchor_ranges or [])
+            save_json(clips_dir.parent / "cron_long_compilation_review.json", compilation_review)
+            if not compilation_review['passed']:
+                raise RuntimeError("Long dan kompilasi belum memiliki bahan valid; render ditahan: "
+                                   + ', '.join(compilation_review['reasons']))
+            emit_progress(69, 'selection', 'Alur Long belum lolos; beralih ke kompilasi momen utuh sesuai urutan sumber')
+            console.print('[yellow]LONG_COMPILATION_FALLBACK: audit cerita gagal; merender kompilasi kronologis, tetap menunggu QC Long.[/yellow]')
     parts_dir = clips_dir / ".compilation_parts"
     shutil.rmtree(parts_dir, ignore_errors=True)
     parts_dir.mkdir(parents=True, exist_ok=True)
 
-    strongest = max(candidates, key=lambda item: item.score)
-    target_minutes = max(5, min(10, round(sum(item.duration for item in candidates) / 60)))
+    strongest = candidates[0] if compilation_review else max(candidates, key=lambda item: item.score)
+    target_minutes = max(3 if compilation_review else 5, min(10, round(sum(item.duration for item in candidates) / 60)))
     base_name = f"resume_cerita_{target_minutes}menit_{slugify(strongest.title)[:48] or 'inti-cerita'}"
     out_path = clips_dir / f"{base_name}.mp4"
     srt_path = clips_dir / f"{base_name}.srt"
@@ -19713,6 +19804,7 @@ def export_compilation(
     altered_content_disclosure_required = False
     try:
         total_parts = len(candidates)
+        part_label = "momen kompilasi" if compilation_review else "bagian cerita"
         for idx, (candidate, narrative_role) in enumerate(
             zip(candidates, narrative_roles),
             start=1,
@@ -19721,7 +19813,7 @@ def export_compilation(
             emit_progress(
                 part_start,
                 "render",
-                f"Merender bagian cerita {idx} dari {total_parts}",
+                f"Merender {part_label} {idx} dari {total_parts}",
             )
             part_path = export_clip(
                 video_path,
@@ -19758,7 +19850,7 @@ def export_compilation(
             emit_progress(
                 part_done,
                 "render",
-                f"Bagian cerita {idx} dari {total_parts} selesai",
+                f"{part_label.capitalize()} {idx} dari {total_parts} selesai",
             )
             try:
                 part_payload = json.loads(
@@ -19894,7 +19986,7 @@ def export_compilation(
         if story_beats
         else [first_sentence(strongest.text, max_words=18)]
     )
-    core_message = "Alur inti: " + " → ".join(representative_beats)
+    core_message = ("Momen terpilih: " if compilation_review else "Alur inti: ") + " → ".join(representative_beats)
     resume_pov = chronological_povs[0] if chronological_povs else fallback_pov_angle(strongest.text)
     compilation = ClipCandidate(
         index=1,
@@ -19902,8 +19994,9 @@ def export_compilation(
         end=max(item.end for item in candidates),
         duration=total_duration,
         score=compilation_score,
-        title=f"Resume Cerita: {strongest.title}"[:80],
-        reason=f"Resume {len(candidates)} bagian inti yang merangkai konteks, POV, perkembangan, dan payoff secara kronologis.",
+        title=f"{'Kompilasi Momen' if compilation_review else 'Resume Cerita'}: {strongest.title}"[:80],
+        reason=(f"Kompilasi {len(candidates)} momen utuh mengikuti urutan sumber; tidak mengklaim alur cerita lengkap."
+                if compilation_review else f"Resume {len(candidates)} bagian inti yang merangkai konteks, POV, perkembangan, dan payoff secara kronologis."),
         text=" ".join(item.text for item in candidates),
         hook=strongest.hook or strongest.title,
         pov=resume_pov[:220],
@@ -19921,9 +20014,12 @@ def export_compilation(
         **asdict(compilation),
         "mode": "highlight_5m",
         "resume_version": 2,
-        "production_model": "codex_long_story_director",
+        "production_model": "chronological_compilation_fallback" if compilation_review else "codex_long_story_director",
         "story_director": story_director,
         "cron_long_story_review": long_review,
+        "long_format": "compilation" if compilation_review else "story",
+        "cron_long_compilation_review": compilation_review,
+        "long_fallback_reasons": long_review.get('reasons',[]) if compilation_review else [],
         "output_format": "landscape_compilation",
         "aspect_ratio": "16:9",
         "layout": (
@@ -20048,9 +20144,9 @@ def export_compilation(
         "cron_director_effects": cron_director_effects.aggregate_parts(part_audits),
         "retention_strategy": {
             "version": 3,
-            "opening": "sentence_complete_teaser_without_duplicate_runtime",
+            "opening": "first_complete_source_moment" if compilation_review else "sentence_complete_teaser_without_duplicate_runtime",
             "opening_attention_signal": "truthful_red_pulse_with_content_theme_badge",
-            "remaining_arc": "source_chronology_after_teaser",
+            "remaining_arc": "chronological_independent_moments" if compilation_review else "source_chronology_after_teaser",
             "first_30_seconds_match_title_thumbnail_promise": True,
             "manual_youtube_chapters_ready": len(candidates) >= 3,
             "filler_padding_added": False,

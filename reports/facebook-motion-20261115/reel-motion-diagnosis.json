@@ -1,0 +1,48 @@
+{
+  "checked_at": "2026-11-15T14:15:53.541309+00:00",
+  "live_motion_version": 1,
+  "confirmed_uploads": [
+    {
+      "job_id": "d3c240acaab44c53b518732a21a2a61b",
+      "video_url": "https://www.facebook.com/reel/1844917023309992/",
+      "uploaded_at": "2026-11-15T06:56:01.452010+00:00",
+      "title": "Mengganti nama bukan mengubah format",
+      "motion_version": null,
+      "renderer": "legacy"
+    }
+  ],
+  "latest_production": [
+    {
+      "job_id": "f982e689d4274d9496d7416a412107cf",
+      "key": "2026-11-15:reel:1",
+      "status": "dropped",
+      "message": "QC provider declined this source during content safety screening; no retry or publication.",
+      "motion_version": 1
+    }
+  ],
+  "new_demo": "demo/facebook_original.mp4",
+  "new_demo_operation_seconds": [
+    9.051,
+    12.251
+  ],
+  "encoded_object_movement": [
+    {
+      "interval": [
+        9.1,
+        10.65
+      ],
+      "changed_pixels": 73273,
+      "region_pixels": 514600
+    },
+    {
+      "interval": [
+        10.65,
+        12.25
+      ],
+      "changed_pixels": 101891,
+      "region_pixels": 514600
+    }
+  ],
+  "remote_posts_modified": false,
+  "conclusion": "The only confirmed Reel was rendered with legacy visuals. Runtime activation did not replace published media. New motion render failed independent provider QC; new demo remains a separate unpublished review artifact."
+}

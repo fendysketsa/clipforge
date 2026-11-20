@@ -1,0 +1,7 @@
+{
+  "checked_at": "2026-11-15T14:21:58.554111+00:00",
+  "model": "nvidia/nemotron-3.5-super-vl:free",
+  "test": "text-only connectivity; no video or rejected source resubmitted",
+  "http_status": 200,
+  "result": "None"
+}

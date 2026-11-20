@@ -1,0 +1,46 @@
+{
+  "method": "local_whisper_medium_actual_encoded_output",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 5.2,
+      "text": " intinya kalau saya mau lihat disini ya, semenjak mas wapres"
+    },
+    {
+      "start": 5.2,
+      "end": 10.92,
+      "text": " genjot-genjotnya menyerukan, sahkan RU perampasan aset ya"
+    },
+    {
+      "start": 10.92,
+      "end": 15.3,
+      "text": " disitu pula DPR itu jadi kurang senang sama mas Gibran"
+    },
+    {
+      "start": 15.3,
+      "end": 18.06,
+      "text": " ya gak tau kenapa, ini menurut pandangan saya ya"
+    },
+    {
+      "start": 18.06,
+      "end": 20.3,
+      "text": " kalian jangan ikut-ikutan temen-temen ya"
+    },
+    {
+      "start": 20.3,
+      "end": 24.84,
+      "text": " nah ini kesalahan mas Gibran ya yang dibenci oleh DPR"
+    },
+    {
+      "start": 24.84,
+      "end": 29.400000000000002,
+      "text": " ya karena mas Gibran mau cepet-cepet lah itu sahkan ya"
+    },
+    {
+      "start": 29.400000000000002,
+      "end": 36.440000000000005,
+      "text": " itu, RU Perambasan Aset ya, makanya wah mereka melihat mungkin, mungkin loh ya menurut saya."
+    }
+  ],
+  "recognized_statement": true
+}

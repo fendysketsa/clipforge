@@ -1,0 +1,25 @@
+{
+  "text": "Privasi cerita\nSiapa yang bisa melihat cerita Anda?\nCerita Anda akan bisa dilihat selama 24 jam di Facebook dan Messenger.\nPublik\nSiapa saja yang menggunakan Facebook atau Messenger\nTeman\nHanya teman Facebook Anda\nKustom\nPilih orang yang akan diperlihatkan cerita Anda\nHanya teman dan koneksi yang bisa membalas langsung ke cerita Anda.\nBatal\nSimpan",
+  "radios": [
+    {
+      "text": "",
+      "label": null,
+      "checked": "true"
+    },
+    {
+      "text": "",
+      "label": null,
+      "checked": "false"
+    },
+    {
+      "text": "",
+      "label": null,
+      "checked": "false"
+    }
+  ],
+  "buttons": [
+    "",
+    "Batal",
+    "Simpan"
+  ]
+}

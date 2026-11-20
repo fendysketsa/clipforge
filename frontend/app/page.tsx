@@ -384,7 +384,7 @@ export default function HomePage() {
   }, [url, sourceMode, clipMode]);
 
   const loadJobs = useCallback(async () => {
-    const nextJobs = await getJobs();
+    const nextJobs = (await getJobs()).filter(item => item.request.target_platform !== 'facebook');
     const failedJobs = nextJobs.filter(
       (item) => item.status === "failed" || item.status === "cancelled",
     );
@@ -506,7 +506,7 @@ export default function HomePage() {
       if (requestInFlight) return;
       requestInFlight = true;
       try {
-        const nextJobs = await getJobs();
+        const nextJobs = (await getJobs()).filter(item => item.request.target_platform !== 'facebook');
         if (!cancelled) setJobs(nextJobs);
       } catch {
         // A temporary polling failure must not interrupt the active backend job.

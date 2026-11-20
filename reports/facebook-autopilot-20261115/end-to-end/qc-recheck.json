@@ -1,0 +1,39 @@
+{
+  "status": "reviewed",
+  "fingerprint": "0b19779c248e5ed55a3cf21b59088ace044fd75ce90991590e373cc8f0db8c7c",
+  "media_sha256": "a585fa9fa4443d8e60761b295c84cdaea6aa09a060ec1310d4af1cf1233e4da5",
+  "audit": {
+    "schema_version": 1,
+    "source_job_id": "fb-original-verification",
+    "source_clip_url": "/outputs/facebook_autopilot/fb-original-verification/facebook_original.mp4",
+    "repair_attempted": false,
+    "decision": "PASS_UPLOAD",
+    "confidence": 0.95,
+    "hard_gates": {
+      "rights": true,
+      "media_integrity": true,
+      "meaning_preserved": true,
+      "context_safe": true
+    },
+    "ai_checks": {
+      "hook": true,
+      "standalone_clarity": true,
+      "payoff": true,
+      "caption": true,
+      "crop": true,
+      "visual_quality": true,
+      "audio_quality": true
+    },
+    "evidence": [
+      "Full media decode and generated source identity verified.",
+      "Hook at 00:00:00-00:00:02 displays 'Salin file bukan pindah file asli.' matching plan stage 1.",
+      "Demonstration at 00:00:13-00:00:23 shows file copying from Asal to Cadangan while original remains, matching plan stage 3.",
+      "Ending at 00:00:24-00:00:32 confirms both locations have the file and advises opening to verify, matching plan stage 4.",
+      "Captions and visual text align with the provided plan stages and timestamps.",
+      "Local Whisper audio review confirms intelligibility with high caption overlap scores."
+    ],
+    "repair_instructions": [],
+    "delete_source": false,
+    "upload_allowed": true
+  }
+}

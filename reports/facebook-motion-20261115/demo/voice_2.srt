@@ -1,0 +1,12 @@
+1
+00:00:00,100 --> 00:00:04,104
+Saat disalin, yang bergerak ke Cadangan adalah salinannya.
+
+2
+00:00:04,054 --> 00:00:06,360
+File di Asal tetap ada.
+
+3
+00:00:06,360 --> 00:00:10,643
+Lihat dua lokasi ini, masing-masing sekarang berisi satu catatan.
+

@@ -1,0 +1,41 @@
+{
+  "preview_only": true,
+  "api_mutations_mocked": true,
+  "native_activity_snapshot_used": true,
+  "viewports": [
+    {
+      "width": 1440,
+      "body": 1440,
+      "overview": "614.938px 559.062px",
+      "tasks": "263px 263px 263px 263px",
+      "buttonHeight": 37
+    },
+    {
+      "width": 1280,
+      "body": 1280,
+      "overview": "531.141px 482.859px",
+      "tasks": "223px 223px 223px 223px",
+      "buttonHeight": 37
+    },
+    {
+      "width": 390,
+      "body": 390,
+      "overview": "352px",
+      "tasks": "149px 149px",
+      "buttonHeight": 37
+    },
+    {
+      "width": 320,
+      "body": 320,
+      "overview": "292px",
+      "tasks": "119px 119px",
+      "buttonHeight": 37
+    }
+  ],
+  "page_errors": [],
+  "pause_resume_checked": true,
+  "refresh_checked": true,
+  "facebook_history_isolated": true,
+  "unavailable_state_checked": true,
+  "build_id": "SkZcSMN-9j8S4jS52S8RY"
+}

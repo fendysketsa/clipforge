@@ -6,6 +6,9 @@ import pytest
 @pytest.fixture(autouse=True)
 def isolate_runtime_state_files(monkeypatch, tmp_path):
     """Never let unit tests overwrite the application's persisted runtime state."""
+    originals=sys.modules.get('facebook_originals')
+    if originals is not None:
+        monkeypatch.setattr(originals,'PROVIDER_CONFIG_PATH',tmp_path/'facebook_qc_provider.json')
     api = sys.modules.get("api")
     if api is not None:
         monkeypatch.setenv('TIKTOK_AUTOMATIC_RETRY_ENABLED','false')

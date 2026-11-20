@@ -1,0 +1,83 @@
+{
+  "autopilot": {
+    "scheduler_running": true,
+    "heartbeat": "2026-11-15T08:17:11.341900+00:00",
+    "message": "Menunggu jadwal berikutnya atau hasil proses yang sedang berjalan.",
+    "runtime_state": "working",
+    "active": {
+      "key": "2026-11-15:reel:0",
+      "kind": "reel",
+      "due_at": "2026-11-15T11:30:00+07:00",
+      "day": "2026-11-15",
+      "week_start": "2026-11-09",
+      "week_end": "2026-11-15",
+      "due": true,
+      "content_seed": "7f638cb3cb6836342c76b5aa0e11414a63b38d79498c21ee2d28c1e3ddbcc4ef",
+      "title": "Mengganti nama bukan mengubah format",
+      "topic": "extension",
+      "status": "needs_review",
+      "job_id": "d3c240acaab44c53b518732a21a2a61b",
+      "created_at": "2026-11-15T06:53:33.394923+00:00",
+      "updated_at": "2026-11-15T06:56:01.470916+00:00",
+      "progress_percent": 100,
+      "message": "Post sudah dicoba; identitas Reel belum terkonfirmasi. Jangan upload ulang.",
+      "attempts": 1,
+      "script_sha256": "443d3d0986c8c5453ce08cf9abc8f94cb3b74440c2c8c45148c820d14ed709be",
+      "last_qc_at": "2026-11-15T06:55:00.507888+00:00",
+      "rendered_at": "2026-11-15T06:55:00.507894+00:00",
+      "upload_id": "d27a9dd3518b4f01a3a9cec3a41f3ac9",
+      "upload_confirmed": false,
+      "video_url": null
+    },
+    "bonus_priority": null
+  },
+  "monetization": {
+    "checked_at": "2026-11-15T07:48:42.397241+00:00",
+    "program": {
+      "state": "active",
+      "evidence": "Profil Anda menghasilkan uang"
+    },
+    "earnings": {
+      "estimated_usd": 0.0,
+      "period": "November",
+      "qualified_views": 0,
+      "rate_usd_per_1000": 0.0,
+      "non_qualified_reasons": [
+        {
+          "label": "Durasi tayangan terlalu singkat",
+          "percent": 98.0
+        },
+        {
+          "label": "Durasi konten kurang dari 10 detik",
+          "percent": 1.0
+        }
+      ]
+    },
+    "bonus": {
+      "amount_usd": 1.0,
+      "required_reels": 3,
+      "minimum_duration_seconds": 10,
+      "minimum_qualified_views": 10,
+      "minimum_reels_with_qualified_views": 1,
+      "completed_reels": 1,
+      "days_remaining_at_check": 5,
+      "period_label": "12 Nov - 19 Nov",
+      "awarded": false
+    },
+    "policy": {
+      "state": "clear"
+    }
+  },
+  "uploads": [
+    {
+      "id": "d27a9dd3518b4f01a3a9cec3a41f3ac9",
+      "job_id": "d3c240acaab44c53b518732a21a2a61b",
+      "status": "needs_review",
+      "submission_started": true,
+      "upload_confirmed": false,
+      "video_url": null,
+      "message": "Post sudah dicoba; identitas Reel belum terkonfirmasi. Jangan upload ulang."
+    }
+  ],
+  "jobs": []
+}
