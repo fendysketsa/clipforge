@@ -139,16 +139,16 @@ def test_history_niche_survives_generic_short_and_long_titles(upload_context):
 
 
 @pytest.mark.parametrize("scheduled", [False, True])
-def test_only_cron_persists_playlist_creation_permission_and_cli_flag(upload_context, scheduled):
+def test_manual_and_cron_create_missing_playlists_after_record_restore(upload_context, scheduled):
     api, job, clip = upload_context
     job.request.scheduled_public_source_credit = scheduled
     upload = api.create_youtube_upload_record(job.id, api.YouTubeUploadRequest(clip_url=clip.url))
     restored = api.YouTubeUploadJob.model_validate(upload.model_dump())
     assert restored.cron_create_missing_playlist is scheduled
-    assert ("--create-missing-playlist" in api.build_youtube_upload_command(restored)) is scheduled
-    # A cleaned source job cannot remove the durable cron permission.
+    assert "--create-missing-playlist" in api.build_youtube_upload_command(restored)
+    # A cleaned source job cannot prevent creation for either upload path.
     api.jobs.clear()
-    assert ("--create-missing-playlist" in api.build_youtube_upload_command(restored)) is scheduled
+    assert "--create-missing-playlist" in api.build_youtube_upload_command(restored)
 
 
 def test_old_cron_queue_record_inherits_permission_only_from_actual_cron_source(upload_context):
@@ -157,6 +157,39 @@ def test_old_cron_queue_record_inherits_permission_only_from_actual_cron_source(
     assert not upload.cron_create_missing_playlist
     job.request.scheduled_public_source_credit = True
     assert "--create-missing-playlist" in api.build_youtube_upload_command(upload)
+
+
+@pytest.mark.parametrize('status,confirmed,creation_failed,expected', [
+    ('completed', False, True, 'queued'),
+    ('completed', True, True, 'completed'),
+    ('completed', False, False, 'completed'),
+    ('running', False, True, 'queued'),
+    ('running', True, True, 'completed'),
+])
+def test_restart_repairs_known_playlist_failure_without_reupload(
+    upload_context, monkeypatch, tmp_path, status, confirmed, creation_failed, expected,
+):
+    import json
+    api, job, clip = upload_context
+    url = 'https://www.youtube.com/watch?v=abcDEF12345'
+    upload = api.YouTubeUploadJob(id='old-playlist-failure', source_job_id=job.id,
+        clip_url=clip.url, clip_name=clip.name, status=status,
+        created_at=api.now_iso(), updated_at=api.now_iso(), title='Saved video',
+        description='Saved description', video_url=url, playlist='Gaming',
+        upload_confirmed=True, playlist_confirmed=confirmed,
+        logs=['Playlist sesuai niche belum ada; membuat playlist: Gaming.'] if creation_failed else [])
+    path = tmp_path / 'uploads.json'
+    path.write_text(json.dumps([upload.model_dump()]))
+    monkeypatch.setattr(api, 'YOUTUBE_UPLOADS_PATH', path)
+    restored = api.load_youtube_uploads()[upload.id]
+    assert restored.status == expected
+    assert restored.video_url == url
+    assert restored.playlist == 'Gaming'
+    assert restored.visibility == upload.visibility
+    assert restored.publish_at == upload.publish_at
+    if expected == 'queued':
+        assert api.YOUTUBE_RESTART_VERIFY_MARKER in restored.logs
+        assert restored.clip_delete_after is None
 
 
 def test_clip_transcript_routes_generic_title_without_caption_boilerplate(upload_context, monkeypatch):

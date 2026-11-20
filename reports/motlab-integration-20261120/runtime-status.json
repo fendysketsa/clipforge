@@ -1,0 +1,16 @@
+{
+  "checked_at": "2026-11-20T09:06:25.312085+07:00",
+  "activation_confirmed": false,
+  "deployment_error": "sudo_password_required",
+  "endpoints": {
+    "/api/health": {
+      "http_status": 200,
+      "data": {
+        "status": "ok"
+      }
+    },
+    "/api/generation/rendering": {
+      "http_status": 404
+    }
+  }
+}

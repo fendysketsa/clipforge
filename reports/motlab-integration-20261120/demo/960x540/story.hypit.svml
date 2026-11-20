@@ -1,0 +1,17 @@
+<?svml using="@hypit/markup@1"?>
+<svml>
+  <import from="@hypit/script@1"/>
+  <script id="story">
+    <scene_01>
+      <NARRATOR> Air yang mengalir bisa menyalakan lampu. Bagaimana caranya?
+    </scene_01>
+
+    <scene_02>
+      <NARRATOR> Air mendorong turbin. Turbin menggerakkan generator, lalu listrik mengalir ke rumah.
+    </scene_02>
+
+    <scene_03>
+      <NARRATOR> Dari gerakan air, energi berubah menjadi cahaya.
+    </scene_03>
+  </script>
+</svml>

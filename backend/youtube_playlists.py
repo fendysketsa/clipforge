@@ -4,6 +4,8 @@ import re
 
 
 CRON_THEME_PLAYLISTS = {
+    "moral_animation_story": "Animasi Cerita Moral",
+    "nostalgia_indonesia": "Nostalgia & Indonesia Tempo Dulu",
     "chinese_drama_story": "Drama China",
     "korean_drama_story": "Drama Korea",
     "love_betrayal": "Cinta dan Hubungan",

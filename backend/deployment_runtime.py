@@ -25,6 +25,8 @@ def source_files(root: Path) -> list[Path]:
         files.append(remotion / name)
     files.extend((remotion / 'src').rglob('*'))
     files.extend((root / 'assets' / 'branding').rglob('*'))
+    for name in ('package.json', 'package-lock.json', 'render.mjs', 'scene.mjs'):
+        files.append(root / 'motlab' / name)
     return sorted(path for path in files if path.is_file())
 
 
@@ -92,6 +94,8 @@ def verify_dependencies() -> None:
     subprocess.run(['node', '--version'], check=True, stdout=subprocess.DEVNULL, timeout=5)
     if not (ROOT / 'remotion/node_modules/remotion/package.json').is_file():
         raise RuntimeError('Remotion dependencies missing from image')
+    subprocess.run(['node', str(ROOT / 'motlab/render.mjs'), '--check'],
+                   check=True, stdout=subprocess.DEVNULL, timeout=15)
 
 
 def get_json(url: str) -> dict:
@@ -131,7 +135,9 @@ def backend_contract(base: str) -> dict:
             or long.get('compilation_fallback_enabled') is not True
             or long.get('fallback_preserves_long_qc') is not True
             or not {'mystery_story', 'legend_folklore', 'domestic_politics',
-                    'food_healthy_review', 'food_taste_review'} <= themes.keys()
+                    'food_healthy_review', 'food_taste_review',
+                    'moral_animation_story', 'nostalgia_indonesia'} <= themes.keys()
+            or long.get('reference_catalog_version') != 1 or long.get('reference_count', 0) < 4
             or themes['domestic_politics'].get('manual_review_required') is not True):
         raise RuntimeError('Cron Long strategy or RYUUNDY theme policy is stale')
     facebook = get_json(base + '/api/facebook/config')
@@ -148,10 +154,17 @@ def backend_contract(base: str) -> dict:
     facebook_worker=get_json(base + '/api/facebook/autopilot')
     if facebook_worker.get('version')!=1 or facebook_worker.get('scheduler_running') is not True:
         raise RuntimeError('Facebook automatic worker has not started')
+    rendering = get_json(base + '/api/generation/rendering')
+    if (rendering.get('version') != 1 or rendering.get('motlab_version') != '0.3.0'
+            or rendering.get('motlab_installed') is not True
+            or rendering.get('caption_plane') != 'outside_picture_transitions'
+            or rendering.get('motion_policy_version') != 1):
+        raise RuntimeError('Generated-video Motlab rendering policy is stale')
     return {**expected, 'facebook_workspace_version': facebook['version'], 'cron_enabled': schedule.get('enabled'),
             'scheduler_running': schedule.get('scheduler_running'),
             'director_policy': 4, 'source_process_limit': 2, 'facebook_autopilot_version': 1,
-            'long_strategy_version': 2, 'long_compilation_fallback_version': 1, 'long_theme_count': len(themes)}
+            'long_strategy_version': 2, 'long_compilation_fallback_version': 1, 'long_theme_count': len(themes),
+            'motlab_version':'0.3.0', 'generated_video_engine':rendering.get('default_engine')}
 
 
 def report_path(role: str) -> Path:

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "engine": "motlab_webcodecs",
+  "package_version": "0.3.0",
+  "timeline_source": "measured_tts_frames",
+  "captions_outside_picture_transitions": true,
+  "deterministic": true,
+  "caption_flicker_allowed": false,
+  "motion_plan": [
+    {
+      "shotId": "shot-001",
+      "layout": "cinematic",
+      "camera": "push_in",
+      "maxZoom": 1.075,
+      "revealFrame": 29,
+      "settleFrames": 12,
+      "accentColor": "#65B7FF",
+      "quietEnding": false,
+      "transition": "cut",
+      "title": "",
+      "captionAnimation": "none",
+      "focusX": 0.5,
+      "diagram": []
+    }
+  ],
+  "source_manifest_sha256": "0cd934f7cbfbe540bd38239475fbfb01a11b5b39ab7fffcf9109dadf14151a14"
+}

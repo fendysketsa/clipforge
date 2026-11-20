@@ -5,6 +5,7 @@ uploads
 data
 tests
 remotion/node_modules
+motlab/node_modules
 remotion/.hypit
 jobs.json
 *.pyc

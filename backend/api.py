@@ -70,6 +70,8 @@ from cron_activity import summarize_activity
 import daily_cron_plan
 import cron_long_strategy
 import ryuundy_editorial_themes
+import ryuundy_reference_catalog
+from motlab_story_renderer import rendering_capabilities
 import automatic_retry
 import automatic_output_cleanup
 import ryuundy_growth_learning
@@ -1677,6 +1679,7 @@ CRON_TREND_TOPIC_SIGNALS = {
     "belanda", "daendels", "kerajaan", "warisan budaya", "pesisir selatan",
 }
 CRON_TREND_TOPIC_SIGNALS.update(marker for signals in DRAMA_THEME_SIGNALS.values() for marker in signals)
+CRON_TREND_TOPIC_SIGNALS.update(marker for signals in ryuundy_editorial_themes.SIGNALS.values() for marker in signals)
 CRON_TREND_UNSAFE_SIGNALS = {
     "18+", "adegan berdarah", "bunuh diri", "darah nyata", "eksploitasi",
     "gore", "judi online", "kekerasan nyata", "pelecehan", "pornografi",
@@ -1917,6 +1920,8 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
         "long_role": "pertahankan rangkaian pertanyaan, dasar jawaban, batasan, contoh penerapan, dan kesimpulan pembicara tanpa mencampur bagian yang tidak berhubungan",
         "queries": [
             "ceramah singkat indonesia nasihat kehidupan terbaru",
+            "Ustadz Adi Hidayat kajian lengkap nasihat kehidupan dan kematian",
+            "kajian islam satu pertanyaan satu jawaban utuh konteks dalil indonesia",
             "kajian tanya jawab islam indonesia masalah sehari hari",
             "tausiyah indonesia keluarga rezeki sabar ujian hidup",
             "ustadz indonesia menjawab pertanyaan jamaah terbaru",
@@ -3494,9 +3499,25 @@ def load_youtube_uploads() -> dict[str, YouTubeUploadJob]:
                     "error": None,
                 }
             )
+        if (
+            upload.status == "completed" and upload.upload_confirmed
+            and upload.video_url and upload.playlist and not upload.playlist_confirmed
+            and any("Playlist sesuai niche belum ada" in str(line) for line in upload.logs)
+        ):
+            # Old recovery could certify a remote upload after playlist creation
+            # failed. Reconcile only that known failure on its existing video ID.
+            upload = upload.model_copy(update={
+                "status": "queued", "started_at": None, "finished_at": None,
+                "duration_seconds": None, "upload_confirmed": False,
+                "clip_delete_after": None, "error": None,
+                "logs": [*upload.logs,
+                    "PLAYLIST_RECOVERY_REQUIRED: pembuatan playlist lama gagal; perbaiki video-id yang sama.",
+                    YOUTUBE_RESTART_VERIFY_MARKER][-160:],
+            })
         if upload.status == "running":
             finished_at = now_iso()
-            if upload.video_url and upload.upload_confirmed and not upload.dry_run:
+            if (upload.video_url and upload.upload_confirmed and not upload.dry_run
+                    and (not upload.playlist or upload.playlist_confirmed)):
                 delete_after = (
                     datetime.fromisoformat(finished_at)
                     + timedelta(
@@ -10659,12 +10680,7 @@ def build_youtube_upload_command(
         command.extend(["--tags", ",".join(upload.tags)])
     if upload.playlist:
         command.extend(["--playlist", upload.playlist])
-        with jobs_lock:
-            source_job = jobs.get(upload.source_job_id)
-        if upload.cron_create_missing_playlist or (
-            source_job is not None and source_job.request.scheduled_public_source_credit
-        ):
-            command.append("--create-missing-playlist")
+        command.append("--create-missing-playlist")
         if any(line.startswith("Playlist dipilih otomatis dari isi video:") for line in upload.logs):
             command.append("--playlist-resolved")
     if upload.target_channel:
@@ -10724,6 +10740,8 @@ def build_youtube_restart_verification_command(upload: YouTubeUploadJob) -> list
     ]
     if upload.video_url:
         command.extend(["--video-url", upload.video_url])
+    if upload.playlist:
+        command.extend(["--playlist", upload.playlist, "--create-missing-playlist"])
     if upload.publish_at:
         command.extend(["--publish-at", upload.publish_at])
         if any(line.startswith(("CRON_PRIVATE_PROMOTION:", "CRON_SCHEDULE_RECONCILE:")) for line in upload.logs):
@@ -11699,11 +11717,15 @@ def run_youtube_restart_verification(upload_id: str) -> None:
         youtube_upload_processes[upload_id] = process
 
     confirmed = False
+    playlist_confirmed = not bool(upload.playlist)
 
     def record_verification_log(cleaned: str) -> None:
         nonlocal confirmed
+        nonlocal playlist_confirmed
         if cleaned.startswith(YOUTUBE_UPLOAD_CONFIRMED_PREFIX):
             confirmed = True
+        if cleaned.startswith("SAVED_PLAYLIST_CONFIRMED:"):
+            playlist_confirmed = cleaned.partition(":")[2].strip() == upload.playlist
         logs.append(cleaned)
         if cleaned.startswith('EXISTING_PUBLICATION_CONFIRMED:'):
             set_youtube_upload(upload_id, publish_at=None)
@@ -11713,6 +11735,7 @@ def run_youtube_restart_verification(upload_id: str) -> None:
             video_url=youtube_video_url_from_logs(logs) or upload.video_url,
             visibility=youtube_final_visibility_from_logs(logs) or upload.visibility,
             upload_confirmed=confirmed,
+            playlist_confirmed=bool(upload.playlist) and playlist_confirmed,
         )
 
     verification_log_start = len(logs)
@@ -11769,6 +11792,7 @@ def run_youtube_restart_verification(upload_id: str) -> None:
             with process_lock:
                 youtube_upload_processes[upload_id] = fallback_process
             confirmed = False
+            playlist_confirmed = not bool(upload.playlist)
             verification_log_start = len(logs)
             code, stalled = monitor_youtube_upload_process(
                 fallback_process, record_verification_log,
@@ -11786,7 +11810,9 @@ def run_youtube_restart_verification(upload_id: str) -> None:
             error = "Verifikasi mengembalikan ID video berbeda; checkpoint asli dipertahankan."
             logs.append(error)
             video_url, confirmed, code = upload.video_url, False, 1
-        if code != 0 or not confirmed or not video_url:
+        if code != 0 or not confirmed or not video_url or not playlist_confirmed:
+            if code == 0 and confirmed and video_url and not playlist_confirmed:
+                error = "Playlist video tersimpan belum terverifikasi; pemulihan belum selesai."
             absence_confirmed = youtube_restart_verification_absence_confirmed(error)
             if absence_confirmed:
                 logs.append(YOUTUBE_RESTART_VERIFY_ABSENT_MARKER)
@@ -11832,6 +11858,7 @@ def run_youtube_restart_verification(upload_id: str) -> None:
             logs=logs[-160:],
             video_url=video_url,
             upload_confirmed=True,
+            playlist_confirmed=bool(upload.playlist) and playlist_confirmed,
             finished_at=completed_at,
             duration_seconds=elapsed_seconds(started_perf),
             clip_delete_after=delete_after,
@@ -17292,6 +17319,9 @@ def cron_trend_candidate_rejection_reason(
     drama_rejection = drama_source_rejection_reason(info, theme_key)
     if drama_rejection:
         return drama_rejection
+    editorial_rejection = ryuundy_editorial_themes.source_rejection_reason(info, theme_key)
+    if editorial_rejection:
+        return editorial_rejection
     raw_text = " ".join(
         [
             str(info.get("title") or ""),
@@ -17989,6 +18019,12 @@ def cron_gaming_channel_query_specs(
             )
         specs.append(("" if channel_id else handle_query, channel_id))
     return list(dict.fromkeys(specs))[:5]
+
+
+def cron_reference_channel_query_specs(request: AutoViralRequest, run_id: str) -> list[tuple[str, str]]:
+    if not scheduled_auto_viral_discovery_active(run_id):
+        return []
+    return ryuundy_reference_catalog.channel_search_specs(request.cron_theme_key)
 
 
 YOUTUBE_TREND_STOPWORDS = TREND_NOISE_WORDS | frozenset(
@@ -18975,6 +19011,10 @@ def search_youtube_data_api_viral_sources(
                     limit=max_api_queries,
                 )
     preferred_specs = [] if director_lane else cron_gaming_channel_query_specs(request, run_id)
+    reference_specs = [] if director_lane else cron_reference_channel_query_specs(request, run_id)
+    # Reserve room for discovery across other channels within the same budget.
+    if reference_specs and max_api_queries > 1:
+        preferred_specs = [*preferred_specs, *reference_specs[:max_api_queries - 1]]
     query_specs: list[tuple[str, str]] = []
     for spec in [*preferred_specs, *((query, "") for query in api_queries)]:
         if spec not in query_specs:
@@ -18984,7 +19024,7 @@ def search_youtube_data_api_viral_sources(
         append_auto_viral_log(
             run_id,
             (
-                "Jalur gaming menambahkan BANGJBLOX/Sapi Purba sebagai kanal pilihan operator; "
+                "Pencarian menambahkan kanal referensi pilihan operator; "
                 "pencarian umum semua channel tetap aktif dan kanal pilihan tidak "
                 "melewati audit hak atau QC."
             ),
@@ -20229,13 +20269,16 @@ def auto_viral_format_perspective(
         )
     if request.cron_theme_key == NEWS_HOT_THEME:
         return " ".join(parts)[:4000]
+    reference_brief = ryuundy_reference_catalog.editorial_brief(request.cron_theme_key)
+    if reference_brief:
+        parts.append(reference_brief)
     if request.cron_theme_key and long_form:
         parts.append(cron_long_strategy.LONG_EDITOR_BRIEF)
     elif request.cron_theme_key:
         parts.append(RYUUNDY_REFERENCE_EDITOR_BRIEF)
     if request.cron_theme_key in DRAMA_THEME_PROFILES:
         parts.append(DRAMA_EDITOR_BRIEF)
-    if not long_form and request.cron_theme_key in {"gaming_story", "quirky_animation", "islamic_animation_kids", "islamic_animation_general", *DRAMA_THEME_PROFILES}:
+    if not long_form and request.cron_theme_key in {"gaming_story", "quirky_animation", "moral_animation_story", "islamic_animation_kids", "islamic_animation_general", *DRAMA_THEME_PROFILES}:
         parts.append(ryuundy_growth_learning.CHARACTER_EDITOR_BRIEF)
     if request.cron_short_role or request.cron_long_role:
         parts.append(
@@ -25998,10 +26041,22 @@ def get_cron_long_strategy() -> dict[str, Any]:
         "compilation_fallback_enabled": True, "compilation_review_required": True,
         "fallback_preserves_long_qc": True,
         "editorial_brief": cron_long_strategy.LONG_EDITOR_BRIEF,
+        "reference_catalog_version": ryuundy_reference_catalog.VERSION,
+        "reference_count": len(ryuundy_reference_catalog.REFERENCES),
         "themes": [{"key": key, "label": profile["label"],
                     "manual_review_required": ryuundy_editorial_themes.requires_manual_review(key)}
                    for key, profile in RYUUNDY_CRON_THEME_PROFILES.items()],
     }
+
+
+@app.get("/api/automation/viral-cc/references")
+def get_ryuundy_references() -> dict[str, Any]:
+    return ryuundy_reference_catalog.reference_catalog()
+
+
+@app.get("/api/generation/rendering")
+def get_generation_rendering() -> dict[str, Any]:
+    return rendering_capabilities()
 
 
 @app.get("/api/automation/viral-cc/long-production")

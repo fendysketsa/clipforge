@@ -1509,6 +1509,9 @@ def test_scheduled_auto_viral_request_fills_missing_long_without_sixth_short(
 ):
     import api
 
+    monkeypatch.setattr(api, "scheduled_ryuundy_theme_profile", lambda:
+        ("gaming_story", dict(api.RYUUNDY_CRON_THEME_PROFILES["gaming_story"])))
+
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_VIDEO_COUNT", "5")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PAIRED_LONG_ENABLED", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
@@ -1547,6 +1550,9 @@ def test_scheduled_auto_viral_request_fills_missing_long_without_sixth_short(
 
 def test_scheduled_upload_accepts_ready_live_chrome(monkeypatch):
     import api
+
+    monkeypatch.setattr(api, "scheduled_ryuundy_theme_profile", lambda:
+        ("gaming_story", dict(api.RYUUNDY_CRON_THEME_PROFILES["gaming_story"])))
 
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "true")
     monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_SOURCE_RIGHTS_CONFIRMED", "true")
@@ -2901,6 +2907,9 @@ def test_auto_viral_once_per_boot_ignores_old_run_key(monkeypatch):
 
 def test_scheduled_upload_requires_complete_rights_profile(monkeypatch):
     import api
+
+    monkeypatch.setattr(api, "scheduled_ryuundy_theme_profile", lambda:
+        ("gaming_story", dict(api.RYUUNDY_CRON_THEME_PROFILES["gaming_story"])))
 
     monkeypatch.setattr(
         api,

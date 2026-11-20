@@ -1,0 +1,45 @@
+{
+  "width": 320,
+  "height": 180,
+  "fps": 30,
+  "durationSeconds": 2,
+  "shots": [
+    {
+      "id": "shot-001",
+      "startFrame": 0,
+      "bodyDurationInFrames": 60,
+      "durationInFrames": 60,
+      "transitionInFrames": 0,
+      "asset": "source.mp4",
+      "kind": "video",
+      "cameraMotion": "push_in",
+      "framing": "wide",
+      "subjectPlacement": "center",
+      "narrativeRole": "development",
+      "onScreenText": "",
+      "narration": "",
+      "motionDesign": {
+        "accentColor": "#65B7FF"
+      }
+    }
+  ],
+  "captionCues": [],
+  "captionsEnabled": false,
+  "motlabMotion": [
+    {
+      "shotId": "shot-001",
+      "layout": "cinematic",
+      "camera": "push_in",
+      "maxZoom": 1.075,
+      "revealFrame": 29,
+      "settleFrames": 12,
+      "accentColor": "#65B7FF",
+      "quietEnding": false,
+      "transition": "cut",
+      "title": "",
+      "captionAnimation": "none",
+      "focusX": 0.5,
+      "diagram": []
+    }
+  ]
+}

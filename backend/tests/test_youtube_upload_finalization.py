@@ -267,6 +267,8 @@ def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch, i
     monkeypatch.setattr(youtube_uploader, "get_upload_workflow_step", lambda _page: state["step"])
     monkeypatch.setattr(youtube_uploader, "ensure_upload_metadata_fields", lambda _page, title, description:
         events.append(("metadata", title, description)))
+    monkeypatch.setattr(youtube_uploader, "select_playlist", lambda _page, playlist, **kwargs:
+        events.append(("playlist", playlist, kwargs["create_missing"])))
     def back(_page, patterns, **kwargs):
         if kwargs.get('optional'):
             return False
@@ -313,6 +315,7 @@ def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch, i
         video_url=video_url,
         description="Reviewed description",
         tags="Islam, Shorts",
+        playlist="Islam",
         content_type="shorts",
         timeout_ms=1000,
     ) == video_url
@@ -323,6 +326,7 @@ def test_resume_saved_draft_finishes_exact_video_without_reupload(monkeypatch, i
     assert events == backwards + [
         ("tags", "Islam, Shorts"),
         ("metadata", "Draft title", "Reviewed description"),
+        ("playlist", "Islam", True),
         ("next", "VIDEO_ELEMENTS"),
         ("next", "CHECKS"),
         ("next", "REVIEW"),

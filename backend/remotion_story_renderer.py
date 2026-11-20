@@ -298,7 +298,7 @@ def _browser_executable() -> str:
     return ""
 
 
-def render_story_with_remotion(
+def prepare_story_manifest(
     *,
     storyboard: Any,
     shots: list[Any],
@@ -316,17 +316,6 @@ def render_story_with_remotion(
 ) -> tuple[Path, Path]:
     if len(shots) != len(assets):
         raise RemotionRenderError("Jumlah shot dan aset Remotion tidak sama.")
-    node = shutil.which("node")
-    render_script = RENDERER_DIR / "render.mjs"
-    if not node or not render_script.is_file():
-        raise RemotionRenderError(
-            "Runtime Remotion belum terpasang di backend. Rebuild container ClipForge diperlukan."
-        )
-    if not (RENDERER_DIR / "node_modules" / "remotion").exists():
-        raise RemotionRenderError(
-            "Dependensi Remotion belum terpasang. Jalankan npm ci di backend/remotion lalu rebuild backend."
-        )
-
     hypit_path = write_hypit_script(storyboard, work_dir / "story.hypit.svml")
     validate_hypit_script(hypit_path)
     public_dir = scene_dir / "remotion_public"
@@ -387,6 +376,7 @@ def render_story_with_remotion(
                 "narration": str(shot.narration or "").strip(),
                 "colorMood": str(shot.color_mood or "").strip(),
                 "narrativeRole": narrative_role,
+                "sceneIndex": scene_index,
                 "motionDesign": {
                     "transition": _motion_transition(shot, narrative_role, index),
                     "accentColor": accent_color,
@@ -441,6 +431,13 @@ def render_story_with_remotion(
             "shots": manifest_shots,
             "scenes": manifest_scenes,
             "captionCues": _caption_cues(storyboard.scenes, fps),
+            "wordCues": [
+                {"text": str(word.get("text") or ""),
+                 "startFrame": row["startFrame"] + round(float(word.get("start", 0)) * fps),
+                 "endFrame": row["startFrame"] + round(float(word.get("end", 0)) * fps)}
+                for scene, row in zip(storyboard.scenes, manifest_scenes)
+                for word in (getattr(scene, "speech_words", []) or [])
+            ],
             "watermark": "@ryuundy",
             "watermarkAsset": watermark_data_uri(),
             "watermarkBranding": watermark_metadata("vertical_short" if height > width else "landscape_compilation"),
@@ -459,6 +456,17 @@ def render_story_with_remotion(
     }
     manifest_path = work_dir / "remotion_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    return output_path, manifest_path
+
+
+def render_story_with_remotion(**kwargs) -> tuple[Path, Path]:
+    node = shutil.which("node")
+    render_script = RENDERER_DIR / "render.mjs"
+    if not node or not render_script.is_file() or not (RENDERER_DIR / "node_modules" / "remotion").exists():
+        raise RemotionRenderError("Runtime Remotion belum terpasang. Rebuild container ClipForge diperlukan.")
+    output_path, manifest_path = prepare_story_manifest(**kwargs)
+    progress = kwargs.get("progress")
+    video_quality = kwargs["video_quality"]
 
     env = os.environ.copy()
     browser = _browser_executable()

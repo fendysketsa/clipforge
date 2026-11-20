@@ -58,3 +58,36 @@ def test_verification_fallback_keeps_exact_id_without_file_selection(monkeypatch
     assert result.status == ('completed' if outcome == 'confirmed' else 'failed')
     assert result.upload_confirmed is (outcome == 'confirmed')
     if outcome == 'confirmed': assert result.error is None
+
+
+@pytest.mark.parametrize('marker', [None, 'PLAYLIST_CONFIRMED: Gaming',
+    'SAVED_PLAYLIST_CONFIRMED: Islam', 'SAVED_PLAYLIST_CONFIRMED: Gaming'])
+def test_recovery_requires_persisted_playlist_on_same_remote_id(monkeypatch, tmp_path, marker):
+    url = 'https://www.youtube.com/watch?v=abcDEF12345'
+    upload = api.YouTubeUploadJob(id='verify-playlist', source_job_id='removed',
+        clip_url='/outputs/removed/clip.mp4', clip_name='clip.mp4', status='queued',
+        created_at=api.now_iso(), updated_at=api.now_iso(), title='Saved video',
+        video_url=url, playlist='Gaming', playlist_confirmed=True)
+    monkeypatch.setattr(api, 'youtube_uploads', {upload.id: upload})
+    monkeypatch.setattr(api, 'YOUTUBE_UPLOADS_PATH', tmp_path / 'uploads.json')
+    monkeypatch.setattr(api, 'youtube_upload_prefers_cdp', lambda: False)
+    monkeypatch.setattr(api.subprocess, 'Popen', lambda *a, **k: object())
+    def monitor(process, on_line, **kwargs):
+        if marker: on_line(marker)
+        on_line('VIDEO_URL: ' + url)
+        on_line('UPLOAD_CONFIRMED: verified same exact video')
+        return 0, False
+    monkeypatch.setattr(api, 'monitor_youtube_upload_process', monitor)
+    monkeypatch.setattr(api, 'cross_platform_cleanup_after', lambda *a: None)
+    monkeypatch.setattr(api, 'schedule_completed_upload_cleanup', lambda *a: None)
+    command = api.build_youtube_restart_verification_command(upload)
+    assert command[command.index('--playlist') + 1] == 'Gaming'
+    assert '--create-missing-playlist' in command
+    assert upload.clip_url not in command
+    api.run_youtube_restart_verification(upload.id)
+    result = api.youtube_uploads[upload.id]
+    expected = marker == 'SAVED_PLAYLIST_CONFIRMED: Gaming'
+    assert result.status == ('completed' if expected else 'failed')
+    assert result.playlist_confirmed is expected
+    assert result.upload_confirmed is expected
+    assert result.video_url == url

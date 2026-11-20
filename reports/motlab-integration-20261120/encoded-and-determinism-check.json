@@ -1,0 +1,33 @@
+{
+  "out_of_order_frame_hashes": [
+    "6abe886901b9112b4cdf200fe77f89c63afebb7cfed358989f9ef2631305d944",
+    "841a74b005f5a12cf54b3fde1c344b971b2a5cf47c18ad08b4f48d0a3b1594d5",
+    "ebd7878376e61844f196d1344830f94b90253429133ddf2ca63b298c718d64c5",
+    "6abe886901b9112b4cdf200fe77f89c63afebb7cfed358989f9ef2631305d944"
+  ],
+  "deterministic_same_time": true,
+  "540x960": {
+    "frames_decoded": 474,
+    "fps": 30.0,
+    "duration": 15.8,
+    "black_frames": 0,
+    "minimum_frame_mean": 45.7211,
+    "caption_white_mask_change_ratio_adjacent_frames": 0.01221
+  },
+  "1080x1920": {
+    "frames_decoded": 474,
+    "fps": 30.0,
+    "duration": 15.8,
+    "black_frames": 0,
+    "minimum_frame_mean": 45.6108,
+    "caption_white_mask_change_ratio_adjacent_frames": 0.00975
+  },
+  "960x540": {
+    "frames_decoded": 474,
+    "fps": 30.0,
+    "duration": 15.8,
+    "black_frames": 0,
+    "minimum_frame_mean": 44.8395,
+    "caption_white_mask_change_ratio_adjacent_frames": 0.01828
+  }
+}

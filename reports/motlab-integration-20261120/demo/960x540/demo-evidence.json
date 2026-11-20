@@ -1,0 +1,9 @@
+{
+  "duration_seconds": 15.8,
+  "width": 960,
+  "height": 540,
+  "voice": "id-ID-ArdiNeural",
+  "narration_timing": "measured_edge_sentence_windows",
+  "illustrations": "original_procedural_svg",
+  "output": "/www/wwwroot/clipper/clipforge/reports/motlab-integration-20261120/demo/ryuundy-motlab-960x540.mp4"
+}

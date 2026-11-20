@@ -1,0 +1,32 @@
+[
+  {
+    "id": "lJ7iSTmoAdc",
+    "theme": "moral_animation_story",
+    "trend_score": 24,
+    "language_score": 25.0,
+    "theme_rejection": "",
+    "long_source_eligible": true,
+    "rights_verified": false,
+    "transcript_verified": false
+  },
+  {
+    "id": "rzABQCp9YY4",
+    "theme": "lecture_wisdom",
+    "trend_score": 18,
+    "language_score": 0.0,
+    "theme_rejection": "sinyal Bahasa Indonesia 0/100 di bawah minimum 15/100",
+    "long_source_eligible": false,
+    "rights_verified": false,
+    "transcript_verified": false
+  },
+  {
+    "id": "-v5mR_d0XGM",
+    "theme": "nostalgia_indonesia",
+    "trend_score": 38,
+    "language_score": 40.0,
+    "theme_rejection": "",
+    "long_source_eligible": true,
+    "rights_verified": false,
+    "transcript_verified": false
+  }
+]

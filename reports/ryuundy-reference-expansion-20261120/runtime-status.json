@@ -1,0 +1,142 @@
+{
+  "checked_at": "2026-11-20T08:38:07.162602+07:00",
+  "deployment_attempt": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+  "deployment_result": "blocked_sudo_password_required",
+  "activation_confirmed": false,
+  "endpoints": {
+    "/api/health": {
+      "http_status": 200,
+      "data": {
+        "status": "ok"
+      }
+    },
+    "/api/automation/viral-cc/references": {
+      "http_status": 404
+    },
+    "/api/automation/viral-cc/long-strategy": {
+      "http_status": 200,
+      "data": {
+        "version": 2,
+        "reference_catalog_version": null,
+        "reference_count": null,
+        "themes": [
+          {
+            "key": "legend_folklore",
+            "label": "Legenda, Cerita Rakyat & Asal-Usul Nusantara",
+            "manual_review_required": false
+          },
+          {
+            "key": "domestic_politics",
+            "label": "Politik Dalam Negeri, Kronologi & Dampak Kebijakan",
+            "manual_review_required": true
+          },
+          {
+            "key": "food_healthy_review",
+            "label": "Review Makanan Sehat & Pilihan Menu",
+            "manual_review_required": false
+          },
+          {
+            "key": "food_taste_review",
+            "label": "Review Makanan Enak & Cerita Kuliner",
+            "manual_review_required": false
+          },
+          {
+            "key": "chinese_drama_story",
+            "label": "Drama China: Pilihan, Keluarga & Plot Twist",
+            "manual_review_required": false
+          },
+          {
+            "key": "korean_drama_story",
+            "label": "Drama Korea: Hubungan, Konsekuensi & Pelajaran Hidup",
+            "manual_review_required": false
+          },
+          {
+            "key": "love_betrayal",
+            "label": "Cinta, Pengkhianatan & Sakit Hati",
+            "manual_review_required": false
+          },
+          {
+            "key": "family_conflict",
+            "label": "Konflik Keluarga & Rumah Tangga",
+            "manual_review_required": false
+          },
+          {
+            "key": "friendship_twist",
+            "label": "Persahabatan, Kepercayaan & Plot Twist",
+            "manual_review_required": false
+          },
+          {
+            "key": "life_comeback",
+            "label": "Jatuh, Bangkit & Pelajaran Hidup",
+            "manual_review_required": false
+          },
+          {
+            "key": "mystery_story",
+            "label": "Misteri & Kisah Tak Terduga",
+            "manual_review_required": false
+          },
+          {
+            "key": "humor_interlude",
+            "label": "Jeda Humor Kehidupan",
+            "manual_review_required": false
+          },
+          {
+            "key": "gaming_story",
+            "label": "Game, Mabar & Cerita Pemain",
+            "manual_review_required": false
+          },
+          {
+            "key": "famous_game_reaction",
+            "label": "Reaction Game Populer, Gagal Lucu & Comeback",
+            "manual_review_required": false
+          },
+          {
+            "key": "quirky_animation",
+            "label": "Kartun Nyeleneh, Animasi Absurd & Plot Twist",
+            "manual_review_required": false
+          },
+          {
+            "key": "reaction_clip_story",
+            "label": "Clip Lucu, Reaction Natural & Cerita Singkat",
+            "manual_review_required": false
+          },
+          {
+            "key": "islamic_animation_kids",
+            "label": "Animasi Islami Anak & Keluarga",
+            "manual_review_required": false
+          },
+          {
+            "key": "islamic_animation_general",
+            "label": "Animasi Kisah Islami Umum & Dewasa",
+            "manual_review_required": false
+          },
+          {
+            "key": "podcast_conversation",
+            "label": "Podcast, Wawancara & Cerita Narasumber",
+            "manual_review_required": false
+          },
+          {
+            "key": "football_story",
+            "label": "Bola, Rivalitas & Cerita Pertandingan",
+            "manual_review_required": false
+          },
+          {
+            "key": "history_geography_nusantara",
+            "label": "Sejarah, Geografi & Budaya Nusantara",
+            "manual_review_required": false
+          },
+          {
+            "key": "faith_life",
+            "label": "Iman, Hijrah & Ujian Hidup",
+            "manual_review_required": false
+          },
+          {
+            "key": "lecture_wisdom",
+            "label": "Ceramah, Kajian & Tanya Jawab Kehidupan",
+            "manual_review_required": false
+          }
+        ]
+      }
+    }
+  }
+}

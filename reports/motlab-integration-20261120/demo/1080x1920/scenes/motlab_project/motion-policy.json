@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "engine": "motlab_webcodecs",
+  "package_version": "0.3.0",
+  "timeline_source": "measured_tts_frames",
+  "captions_outside_picture_transitions": true,
+  "deterministic": true,
+  "caption_flicker_allowed": false,
+  "motion_plan": [
+    {
+      "shotId": "shot-001",
+      "layout": "cinematic",
+      "camera": "push_in",
+      "maxZoom": 1.075,
+      "revealFrame": 79,
+      "settleFrames": 20,
+      "accentColor": "#65B7FF",
+      "quietEnding": false,
+      "transition": "cut",
+      "title": "Gerak Air, Cahaya Rumah",
+      "captionAnimation": "none",
+      "focusX": 0.5,
+      "diagram": []
+    },
+    {
+      "shotId": "shot-002",
+      "layout": "cinematic",
+      "camera": "pan_left",
+      "maxZoom": 1.075,
+      "revealFrame": 297,
+      "settleFrames": 20,
+      "accentColor": "#65B7FF",
+      "quietEnding": false,
+      "transition": "cross_dissolve",
+      "title": "Air → Turbin → Listrik",
+      "captionAnimation": "none",
+      "focusX": 0.5,
+      "diagram": [
+        {
+          "label": "Air",
+          "atFrame": 158
+        },
+        {
+          "label": "Turbin",
+          "atFrame": 200
+        },
+        {
+          "label": "Listrik",
+          "atFrame": 297
+        }
+      ]
+    },
+    {
+      "shotId": "shot-003",
+      "layout": "cinematic",
+      "camera": "pull_out",
+      "maxZoom": 1.075,
+      "revealFrame": 432,
+      "settleFrames": 20,
+      "accentColor": "#F6C453",
+      "quietEnding": true,
+      "transition": "cross_dissolve",
+      "title": "Energi Berubah Bentuk",
+      "captionAnimation": "none",
+      "focusX": 0.5,
+      "diagram": []
+    }
+  ],
+  "source_manifest_sha256": "337e9a0033c78d232a82ee9aa637d7f7f4fe56832943b86df9c665e167e4700a"
+}

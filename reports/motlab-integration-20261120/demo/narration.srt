@@ -1,0 +1,20 @@
+1
+00:00:00,100 --> 00:00:03,167
+Air yang mengalir bisa menyalakan lampu.
+
+2
+00:00:03,117 --> 00:00:05,256
+Bagaimana caranya?
+
+3
+00:00:05,256 --> 00:00:07,485
+Air mendorong turbin.
+
+4
+00:00:07,485 --> 00:00:11,661
+Turbin menggerakkan generator, lalu listrik mengalir ke rumah.
+
+5
+00:00:11,661 --> 00:00:15,759
+Dari gerakan air, energi berubah menjadi cahaya.
+

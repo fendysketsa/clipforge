@@ -4693,7 +4693,10 @@ def create_missing_playlist(page, playlist_name: str) -> None:
             '#title-textarea [contenteditable="true"], #title-textarea textarea'
         ).first
         title.fill(playlist_name, timeout=5000)
-        title_text = title.inner_text(timeout=1500).strip()
+        def title_value():
+            return title.evaluate("e => e.value ?? e.innerText ?? ''").strip()
+
+        title_text = title_value()
         if title_text != playlist_name:
             title.click(timeout=1500)
             page.keyboard.press("Control+A")
@@ -4702,18 +4705,20 @@ def create_missing_playlist(page, playlist_name: str) -> None:
                 playlist_name,
                 delay=max(0, int(os.environ.get("YOUTUBE_TYPE_DELAY_MS", "6"))),
             )
-            title_text = title.inner_text(timeout=1500).strip()
+            title_text = title_value()
         if title_text != playlist_name:
             raise UploadError("Judul playlist baru belum sesuai niche.")
 
-        submit = form.locator("#create-button button, #create-button").first
-        submit_deadline = time.monotonic() + 5000
+        submit_host = form.locator("#create-button").first
+        native_submit = submit_host.locator("button").first
+        submit = native_submit if native_submit.count() else submit_host
+        submit_deadline = time.monotonic() + 5
         while time.monotonic() < submit_deadline:
             try:
                 if submit.is_visible(timeout=300):
                     disabled = submit.is_disabled(timeout=300) or (
                         (submit.get_attribute("aria-disabled") or "").strip().lower() == "true"
-                    )
+                    ) or submit_host.get_attribute("aria-disabled") == "true"
                     if not disabled:
                         break
             except Exception:
@@ -4754,7 +4759,7 @@ def create_missing_playlist(page, playlist_name: str) -> None:
         ) from exc
 
 
-def select_playlist(page, playlist: str, *, create_missing: bool = False) -> None:
+def select_playlist(page, playlist: str, *, create_missing: bool = True) -> None:
     playlist_name = playlist.strip()
     if not playlist_name:
         return
@@ -4847,6 +4852,59 @@ def select_playlist(page, playlist: str, *, create_missing: bool = False) -> Non
 
     save_debug_artifacts(page, "playlist-verification-failed")
     raise UploadError(f"{last_error} Upload tidak dilanjutkan agar playlist tidak terlewati.")
+
+
+def ensure_saved_video_playlist(page, video_url: str, playlist: str, *, create_missing: bool = True) -> None:
+    """Persist playlist membership on the exact remote ID and recheck after reload."""
+    playlist = playlist.strip()
+    if not playlist:
+        return
+    normalized = normalize_youtube_video_url(video_url)
+    match = re.search(r"[?&]v=([A-Za-z0-9_-]{6,})", normalized or "")
+    if not match:
+        raise UploadError("Playlist tidak dapat diperbaiki tanpa video-id yang valid.")
+    edit_url = f"https://studio.youtube.com/video/{match.group(1)}/edit"
+
+    def open_exact_video():
+        page.goto(edit_url, wait_until="domcontentloaded", timeout=30000)
+        ensure_logged_in(page)
+        page.locator('ytcp-video-metadata-playlists').first.wait_for(state="visible", timeout=30000)
+        if page.url.split('?', 1)[0].rstrip('/') != edit_url:
+            raise UploadError("ID halaman playlist berubah; perbaikan ditahan.")
+
+    open_exact_video()
+    if not open_playlist_dropdown(page, timeout_ms=8000):
+        raise UploadError("Daftar playlist video tersimpan tidak dapat dibuka.")
+    search_playlist(page, playlist)
+    already_selected = playlist_is_selected(page, playlist, timeout_ms=3000)
+    if not already_selected:
+        select_playlist(page, playlist, create_missing=create_missing)
+        save = page.get_by_role('button', name=re.compile(r'^(Simpan|Save)$', re.I))
+        with page.expect_response(
+            lambda response: '/video_manager/metadata_update' in response.url,
+            timeout=60000,
+        ) as saved:
+            save.click(timeout=30000)
+        response = saved.value
+        if response.status != 200:
+            raise UploadError(f"Penyimpanan playlist ditolak Studio (HTTP {response.status}).")
+        payload = response.json()
+        if not isinstance(payload, dict) or payload.get('error') or payload.get('errors'):
+            raise UploadError("Penyimpanan playlist belum terkonfirmasi oleh Studio.")
+    elif not click_playlist_done(page, timeout_ms=5000):
+        raise UploadError("Dialog playlist video tersimpan belum dapat ditutup.")
+
+    # A checkbox in the editor is only staged state. A new page load must
+    # still show the selection before recovery can certify completion.
+    open_exact_video()
+    if not open_playlist_dropdown(page, timeout_ms=8000):
+        raise UploadError("Daftar playlist tersimpan tidak dapat diverifikasi ulang.")
+    search_playlist(page, playlist)
+    if not playlist_is_selected(page, playlist, timeout_ms=3000):
+        raise UploadError("Playlist belum tersimpan pada video-id yang sama.")
+    if not click_playlist_done(page, timeout_ms=5000):
+        raise UploadError("Dialog verifikasi playlist belum dapat ditutup.")
+    log(f"SAVED_PLAYLIST_CONFIRMED: {playlist}")
 
 
 def click_next_upload_step(page, timeout_ms: int = 20000, expected_step=None) -> None:
@@ -6858,6 +6916,8 @@ def resume_saved_draft_and_finalize(
     video_url: str,
     description: str = "",
     tags: str = "",
+    playlist: str = "",
+    create_missing_playlist: bool = True,
     content_type: str = "auto",
     publish_at: str = "",
     timeout_ms: int = 120000,
@@ -6929,6 +6989,8 @@ def resume_saved_draft_and_finalize(
         if tags:
             fill_optional_tags(page, tags)
         ensure_upload_metadata_fields(page, expected_title, description)
+        if playlist:
+            select_playlist(page, playlist, create_missing=create_missing_playlist)
         click_next_upload_step(page, timeout_ms=next_timeout_ms, expected_step="VIDEO_ELEMENTS")
         step = get_upload_workflow_step(page)
     if step == "VIDEO_ELEMENTS":
@@ -7645,6 +7707,8 @@ def run_verify_upload(args: argparse.Namespace) -> None:
                     video_url=args.video_url,
                     description=args.description,
                     tags=args.tags,
+                    playlist=getattr(args, "playlist", ""),
+                    create_missing_playlist=getattr(args, "create_missing_playlist", True),
                     content_type=args.content_type,
                     publish_at=args.publish_at,
                     timeout_ms=timeout_ms,
@@ -7655,6 +7719,8 @@ def run_verify_upload(args: argparse.Namespace) -> None:
                     "file lokal dipertahankan."
                 )
             verify_saved_video_metadata(page, video_url, args.title, args.description)
+            ensure_saved_video_playlist(page, video_url, getattr(args, "playlist", ""),
+                create_missing=getattr(args, "create_missing_playlist", True))
             log(f"FINAL_VISIBILITY: {'public' if existing_public_url else args.visibility}")
             if existing_public_url:
                 log('EXISTING_PUBLICATION_CONFIRMED: video-id dan metadata persis sudah Publik; jadwal lokal lama tidak diterapkan ulang.')
@@ -7912,7 +7978,7 @@ def run_upload(args: argparse.Namespace) -> None:
                                 f"oleh Studio ({exc}); upload video tetap dilanjutkan."
                             )
 
-            select_playlist(page, args.playlist, create_missing=getattr(args, "create_missing_playlist", False))
+            select_playlist(page, args.playlist, create_missing=getattr(args, "create_missing_playlist", True))
             if args.made_for_kids:
                 click_text(page, [r"yes,.*made for kids", r"ya,.*anak"], timeout_ms=8000)
             else:
@@ -8239,6 +8305,8 @@ def build_parser() -> argparse.ArgumentParser:
     verify_upload.add_argument("--video-url", default="")
     verify_upload.add_argument("--schedule-existing", action="store_true")
     verify_upload.add_argument("--tags", default="")
+    verify_upload.add_argument("--playlist", default="")
+    verify_upload.add_argument("--create-missing-playlist", action=argparse.BooleanOptionalAction, default=True)
     verify_upload.add_argument(
         "--content-type",
         choices=["auto", "shorts", "long-form"],
@@ -8290,7 +8358,8 @@ def build_parser() -> argparse.ArgumentParser:
     upload.add_argument("--tags", default="")
     upload.add_argument("--playlist", default=os.environ.get("YOUTUBE_DEFAULT_PLAYLIST", "Islam"))
     upload.add_argument("--playlist-resolved", action="store_true", help="Playlist sudah dipilih dari konteks sumber oleh API.")
-    upload.add_argument("--create-missing-playlist", action="store_true", help="Khusus cron: buat playlist niche bila daftar Studio memastikan belum tersedia.")
+    upload.add_argument("--create-missing-playlist", action=argparse.BooleanOptionalAction, default=True,
+                        help="Buat playlist tujuan jika daftar Studio memastikan belum tersedia.")
     upload.add_argument("--target-channel", default=os.environ.get("YOUTUBE_TARGET_CHANNEL", "ryuundyofficial"))
     upload.add_argument("--target-email", default=DEFAULT_TARGET_EMAIL)
     upload.add_argument("--target-channel-id", default=DEFAULT_TARGET_CHANNEL_ID)

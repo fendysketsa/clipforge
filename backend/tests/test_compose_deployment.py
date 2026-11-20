@@ -15,11 +15,14 @@ ROOT=Path(__file__).resolve().parents[2]
 @pytest.fixture
 def project(tmp_path):
     root=tmp_path/'image';root.mkdir()
-    for name in ('api.py','telegram_bot.py','cron_long_strategy.py','ryuundy_editorial_themes.py',
+    for name in ('api.py','telegram_bot.py','cron_long_strategy.py','ryuundy_editorial_themes.py','ryuundy_reference_catalog.py',
                  'requirements.txt','docker-entrypoint.sh','Dockerfile'):
         (root/name).write_text('# deployment fixture\n')
     (root/'remotion/src').mkdir(parents=True)
     (root/'remotion/src/index.jsx').write_text('export const value=1;')
+    (root/'motlab').mkdir()
+    for name in ('package.json', 'package-lock.json', 'render.mjs', 'scene.mjs'):
+        (root/'motlab'/name).write_text('{}')
     deploy.build_manifest(root)
     return root
 
@@ -27,7 +30,8 @@ def project(tmp_path):
 def test_image_manifest_covers_bot_backend_and_renderer(project):
     result=deploy.verify_manifest(project)
     assert {'api.py','telegram_bot.py','cron_long_strategy.py','ryuundy_editorial_themes.py',
-            'remotion/src/index.jsx'} <= result['files'].keys()
+            'ryuundy_reference_catalog.py','remotion/src/index.jsx','motlab/scene.mjs',
+            'motlab/package-lock.json'} <= result['files'].keys()
 
 
 @pytest.mark.parametrize('change',['edit','add','delete'])
@@ -124,11 +128,14 @@ def test_backend_contract_does_not_resume_disabled_cron(monkeypatch):
     payloads={'/api/health':{'status':'ok'},'/api/tiktok/config':{'duplicate_guard_version':2,'cron_draft_policy':'discard'},
       '/api/facebook/config':{'version':1,'monetization_version':1,'autopilot_version':1,'activity_version':1,'bonus_priority_version':1,'creative_policy_version':2,'local_cleanup_version':1,'educational_motion_version':1,'originals_request_version':1,'max_seconds':55,'target_email':'fendysketsa@gmail.com'},
       '/api/facebook/autopilot':{'version':1,'scheduler_running':True},
+      '/api/generation/rendering':{'version':1,'motlab_version':'0.3.0','motlab_installed':True,
+          'caption_plane':'outside_picture_transitions','motion_policy_version':1,'default_engine':'motlab'},
       '/api/automation/viral-cc/schedule':{'short_schedule_policy_version':1,'short_schedule_daily_limit':5,'short_schedule_timezone':'Asia/Jakarta','daily_plan_version':1,'activity_version':1,'activity':{'state':'disabled'},'cron_director_effects_policy_version':4,'cron_source_process_limit':2,'enabled':False,'scheduler_running':False},
       '/api/automation/viral-cc/long-strategy':{'version':2,'semantic_story_review_required':True,
+          'reference_catalog_version':1,'reference_count':4,
           'compilation_fallback_policy_version':1,'compilation_fallback_enabled':True,'fallback_preserves_long_qc':True,'themes':[
           {'key':key,'manual_review_required':key=='domestic_politics'} for key in
-          ('mystery_story','legend_folklore','domestic_politics','food_healthy_review','food_taste_review')]}}
+          ('mystery_story','legend_folklore','domestic_politics','food_healthy_review','food_taste_review','moral_animation_story','nostalgia_indonesia')]}}
     monkeypatch.setattr(deploy,'get_json',lambda url:payloads[url.removeprefix('http://local')])
     assert deploy.backend_contract('http://local')['cron_enabled'] is False
     assert deploy.backend_contract('http://local')['long_strategy_version'] == 2

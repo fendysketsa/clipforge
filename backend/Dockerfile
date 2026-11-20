@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS node-runtime
+FROM node:24-bookworm-slim AS node-runtime
 
 FROM python:3.12-slim
 
@@ -74,6 +74,13 @@ COPY . .
 # renderer reuses Chromium installed by Playwright above.
 RUN cd /app/remotion \
     && npm ci --omit=dev --ignore-scripts \
+    && npm cache clean --force
+
+# Motlab is installed with the image, never by a separate activation/setup script.
+RUN cd /app/motlab \
+    && npm ci --omit=dev --ignore-scripts \
+    && node render.mjs --check \
+    && node --check scene.mjs \
     && npm cache clean --force
 
 RUN chmod 0755 /app/docker-entrypoint.sh \

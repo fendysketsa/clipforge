@@ -1,0 +1,9 @@
+{
+  "name": "clipforge-motlab-renderer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=24"},
+  "scripts": {"check": "node render.mjs --check", "test": "node --test"},
+  "dependencies": {"@motlab/cli": "0.3.0"}
+}

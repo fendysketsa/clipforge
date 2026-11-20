@@ -7,6 +7,8 @@ import api
 import ryuundy_editorial_themes as themes
 
 TITLES = {
+    "moral_animation_story": "Animasi cerita moral Indonesia tentang pedagang curang dan kejujuran",
+    "nostalgia_indonesia": "Nostalgia kehidupan Indonesia tahun 1980 dan sejarah sekolah tempo dulu",
     "legend_folklore": "Cerita rakyat legenda Danau Toba dalam bahasa Indonesia",
     "domestic_politics": "Analisis politik Indonesia kronologi kebijakan pemerintah dan dampak masyarakat",
     "food_healthy_review": "Review makanan sehat Indonesia bahan porsi dan cara masak",

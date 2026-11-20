@@ -37,6 +37,7 @@ from remotion_story_renderer import (
     write_hypit_script,
     write_story_article,
 )
+from motlab_story_renderer import MotlabRenderError, render_story_with_motlab, require_motlab_runtime, story_render_experiment
 
 # Configure logging for Long Animate
 _logger = logging.getLogger("long_animate")
@@ -202,7 +203,12 @@ STORYBOARD_SYSTEM_PROMPT = (
     "The first scene is a cold-open contract: show the concrete conflict, risk, result, or visual question immediately; "
     "never spend the opening on a logo, greeting, generic establishing shot, or context that does not prove the title promise. "
     "Treat the user's script as the only source of truth. Use a consistent visual world but vary composition, "
-    "scale, palette, symbolic objects, and camera motion. Never default to an Indonesian, Islamic, child, family, "
+    "scale, palette, symbolic objects, and camera motion. "
+    "For an explicit narrated process, on_screen_text may name two or three concrete objects in source order "
+    "separated by an arrow (Air → Turbin → Listrik), only when every label occurs verbatim in that narration "
+    "and the relationship is actually explained. This enables a word-timed animated diagram. "
+    "Do not force diagrams onto emotional scenes or invent labels, statistics, relationships or an ending. "
+    "Never default to an Indonesian, Islamic, child, family, "
     "school, mosque, or human scene unless that identity or setting is supported by the script. Never replace a "
     "requested subject with a generic boy, girl, Muslim child, teacher, ustaz, or family. A requested animal, "
     "object, vehicle, creature, profession, historical setting, fantasy world, or non-Indonesian location must remain "
@@ -6148,6 +6154,14 @@ def render_long_animate(
     )
 
     logger.info(f"Starting Long Animate render for: {script[:100]}")
+    render_engine = os.environ.get('LONG_ANIMATE_RENDER_ENGINE', 'motlab').strip().casefold()
+    if render_engine not in {'motlab', 'remotion', 'ffmpeg'}:
+        raise LongAnimateVideoError('LONG_ANIMATE_RENDER_ENGINE harus motlab, remotion atau ffmpeg.')
+    if render_engine == 'motlab':
+        try:
+            require_motlab_runtime()
+        except MotlabRenderError as exc:
+            raise LongAnimateVideoError(str(exc)) from exc
     require_motion_video_provider()
     direct_text_video = _video_provider() == "hypit"
     if not direct_text_video:
@@ -6274,13 +6288,6 @@ def render_long_animate(
         shot_paths: list[Path] = []
         shot_image_paths: list[Path] = []
         remotion_assets: list[Path] = []
-        render_engine = os.environ.get(
-            "LONG_ANIMATE_RENDER_ENGINE", "remotion"
-        ).strip().casefold()
-        if render_engine not in {"remotion", "ffmpeg"}:
-            raise LongAnimateVideoError(
-                "LONG_ANIMATE_RENDER_ENGINE harus remotion atau ffmpeg."
-            )
         style_reference: Path | None = None
         character_reference: Path | None = None
         chapter_audits: list[dict[str, object]] = []
@@ -6407,15 +6414,17 @@ def render_long_animate(
 
         progress(82, "render", "Menggabungkan shot tanpa fade hitam atau padding audio antar-scene")
         remotion_manifest_path: Path | None = None
-        if render_engine == "remotion":
+        motlab_project_path: Path | None = None
+        if render_engine in {"motlab", "remotion"}:
             try:
-                assembled, remotion_manifest_path = render_story_with_remotion(
+                renderer = render_story_with_motlab if render_engine == "motlab" else render_story_with_remotion
+                assembled, renderer_manifest_path = renderer(
                     storyboard=storyboard,
                     shots=shots,
                     assets=remotion_assets,
                     work_dir=work_dir,
                     scene_dir=scene_dir,
-                    output_path=scene_dir / "assembled-remotion.mp4",
+                    output_path=scene_dir / f"assembled-{render_engine}.mp4",
                     width=_output_geometry()[1],
                     height=_output_geometry()[2],
                     duration=target_duration,
@@ -6424,7 +6433,11 @@ def render_long_animate(
                     burn_subtitles=burn_subtitles,
                     progress=progress,
                 )
-            except RemotionRenderError as exc:
+                if render_engine == "motlab":
+                    motlab_project_path = renderer_manifest_path
+                else:
+                    remotion_manifest_path = renderer_manifest_path
+            except (RemotionRenderError, MotlabRenderError) as exc:
                 raise LongAnimateVideoError(str(exc)) from exc
         else:
             assembled = assemble_shot_videos(shot_paths, shots, scene_dir)
@@ -6760,6 +6773,9 @@ def render_long_animate(
             f"Voice-over pria/wanita dipilih otomatis dari karakter utama scene; durasi TTS menentukan timeline tepat {target_duration:g} detik.",
             "Voice-over dibersihkan dua sisi, di-de-ess, dikompresi ringan, lalu musik memakai sidechain ducking.",
             (
+                "Motlab merakit footage/keyframe dengan kamera terarah, reveal visual, dan caption stabil pada timeline narasi."
+                if render_engine == "motlab"
+                else
                 "Clip text-to-video dirakit Remotion dengan overlay dan caption frasa stabil tanpa active-word flicker."
                 if direct_text_video
                 else "Setiap keyframe/footage dirakit Remotion dengan gerak kamera scene-aware, overlay, dan caption stabil."
@@ -6809,8 +6825,9 @@ def render_long_animate(
         "remotion_manifest_path": (
             remotion_manifest_path.name if remotion_manifest_path else None
         ),
+        "motlab_project_path": str(motlab_project_path.relative_to(work_dir)) if motlab_project_path else None,
         "channel_watermark": {
-            "enabled": render_engine == "remotion" or drawtext,
+            "enabled": render_engine in {"motlab", "remotion"} or drawtext,
             "text": "RYUUNDY",
             **watermark_metadata("vertical_short" if output_height > output_width else "landscape_compilation"),
         },
@@ -6822,13 +6839,16 @@ def render_long_animate(
             "validated_by_hypit_cli": True,
         },
         "motion_design": {
-            "renderer": "remotion",
+            "renderer": render_engine,
+            "policy_version": 1,
             "timeline_source": "measured_tts",
             "deterministic_per_frame": True,
             "transition_grammar": "motivated_cut_and_overlapping_cross_dissolve",
-            "kinetic_typography": "word_stagger_titles_and_stable_phrase_captions",
+            "kinetic_typography": "settled_spring_titles_and_stable_phrase_captions" if render_engine == "motlab"
+                else "word_stagger_titles_and_stable_phrase_captions",
             "reference_policy": "motion_grammar_only_no_third_party_assets_or_branding",
         },
+        "render_experiment": story_render_experiment(render_engine, output_width, output_height, burn_subtitles),
         "scene_assets_directory": "animate_scenes",
         "art_bible": storyboard.art_bible,
         "character_bible": storyboard.character_bible,
@@ -6874,6 +6894,9 @@ def render_long_animate(
         "video_generation": {
             "provider": _video_provider(),
             "engine": (
+                "motlab_0_3_webcodecs_canvas"
+                if render_engine == "motlab"
+                else
                 "remotion_4_scene_compositor"
                 if render_engine == "remotion"
                 else "ffmpeg_scene_compositor"
@@ -6914,6 +6937,9 @@ def render_long_animate(
             "action_setting_condition_atmosphere_camera_are_shot_specific": True,
             "cross_shot_prompt_leakage_allowed": False,
             "render_execution_mode": (
+                "motlab_canvas_over_approved_scene_assets"
+                if render_engine == "motlab"
+                else
                 "remotion_hypit_direct_text_to_video"
                 if direct_text_video and render_engine == "remotion"
                 else "remotion_real_footage_plus_generated_keyframes"
@@ -6948,8 +6974,8 @@ def render_long_animate(
             "transcript_grounded": True,
             "scene_timed": True,
             "presentation": "stable_phrase_no_active_word_flicker",
-            "frame_native_timing": render_engine == "remotion",
-            "renderer": "remotion" if render_engine == "remotion" else "ffmpeg_ass",
+            "frame_native_timing": render_engine in {"motlab", "remotion"},
+            "renderer": render_engine if render_engine in {"motlab", "remotion"} else "ffmpeg_ass",
         },
         "audio_design": {
             "version": 2,

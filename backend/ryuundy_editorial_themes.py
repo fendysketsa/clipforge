@@ -1,7 +1,36 @@
 """Additional RYUUNDY cron topics, with distinct source-grounded Long roles."""
 from __future__ import annotations
 
+import re
+
 PROFILES = {
+    "moral_animation_story": {
+        "label": "Animasi Cerita Moral & Konsekuensi Pilihan",
+        "tone": "cerita fiksi Indonesia yang hangat dan menarik; bedakan fiksi dari kejadian nyata, ikuti pilihan tokoh dan akibatnya; istilah azab dalam judul sumber bukan bukti hukuman Tuhan dan bukan dasar klaim agama; jangan meniru suara, karakter, atau desain kreator",
+        "short_role": "pilih satu keputusan tokoh, akibat yang terlihat dan satu pelajaran utuh; beri konteks bahwa ini cerita fiksi, tanpa adegan mengerikan atau cliffhanger yang menyesatkan",
+        "long_role": "susun kebutuhan tokoh, godaan atau konflik, keputusan, akibat dan penyelesaian yang tersedia pada sumber; jangan menyambung episode dengan akhir karangan atau mengubah fiksi menjadi kisah nyata",
+        "duration_filter": "any",
+        "queries": [
+            "animasi cerita moral indonesia pedagang jujur konsekuensi pilihan",
+            "kartun indonesia cerita kehidupan kejujuran akibat keserakahan",
+            "cerita fiksi animasi indonesia pelajaran hidup alur lengkap",
+            "Kartun Acing cerita moral animasi indonesia",
+        ],
+    },
+    "nostalgia_indonesia": {
+        "label": "Nostalgia, Arsip & Kehidupan Indonesia Tempo Dulu",
+        "tone": "hangat, informatif dan berbasis sumber; bedakan ingatan pribadi, arsip bertanggal, interpretasi, ilustrasi dan rekonstruksi; pengalaman masa lalu berbeda menurut tempat dan keluarga, jangan menganggap semua orang dahulu hidup lebih baik",
+        "short_role": "angkat satu benda, kebiasaan atau perubahan kehidupan tempo dulu; tunjukkan konteks waktu/tempat dari sumber dan satu jawaban atau perbandingan yang tuntas; visual ilustrasi atau rekonstruksi wajib dikenali sebagai ilustrasi",
+        "long_role": "bangun perjalanan kehidupan pada satu masa atau tempat melalui rumah, sekolah, permainan, pasar atau teknologi; jelaskan perubahan dan sumber arsip, pisahkan nostalgia dari fakta sejarah, dan simpulkan tanpa mengarang tanggal, lokasi, harga atau asal rekaman",
+        "duration_filter": "any",
+        "queries": [
+            "nostalgia kehidupan indonesia tahun 1980 an dokumenter",
+            "indonesia tempo dulu arsip kehidupan sehari hari sejarah",
+            "sejarah permainan tradisional sekolah pasar indonesia zaman dulu",
+            "ZamanEmas kehidupan indonesia tahun 1980 nostalgia",
+            "Dunia Sejarah arsip indonesia tempo dulu konteks sejarah",
+        ],
+    },
     "legend_folklore": {
         "label": "Legenda, Cerita Rakyat & Asal-Usul Nusantara",
         "tone": "sinematik dan penasaran; nyatakan legenda sebagai cerita rakyat, bedakan versi cerita dan fakta sejarah; jangan mengarang bukti atau kepastian gaib",
@@ -54,6 +83,8 @@ PROFILES = {
 }
 
 SIGNALS = {
+    "moral_animation_story": {"cerita moral", "animasi azab", "kartun acing", "cerita fiksi", "pedagang curang", "keserakahan", "kejujuran"},
+    "nostalgia_indonesia": {"nostalgia", "tempo dulu", "zaman dulu", "jaman dulu", "1980", "1980 an", "arsip", "permainan tradisional", "kehidupan masa lalu"},
     "legend_folklore": {"legenda", "cerita rakyat", "folklor", "folklore", "dongeng", "asal usul"},
     "domestic_politics": {"politik", "kebijakan", "pemerintah", "dpr", "pemilu", "pilkada", "kpk", "apbn", "menteri", "presiden"},
     "food_healthy_review": {"makanan sehat", "menu sehat", "bekal sehat", "gizi", "nutrisi", "sayuran", "porsi", "cara masak"},
@@ -61,6 +92,8 @@ SIGNALS = {
 }
 
 HASHTAGS = {
+    "moral_animation_story": ["CeritaMoral", "AnimasiIndonesia", "CeritaFiksi"],
+    "nostalgia_indonesia": ["NostalgiaIndonesia", "IndonesiaTempoDulu", "SejarahKehidupan"],
     "legend_folklore": ["LegendaNusantara", "CeritaRakyat", "BudayaNusantara"],
     "domestic_politics": ["PolitikIndonesia", "KebijakanPublik", "KonteksIndonesia"],
     "food_healthy_review": ["ReviewMakanan", "MenuSehat", "PilihanMenu"],
@@ -70,3 +103,13 @@ HASHTAGS = {
 
 def requires_manual_review(theme_key: str) -> bool:
     return bool(PROFILES.get(theme_key, {}).get("manual_review_required"))
+
+
+def source_rejection_reason(info: dict, theme_key: str) -> str:
+    if theme_key != "moral_animation_story":
+        return ""
+    text = " ".join([str(info.get("title") or ""), str(info.get("description") or ""),
+                     " ".join(map(str, info.get("tags") or []))]).casefold()
+    if not re.search(r"\b(?:animasi|kartun|animation|animated)\b", text):
+        return "lane cerita moral membutuhkan sumber animasi/kartun fiksi, bukan tuduhan kejadian nyata"
+    return ""

@@ -1,0 +1,17 @@
+{
+  "src/render.js": {
+    "normalized_text_matches": true
+  },
+  "src/chrome.js": {
+    "normalized_text_matches": false
+  },
+  "src/page/motion.js": {
+    "normalized_text_matches": true
+  },
+  "src/page/footage.js": {
+    "normalized_text_matches": true
+  },
+  "src/page/runtime.js": {
+    "normalized_text_matches": true
+  }
+}
