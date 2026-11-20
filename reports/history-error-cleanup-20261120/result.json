@@ -1,0 +1,57 @@
+{
+  "checked_at": "2026-11-20T10:02:02.424327+00:00",
+  "targets": [
+    {
+      "id": "0cc016846cfd487f979f682266eea9e7",
+      "title": "🔺GIBRAN BONGKAR HUBUNGAN PRABOWO DAN JOKOWI USAI MUNDUR DARI WAPRES❗",
+      "status_before": "failed",
+      "error": "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, retensi memadai, dan konteks aman. Sistem sudah otomatis mencoba window hingga 105 detik; gunakan sumber lain. Workspace dan seluruh file sementara proses gagal telah dihapus.",
+      "upload_records": 0,
+      "workspace_exists": false,
+      "result": {
+        "status": "ok",
+        "removed_jobs": 1,
+        "removed_outputs": 0
+      }
+    },
+    {
+      "id": "25907d822e3d44c6a9b949eb3f156780",
+      "title": "ATUN, MOMON DAN TEMAN2 BANGUN RUMAH POHON !! Feat @sapipurba Minecraft",
+      "status_before": "failed",
+      "error": "RuntimeError: Long dan kompilasi belum memiliki bahan valid; render ditahan: insufficient_or_excessive_compilation_material Workspace dan seluruh file sementara proses gagal telah dihapus.",
+      "upload_records": 0,
+      "workspace_exists": false,
+      "result": {
+        "status": "ok",
+        "removed_jobs": 1,
+        "removed_outputs": 0
+      }
+    },
+    {
+      "id": "7cacad18f21a4c528e656b3312aef66d",
+      "title": "Bikin NANGISS😭, Ternyata Begini Hidup Tahun 1980 di Indonesia",
+      "status_before": "cancelled",
+      "error": "Proses dibatalkan. 1 data output sementara dihapus.",
+      "upload_records": 0,
+      "workspace_exists": false,
+      "result": {
+        "status": "ok",
+        "removed_jobs": 1,
+        "removed_outputs": 0
+      }
+    }
+  ],
+  "checkpoints_preserved": true,
+  "health": {
+    "status": "ok"
+  },
+  "scheduler": {
+    "enabled": true,
+    "scheduler_running": true,
+    "active_run_id": null,
+    "next_run_at": "2026-11-20T10:05:29.429792+00:00"
+  },
+  "removed_count": 3,
+  "target_ids_absent_from_live_api": true,
+  "unrelated_jobs_preserved": true
+}

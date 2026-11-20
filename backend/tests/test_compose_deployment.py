@@ -21,7 +21,7 @@ def project(tmp_path):
     (root/'remotion/src').mkdir(parents=True)
     (root/'remotion/src/index.jsx').write_text('export const value=1;')
     (root/'motlab').mkdir()
-    for name in ('package.json', 'package-lock.json', 'render.mjs', 'scene.mjs'):
+    for name in ('package.json', 'package-lock.json', 'render.mjs', 'scene.mjs', 'facebook-scene.mjs', 'education-scene.mjs'):
         (root/'motlab'/name).write_text('{}')
     deploy.build_manifest(root)
     return root
@@ -31,7 +31,7 @@ def test_image_manifest_covers_bot_backend_and_renderer(project):
     result=deploy.verify_manifest(project)
     assert {'api.py','telegram_bot.py','cron_long_strategy.py','ryuundy_editorial_themes.py',
             'ryuundy_reference_catalog.py','cron_editorial.py','remotion/src/index.jsx','motlab/scene.mjs',
-            'motlab/package-lock.json'} <= result['files'].keys()
+            'motlab/package-lock.json','motlab/facebook-scene.mjs'} <= result['files'].keys()
 
 
 @pytest.mark.parametrize('change',['edit','add','delete'])
@@ -125,11 +125,11 @@ def test_bot_preparation_requires_verified_frontend(project,tmp_path,monkeypatch
 
 
 def test_backend_contract_does_not_resume_disabled_cron(monkeypatch):
-    payloads={'/api/health':{'status':'ok'},'/api/tiktok/config':{'duplicate_guard_version':2,'cron_draft_policy':'discard'},
+    payloads={'/api/ai-office':{'version':1,'enabled':False,'worker_running':False,'capabilities':dict(supervised_workers=True,persisted_decisions=True,operator_settings_preserved=True,publication_gates_preserved=True,no_parallel_production_owner=True)},'/api/runtime/source-download':{'version':1,'transport_retry_delays':[2,5],'bounded_transport_retries':True,'redacted_diagnostics':True,'same_strategy_partial_resume':True,'rights_and_auth_gates_preserved':True},'/api/uploads/attention':{'version':1,'rejected_upload_cleanup_version':1,'terminal_claim_action':'DROP_SOURCE','rejected_upload_archive':True,'enabled':True,'worker_running':True},'/api/health':{'status':'ok'},'/api/tiktok/config':{'duplicate_guard_version':2,'cron_draft_policy':'discard'},
       '/api/runtime/optimization':{'version':1,'dashboard_upload_view':True,
           'full_upload_evidence_preserved':True,'owned_render_sessions':True,
           'native_checkpoint_json':True,'daily_plan_projection':True},
-      '/api/facebook/config':{'version':1,'monetization_version':1,'autopilot_version':1,'activity_version':1,'bonus_priority_version':1,'creative_policy_version':2,'local_cleanup_version':1,'educational_motion_version':1,'originals_request_version':1,'max_seconds':55,'target_email':'fendysketsa@gmail.com'},
+      '/api/facebook/config':{'version':1,'monetization_version':1,'autopilot_version':1,'activity_version':1,'bonus_priority_version':1,'creative_policy_version':2,'local_cleanup_version':1,'educational_motion_version':1,'originals_request_version':1,'original_renderer':{'engine':'motlab','version':1},'education_catalogue_version':1,'upload_retry_policy_version':1,'max_seconds':55,'target_email':'fendysketsa@gmail.com'},
       '/api/facebook/autopilot':{'version':1,'scheduler_running':True},
       '/api/generation/rendering':{'version':1,'motlab_version':'0.3.0','motlab_installed':True,
           'caption_plane':'outside_picture_transitions','motion_policy_version':1,'default_engine':'motlab'},
@@ -144,6 +144,19 @@ def test_backend_contract_does_not_resume_disabled_cron(monkeypatch):
     monkeypatch.setattr(deploy,'get_json',lambda url:payloads[url.removeprefix('http://local')])
     assert deploy.backend_contract('http://local')['cron_enabled'] is False
     assert deploy.backend_contract('http://local')['long_strategy_version'] == 2
+    office = payloads['/api/ai-office']
+    office.update(enabled=True, worker_running=True, journal_ready=True,
+                  last_tick_at=deploy.datetime.now().astimezone().isoformat(), state='degraded')
+    # A waiting third-party QC department is legitimate; the coordinator itself
+    # must still have an actual worker, durable journal and fresh heartbeat.
+    assert deploy.backend_contract('http://local')['ai_office_running'] is True
+    for field, value in [('worker_running', False), ('journal_ready', False),
+                         ('last_tick_at', '2000-01-01T00:00:00+00:00')]:
+        original = office[field]
+        office[field] = value
+        with pytest.raises(RuntimeError, match='AI office coordinator'):
+            deploy.backend_contract('http://local')
+        office[field] = original
     payloads['/api/automation/viral-cc/long-strategy']['version']=1
     with pytest.raises(RuntimeError,match='Long strategy'):deploy.backend_contract('http://local')
     payloads['/api/automation/viral-cc/long-strategy']['version']=2
@@ -182,9 +195,10 @@ for(const name of ['package.json','package-lock.json','next.config.ts','tsconfig
 for(const dir of ['app','public','.next/static'])fs.mkdirSync(dir,{recursive:true});
 fs.writeFileSync('app/page.tsx','original source');
 fs.writeFileSync('.next/BUILD_ID','build-a');
-const js='jobDirectorRecovery history-four-columns jobPlatformQueue /reconcile dijadwalkan ulang otomatis pengaturan privasi tertunda Hasil posting perlu diperiksa cronActivityHeading Detail pemeriksaan cronDailyLanes studioSidebar studioQueueRow connectionCard studioThemeToggle fbWorkspace facebook/uploads Facebook Reels fbMonetization facebook/monetization fbAutopilot facebook/autopilot fbAutoBonus fbPublished File lokal dibersihkan otomatis animasi objek 2D Buat Reel animasi';
+const js='jobDirectorRecovery history-four-columns jobPlatformQueue /reconcile dijadwalkan ulang otomatis pengaturan privasi tertunda Hasil posting perlu diperiksa cronActivityHeading Detail pemeriksaan cronDailyLanes studioSidebar studioQueueRow connectionCard studioThemeToggle fbWorkspace facebook/uploads Facebook Reels fbControlGrid fbAutopilot facebook/autopilot facebook/storage/cleanup fbStorage Antrean produksi & upload Buat Reel baru Tonton preview fbSeriesPicker Tema animasi Gunakan tema untuk jadwal overviewMetrics overviewRecentRow Semua produksi, satu tempat. Buka navigasi Penanganan otomatis aktif /api/uploads/attention Sedang dipulihkan Rincian percobaan sebelumnya Klip yang ditolak dibersihkan otomatis Arahan & pekerjaan /api/ai-office aiOfficeDepartments';
 const css='.outputWorkspacePane .jobList{grid-template-columns:repeat(4,minmax(0,1fr))}.clipGrid{grid-template-columns:repeat(3,minmax(0,1fr))}:root[data-theme=light]{color-scheme:light}';
-fs.writeFileSync('.next/static/app.js',js);fs.writeFileSync('.next/static/app.css',css);
+const shell='studioSidebar overviewMetrics Buka navigasi';
+fs.writeFileSync('.next/static/app.js',shell);fs.writeFileSync('.next/static/panels.js',js);fs.writeFileSync('.next/static/app.css',css);
 const deploy=require('./scripts/deployment-health.cjs');
 deploy.build();deploy.prepare();
 process.env.CLIPFORGE_VERIFY_SOURCE_DIR=process.cwd();deploy.prepare();
@@ -193,16 +207,19 @@ assert.throws(()=>deploy.prepare(),/source changed during build/);
 fs.writeFileSync('app/page.tsx','original source');
 fs.writeFileSync('.next/static/app.js','bad chunk');
 assert.throws(()=>deploy.prepare(),/asset mismatch/);
-fs.writeFileSync('.next/static/app.js',js);
+fs.writeFileSync('.next/static/app.js',shell);
 const responses={'/':'<script src="/_next/static/app.js"></script><link href="/_next/static/app.css"/>',
  '/deployment.json':fs.readFileSync('public/deployment.json','utf8'),
- '/_next/static/app.js':js,'/_next/static/app.css':css};
+ '/_next/static/app.js':shell,'/_next/static/panels.js':js,'/_next/static/app.css':css};
 global.fetch=async url=>({ok:true,text:async()=>responses[new URL(url).pathname]});
 (async()=>{
  await deploy.health();
  responses['/_next/static/app.js']='wrong served chunk';
  await assert.rejects(()=>deploy.health(),/Served assets differ/);
- responses['/_next/static/app.js']=js;
+ responses['/_next/static/app.js']=shell;
+ responses['/_next/static/panels.js']='wrong dynamic panel chunk';
+ await assert.rejects(()=>deploy.health(),/Served assets differ/);
+ responses['/_next/static/panels.js']=js;
  responses['/deployment.json']='{"build_id":"old"}';
  await assert.rejects(()=>deploy.health(),/release mismatch/);
 })().catch(error=>{console.error(error);process.exitCode=1});

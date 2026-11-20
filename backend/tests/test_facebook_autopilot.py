@@ -204,7 +204,7 @@ def test_requested_original_respects_shared_production_capacity(runner):
 
 def test_original_endpoint_validates_identity_and_uses_owned_worker(monkeypatch):
     calls=[]
-    monkeypatch.setattr(Runner,'request_original',lambda self,request,topic:
+    monkeypatch.setattr(Runner,'request_original',lambda self,request,topic,series=None:
         calls.append((request,topic)) or {'key':'requested:'+request,'status':'reserved'})
     import facebook_api
     monkeypatch.setattr(facebook_api,'start_background',lambda *args:None)
@@ -388,3 +388,30 @@ def test_expired_or_stale_bonus_is_never_presented_as_an_active_priority():
     assert not policy.bonus_plan(native,[],current+timedelta(days=5))['priority']
     native['checked_at']=(current-timedelta(days=2)).isoformat()
     assert policy.bonus_plan(native,[],current)['state']=='refresh_required'
+
+
+def test_requested_education_series_reaches_owned_worker_without_replacing_qc_or_schedule(runner,monkeypatch):
+    worker,store,key,queued=runner
+    store.data['autopilot_runs'][key]['status']='dropped'
+    record=worker.request_original('f'*32,'count_objects','kids_basics')
+    assert record['series']=='kids_basics'
+    repeated=worker.request_original('f'*32,'plant_growth','nature')
+    assert repeated['job_id']==record['job_id'] and repeated['series']=='kids_basics'
+    monkeypatch.setattr(originals,'audit',lambda *a,**k:dict(status='pending',message='QC unavailable',audit=None))
+    worker.process(record['key'])
+    saved=store.data['autopilot_runs'][record['key']]
+    assert saved['authored_plan']['series']=='kids_basics'
+    assert saved['authored_plan']['education']['original_characters']
+    assert saved['status']=='qc_wait' and not queued
+    assert not api.jobs[record['job_id']].clips[0].is_correct
+    assert store.data['autopilot'].get('series','digital')=='digital'
+
+
+def test_saved_series_is_used_for_a_new_request_and_cross_series_topics_are_rejected(runner):
+    worker,store,key,_=runner
+    store.data['autopilot_runs'][key]['status']='dropped'
+    store.data['autopilot']['series']='nature'
+    with pytest.raises(ValueError,match='Topik'):worker.request_original('a'*32,'group')
+    with pytest.raises(ValueError,match='Seri'):worker.request_original('b'*32,series='unknown')
+    record=worker.request_original('c'*32)
+    assert record['series']=='nature' and record['topic'] in {'plant_growth','shadow_light'}

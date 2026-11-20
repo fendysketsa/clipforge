@@ -18,6 +18,7 @@ export type FacebookUpload = {
   status: 'queued' | 'running' | 'completed' | 'failed' | 'needs_review';
   message: string; upload_confirmed: boolean; video_url?: string | null;
   submission_started: boolean; caption: string;
+  can_retry?: boolean; retry_block_reason?: string | null;
   title?: string; created_at?: string;
   local_cleanup?: {state: 'deleting' | 'deleted' | 'missing' | 'error'; freed_bytes: number;
     removed_files: number; completed_at?: string; error?: string};
@@ -34,7 +35,8 @@ export type FacebookAutoRun = {
   progress_percent: number; message?: string; created_at: string; video_url?: string | null;
 };
 export type FacebookAutopilot = {
-  version: number; config: {enabled: boolean; weekly_posts: number; weekly_stories: number; timezone: string};
+  version: number; config: {enabled: boolean; weekly_posts: number; weekly_stories: number; timezone: string; series?:string};
+  series_catalog?: {key:string; label:string; description:string; audience:string; topics:{key:string;title:string}[]}[];
   week_start: string; week_end: string; runtime_state: string; scheduler_running: boolean;
   confirmed_posts: number; confirmed_stories: number; produced: number; active: FacebookAutoRun | null;
   next_slot: {due_at: string; kind: string} | null; runs: FacebookAutoRun[];

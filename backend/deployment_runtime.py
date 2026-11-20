@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import hashlib
 import inspect
 import json
@@ -25,7 +26,7 @@ def source_files(root: Path) -> list[Path]:
         files.append(remotion / name)
     files.extend((remotion / 'src').rglob('*'))
     files.extend((root / 'assets' / 'branding').rglob('*'))
-    for name in ('package.json', 'package-lock.json', 'render.mjs', 'scene.mjs'):
+    for name in ('package.json', 'package-lock.json', 'render.mjs', 'scene.mjs', 'facebook-scene.mjs', 'education-scene.mjs'):
         files.append(root / 'motlab' / name)
     return sorted(path for path in files if path.is_file())
 
@@ -98,6 +99,10 @@ def verify_dependencies() -> None:
         raise RuntimeError('Remotion dependencies missing from image')
     subprocess.run(['node', str(ROOT / 'motlab/render.mjs'), '--check'],
                    check=True, stdout=subprocess.DEVNULL, timeout=15)
+    subprocess.run(['node', '--check', str(ROOT / 'motlab/facebook-scene.mjs')],
+                   check=True, stdout=subprocess.DEVNULL, timeout=15)
+    subprocess.run(['node', '--check', str(ROOT / 'motlab/education-scene.mjs')],
+                   check=True, stdout=subprocess.DEVNULL, timeout=15)
 
 
 def get_json(url: str) -> dict:
@@ -108,11 +113,35 @@ def get_json(url: str) -> dict:
 def backend_contract(base: str) -> dict:
     if get_json(base + '/api/health').get('status') != 'ok':
         raise RuntimeError('Backend is not healthy')
+    office = get_json(base + '/api/ai-office')
+    try:
+        office_age = time.time() - datetime.fromisoformat(office.get('last_tick_at') or '').timestamp()
+    except (ValueError, TypeError):
+        office_age = float('inf')
+    if (office.get('version') != 1 or any(office.get('capabilities', {}).get(key) is not True for key in (
+            'supervised_workers', 'persisted_decisions', 'operator_settings_preserved',
+            'publication_gates_preserved', 'no_parallel_production_owner'))
+            or (office.get('enabled') and (office.get('worker_running') is not True
+                                           or office.get('journal_ready') is not True
+                                           or not -30 <= office_age <= 180))):
+        raise RuntimeError('AI office coordinator is not ready')
     optimization = get_json(base + '/api/runtime/optimization')
     if (optimization.get('version') != 1 or any(optimization.get(key) is not True for key in (
             'dashboard_upload_view', 'full_upload_evidence_preserved', 'owned_render_sessions',
             'native_checkpoint_json', 'daily_plan_projection'))):
         raise RuntimeError('Runtime optimization policy is stale')
+    source_download = get_json(base + '/api/runtime/source-download')
+    if (source_download.get('version') != 1 or source_download.get('transport_retry_delays') != [2,5]
+            or any(source_download.get(key) is not True for key in ('bounded_transport_retries',
+                'redacted_diagnostics', 'same_strategy_partial_resume', 'rights_and_auth_gates_preserved'))):
+        raise RuntimeError('Source download recovery policy is stale')
+    attention = get_json(base + '/api/uploads/attention')
+    if (attention.get('version') != 1 or attention.get('error')
+            or attention.get('rejected_upload_cleanup_version') != 1
+            or attention.get('terminal_claim_action') != 'DROP_SOURCE'
+            or attention.get('rejected_upload_archive') is not True
+            or (attention.get('enabled') and attention.get('worker_running') is not True)):
+        raise RuntimeError('Automatic upload attention worker is not ready')
     config = get_json(base + '/api/tiktok/config')
     schedule = get_json(base + '/api/automation/viral-cc/schedule')
     if schedule.get('activity_version') != 1 or not schedule.get('activity', {}).get('state'):
@@ -155,6 +184,10 @@ def backend_contract(base: str) -> dict:
             or facebook.get('local_cleanup_version') != 1
             or facebook.get('educational_motion_version') != 1
             or facebook.get('originals_request_version') != 1
+            or (facebook.get('original_renderer') or {}).get('engine') != 'motlab'
+            or (facebook.get('original_renderer') or {}).get('version') != 1
+            or facebook.get('upload_retry_policy_version') != 1
+            or facebook.get('education_catalogue_version') != 1
             or facebook.get('max_seconds') != 55
             or facebook.get('target_email') != 'fendysketsa@gmail.com'):
         raise RuntimeError('Facebook workspace or duration policy is stale')
@@ -174,6 +207,10 @@ def backend_contract(base: str) -> dict:
             or editorial.get('manual_requests_modified') is not False):
         raise RuntimeError('Cron seasonal/monthly editorial policy is stale')
     return {**expected, 'optimization_version': optimization['version'],
+            'ai_office_version': office['version'], 'ai_office_running': office.get('worker_running'),
+            'source_download_version': source_download['version'], 'upload_attention_version': attention['version'],
+            'rejected_upload_cleanup_version': attention['rejected_upload_cleanup_version'],
+            'upload_attention_running': attention['worker_running'],
             'facebook_workspace_version': facebook['version'], 'cron_enabled': schedule.get('enabled'),
             'scheduler_running': schedule.get('scheduler_running'),
             'director_policy': 4, 'source_process_limit': 2, 'facebook_autopilot_version': 1,

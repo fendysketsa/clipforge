@@ -680,7 +680,7 @@ export function ResultsSection({
                       {Math.round(clip.fyp_score)}
                     </span>
                   ) : null}
-                  <video controls preload="metadata" src={url} poster={clip.thumbnail_url ? getOutputUrl(clip.thumbnail_url) : undefined} />
+                  <video controls preload="none" playsInline src={url} poster={clip.thumbnail_url ? getOutputUrl(clip.thumbnail_url) : undefined} />
                 </div>
                 <div className="clipInfo">
                   <div className="clipTitleBlock">

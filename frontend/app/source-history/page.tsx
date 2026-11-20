@@ -250,7 +250,7 @@ export default function SourceHistoryPage() {
   };
 
   return (
-    <main className="shell sourceLogPage sourceArchivePage">
+    <main id="workspace-content" tabIndex={-1} className="shell sourceLogPage sourceArchivePage">
       <Topbar activePage="source-log" isRefreshing={isLoading} onRefresh={() => loadLog(true)} />
 
       <section className="sourceArchiveHero">

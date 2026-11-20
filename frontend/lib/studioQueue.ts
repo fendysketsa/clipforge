@@ -1,12 +1,20 @@
 import type { TikTokUploadJob, YouTubeUploadJob } from "../types/clip.type";
 
-export type StudioQueueItem = {
-  id: string; platform: "YouTube" | "TikTok"; title: string; updatedAt: string;
-  state: "running" | "queued" | "verified" | "attention" | "failed";
-  label: string; privacy: string; detail: string; studioUrl: string;
+export type UploadAttentionSnapshot = {
+  version: number; enabled: boolean; worker_running: boolean; error?: string;
+  rejected_upload_cleanup_version?: number;
+  items: { id: string; state: "held" | "checking" | "waiting"; reason: string;
+    action: string; attempts: number; checked_at?: number | null; next_check_at?: number | null }[];
 };
 
-export function studioQueueItems(youtube: YouTubeUploadJob[], tiktok: TikTokUploadJob[]): StudioQueueItem[] {
+export type StudioQueueItem = {
+  id: string; platform: "YouTube" | "TikTok"; title: string; updatedAt: string;
+  state: "running" | "queued" | "verified" | "attention" | "failed" | "held";
+  label: string; privacy: string; detail: string; studioUrl: string;
+  automatic?: boolean; nextCheckAt?: number | null; checkedAt?: number | null;
+};
+
+export function studioQueueItems(youtube: YouTubeUploadJob[], tiktok: TikTokUploadJob[], attention?: UploadAttentionSnapshot | null): StudioQueueItem[] {
   const items: StudioQueueItem[] = [];
   const seen = new Set<string>();
   for (const row of [...youtube].sort((a,b) => Date.parse(b.updated_at)-Date.parse(a.updated_at))) {
@@ -28,6 +36,9 @@ export function studioQueueItems(youtube: YouTubeUploadJob[], tiktok: TikTokUplo
   for (const row of tiktok) {
     if (row.dry_run) continue;
     const exactPost = /^https:\/\/www\.tiktok\.com\/@[\w.]+\/video\/\d{10,25}(?:[?#].*)?$/.test(row.profile_url || "");
+    const postIdentity = exactPost ? row.profile_url!.split(/[?#]/)[0] : `tiktok-${row.id}`;
+    if (seen.has(postIdentity)) continue;
+    seen.add(postIdentity);
     const verified = row.status === "completed" && row.upload_confirmed && exactPost;
     const uncertain = row.submission_started || row.submission_accepted || row.profile_url
       || row.logs?.some(line => line.startsWith("POST_SUBMIT_INTENT:") || line.startsWith("POST_API_ACCEPTED:"));
@@ -40,7 +51,15 @@ export function studioQueueItems(youtube: YouTubeUploadJob[], tiktok: TikTokUplo
       detail:state === "attention" ? "Post pernah dikirim. Periksa daftar posting agar video tidak terkirim dua kali." : row.error || "",
       studioUrl:"https://www.tiktok.com/tiktokstudio/content"});
   }
-  return items.sort((a,b)=>Date.parse(b.updatedAt)-Date.parse(a.updatedAt));
+  const handling = new Map(attention?.items.map(item => [item.id, item]) ?? []);
+  return items.map(row => {
+    const item = handling.get(row.id);
+    if (!item || ["verified", "queued", "running"].includes(row.state)) return row;
+    return { ...row, state: item.state === "held" ? "held" as const : row.state,
+      automatic: attention?.enabled && attention?.worker_running,
+      label: item.state === "held" ? "Ditahan sistem" : item.state === "checking" ? "Sedang diperiksa" : "Ditangani otomatis",
+      detail: item.reason, nextCheckAt: item.next_check_at, checkedAt: item.checked_at };
+  }).sort((a,b)=>Date.parse(b.updatedAt)-Date.parse(a.updatedAt));
 }
 
 export function queueDate(value: string) {

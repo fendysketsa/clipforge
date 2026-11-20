@@ -1,0 +1,49 @@
+{
+  "checks": [
+    {
+      "width": 1440,
+      "theme": "dark",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "overflow": false
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "overflow": false
+    },
+    {
+      "width": 1280,
+      "theme": "light",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "overflow": false
+    }
+  ],
+  "pageErrors": [],
+  "nonGetRequests": [],
+  "recoveryCard": "passed",
+  "previousErrorDetails": "passed",
+  "recoveryOpen": "passed"
+}

@@ -153,19 +153,28 @@ def write_motlab_project(manifest_path: Path, project_dir: Path) -> Path:
 
 
 def render_story_with_motlab(**kwargs: Any) -> tuple[Path, Path]:
-    node = require_motlab_runtime()
+    require_motlab_runtime()
     try:
         output, manifest_path = prepare_story_manifest(**kwargs)
         page = write_motlab_project(manifest_path, kwargs['scene_dir'] / 'motlab_project')
     except RemotionRenderError as exc:
         raise MotlabRenderError(str(exc)) from exc
+    render_canvas_with_motlab(page=page, output=output, duration=kwargs['duration'],
+        width=kwargs['width'], height=kwargs['height'], scene_dir=kwargs['scene_dir'],
+        video_quality=kwargs['video_quality'], progress=kwargs.get('progress'))
+    return output, page.parent / 'project.json'
+
+
+def render_canvas_with_motlab(*, page: Path, output: Path, duration: float, width: int,
+                             height: int, scene_dir: Path, video_quality='high', progress=None) -> Path:
+    """Shared checked canvas export for story and Facebook production."""
+    node = require_motlab_runtime()
     env = os.environ.copy()
     browser = _browser_executable()
     if browser:
         env['CHROME'] = browser
-    env['MOTLAB_CACHE_DIR'] = str(kwargs['scene_dir'] / 'motlab_cache')
-    env['MOTLAB_QP'] = {'standard':'21', 'high':'18', 'max':'16'}.get(kwargs['video_quality'], '18')
-    progress = kwargs.get('progress')
+    env['MOTLAB_CACHE_DIR'] = str(scene_dir / 'motlab_cache')
+    env['MOTLAB_QP'] = {'standard':'21', 'high':'18', 'max':'16'}.get(video_quality, '18')
     if progress:
         progress(82, 'render', 'Motlab merakit kamera dinamis, reveal visual, dan caption stabil')
     lines = []
@@ -201,9 +210,9 @@ def render_story_with_motlab(**kwargs: Any) -> tuple[Path, Path]:
         info = json.loads(probe.stdout)
         video = next(row for row in info['streams'] if row['codec_type'] == 'video')
         seconds = float(info['format']['duration'])
-        if (probe.returncode or not math.isfinite(seconds) or abs(seconds - kwargs['duration']) > 1 / 30 + .01
-                or (video['width'], video['height']) != (kwargs['width'], kwargs['height'])):
+        if (probe.returncode or not math.isfinite(seconds) or abs(seconds - duration) > 1 / 30 + .01
+                or (video['width'], video['height']) != (width, height)):
             raise ValueError('geometry or duration mismatch')
     except (ValueError, KeyError, StopIteration) as exc:
         raise MotlabRenderError('Output Motlab belum cocok dengan ukuran dan durasi narasi.') from exc
-    return output, page.parent / 'project.json'
+    return output

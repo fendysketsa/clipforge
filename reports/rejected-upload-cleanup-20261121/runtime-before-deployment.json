@@ -1,0 +1,20 @@
+{
+  "health": {
+    "status": "ok"
+  },
+  "attention_version": 1,
+  "rejected_upload_cleanup_version": null,
+  "worker_running": true,
+  "held_count": 0,
+  "active_jobs": [
+    {
+      "id": "212a1112dfea4e65a74151dc63dd1d7c",
+      "status": "running",
+      "stage": "selection"
+    }
+  ],
+  "active_uploads": [],
+  "cron_enabled": true,
+  "scheduler_running": true,
+  "active_run_id": "c334e453895f4d0d82d05ea5190face0"
+}

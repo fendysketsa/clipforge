@@ -44,3 +44,23 @@ test('deep links select the requested workspace and unknown hashes safely select
   assert.equal(studioViewFromHash('#quick-start-title'),'create');
   assert.equal(studioViewFromHash('#unknown'),'create');
 });
+
+test('automatic handling exposes its reason and next check without masking a successful upload', () => {
+  const attention={version:1,enabled:true,worker_running:true,items:[{id:'youtube-one',state:'waiting',reason:'Mencocokkan ID tersimpan.',next_check_at:1800000000,attempts:1,action:'verify_remote'}]};
+  const pending=studioQueueItems([upload({upload_confirmed:false})],[],attention)[0];
+  assert.equal(pending.label,'Ditangani otomatis');assert.equal(pending.automatic,true);
+  assert.equal(pending.detail,'Mencocokkan ID tersimpan.');assert.equal(pending.nextCheckAt,1800000000);
+  assert.equal(studioQueueItems([upload()],[],attention)[0].state,'verified');
+});
+test('holds have their own category and never appear as an active upload', () => {
+  const attention={version:1,enabled:true,worker_running:true,items:[{id:'youtube-one',state:'held',reason:'Sumber berklaim.',attempts:0,action:'hold'}]};
+  const held=studioQueueItems([upload({upload_confirmed:false})],[],attention)[0];
+  assert.equal(held.state,'held');assert.equal(held.label,'Ditahan sistem');
+  const busy=studioQueueItems([upload({status:'running'})],[],attention)[0];
+  assert.equal(busy.state,'running');
+});
+
+test('reconciled TikTok attempts for the same exact post appear once', () => {
+  const row={id:'tt',caption:'Video',clip_name:'clip',status:'completed',upload_confirmed:true,profile_url:'https://www.tiktok.com/@channel/video/1234567890123456789',updated_at:'2026-11-20T01:00:00Z'};
+  assert.equal(studioQueueItems([],[row,{...row,id:'retry'}]).length,1);
+});

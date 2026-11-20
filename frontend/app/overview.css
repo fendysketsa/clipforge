@@ -1,0 +1,99 @@
+/* Operational overview. No image requests, chart dependency or animation loop. */
+.studioOverview { display: grid; gap: 26px; }
+.overviewMetrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 16px; }
+.overviewMetric { min-width: 0; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); transition: border-color .15s; }
+.overviewMetric:hover { border-color: var(--border-strong); }
+.overviewMetric > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--text-secondary); font-size: 12px; }
+.overviewMetric > div > svg { color: var(--info); }
+.overviewMetric.tone-success > div > svg { color: var(--success); }
+.overviewMetric.tone-warning > div > svg { color: var(--warning); }
+.overviewMetric.tone-primary > div > svg { color: var(--primary); }
+.overviewMetric > strong { display: block; margin: 16px 0 8px; color: var(--text-primary); font-size: 34px; line-height: 1.2; font-weight: 650; letter-spacing: -1.3px; font-variant-numeric: tabular-nums; }
+.overviewMetric > p { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--text-muted); font-size: 10px; }
+.overviewLaunch { padding: 25px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }
+.overviewLaunchHeader { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 22px; }
+.overviewLaunchHeader h2,.overviewRecent h2 { margin-top: 5px; color: var(--text-primary); font-size: 19px; font-weight: 600; letter-spacing: -.5px; }
+.overviewStepHint { display: inline-flex; align-items: center; gap: 9px; color: var(--text-muted); font-size: 11px; }
+.overviewFormats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; }
+.overviewFormats > button { position: relative; display: flex; align-items: flex-start; gap: 14px; padding: 21px 16px; min-width: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-soft); color: var(--text-primary); text-align: left; transition: border-color .15s, background .15s; }
+.overviewFormats > button:hover { border-color: var(--primary); background: var(--primary-soft); }
+.overviewFormatIcon { display: grid; place-items: center; width: 43px; height: 43px; flex: 0 0 43px; border-radius: 12px; color: var(--primary); background: var(--primary-soft); }
+.overviewFormatIcon.format-1 { color: var(--warning); background: var(--warning-soft); }
+.overviewFormatIcon.format-2 { color: var(--success); background: var(--success-soft); }
+.overviewFormatCopy { display: grid; gap: 8px; min-width: 0; }
+.overviewFormatCopy strong { font-size: 14px; font-weight: 600; }
+.overviewFormatCopy > span { max-width: 190px; min-height: 36px; color: var(--text-secondary); font-size: 11px; line-height: 1.7; }
+.overviewFormatCopy small { color: var(--text-muted); font-size: 10px; }
+.overviewFormatArrow { position: absolute; right: 14px; bottom: 17px; color: var(--text-muted); }
+.overviewColumns { display: grid; grid-template-columns: minmax(0,1fr) 300px; align-items: start; gap: 24px; }
+.overviewRecent { min-width: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); overflow: hidden; }
+.overviewRecent > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 24px; border-bottom: 1px solid var(--border); }
+.overviewRecent > header > a { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; font-size: 11px; color: var(--primary); }
+.overviewRecentRow { display: flex; align-items: center; gap: 13px; width: 100%; min-width: 0; padding: 18px 24px; border: 0; border-bottom: 1px solid var(--border); background: transparent; color: var(--text-secondary); text-align: left; }
+.overviewRecentRow:last-child { border-bottom: 0; }
+.overviewRecentRow:hover { background: var(--bg-soft); }
+.overviewRecentIcon { display: grid; place-items: center; width: 38px; height: 38px; flex-shrink: 0; border-radius: 10px; background: var(--bg-soft); color: var(--text-secondary); }
+.overviewRecentIcon.is-running { color: var(--info); background: var(--info-soft); }
+.overviewRecentIcon.is-completed { color: var(--success); background: var(--success-soft); }
+.overviewRecentIcon.is-failed { color: var(--danger); background: var(--danger-soft); }
+.overviewRecentCopy { display: grid; gap: 5px; min-width: 0; flex: 1; }
+.overviewRecentCopy strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--text-primary); font-size: 12px; font-weight: 500; line-height: 1.7; overflow-wrap: anywhere; }
+.overviewRecentCopy small { color: var(--text-muted); font-size: 10px; }
+.overviewRecentState { flex-shrink: 0; font-size: 10px; color: var(--text-secondary); }
+.overviewRecentState.is-running { color: var(--info); }
+.overviewRecentState.is-completed { color: var(--success); }
+.overviewRecentState.is-failed { color: var(--danger); }
+.overviewEmpty { display: grid; justify-items: center; gap: 12px; min-height: 235px; padding: 30px; text-align: center; color: var(--text-muted); }
+.overviewEmpty strong { font-size: 14px; font-weight: 500; color: var(--text-primary); }
+.overviewEmpty p { max-width: 330px; font-size: 12px; }
+.overviewGuide { padding: 24px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-soft); }
+.overviewGuideTop { display: flex; align-items: center; justify-content: space-between; color: var(--primary); }
+.overviewGuide h2 { margin: 16px 0 23px; color: var(--text-primary); font-size: 21px; font-weight: 550; line-height: 1.5; letter-spacing: -.5px; }
+.overviewGuide ol { display: grid; gap: 23px; padding: 0; margin: 0 0 24px; list-style: none; }
+.overviewGuide li { display: flex; align-items: flex-start; gap: 14px; }
+.overviewGuide li > span { padding-top: 2px; color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.overviewGuide li strong { color: var(--text-primary); font-size: 12px; font-weight: 550; }
+.overviewGuide li p { margin-top: 5px; color: var(--text-secondary); font-size: 11px; line-height: 1.7; }
+.overviewGuide > a { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 11px; color: var(--primary); }
+@media (max-width: 1280px) {
+  .overviewMetrics { gap: 12px; }
+  .overviewMetric { padding: 17px; }
+  .overviewMetric > p { font-size: 10px; }
+  .overviewMetric > p > svg { display: none; }
+  .overviewFormats > button { flex-direction: column; }
+  .overviewColumns { grid-template-columns: minmax(0,1fr) 270px; gap: 18px; }
+}
+@media (max-width: 1080px) {
+  .overviewMetrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .overviewColumns { grid-template-columns: 1fr; }
+  .overviewGuide ol { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .overviewGuide h2 br { display: none; }
+  .overviewRecentState { max-width: 125px; }
+}
+@media (max-width: 760px) {
+  .studioOverview { gap: 20px; }
+  .overviewMetric { padding: 16px; }
+  .overviewMetric > div { font-size: 11px; }
+  .overviewMetric > strong { margin-top: 13px; font-size: 29px; }
+  .overviewMetric > p { font-size: 10px; line-height: 1.6; }
+  .overviewLaunch { padding: 20px; }
+  .overviewStepHint { display: none; }
+  .overviewFormats { grid-template-columns: 1fr; gap: 10px; }
+  .overviewFormats > button { flex-direction: row; align-items: center; padding: 17px 14px; gap: 13px; }
+  .overviewFormatCopy { gap: 5px; padding-right: 10px; }
+  .overviewFormatCopy > span { min-height: 0; max-width: none; }
+  .overviewFormatArrow { position: static; margin-left: auto; width: 15px; }
+  .overviewFormatIcon { width: 38px; height: 38px; flex-basis: 38px; }
+  .overviewRecent > header { padding: 20px; }
+  .overviewRecentRow { padding: 17px 18px; flex-wrap: wrap; }
+  .overviewRecentCopy { flex-basis: calc(100% - 65px); }
+  .overviewRecentState { margin-left: 51px; flex: 1; max-width: none; }
+  .overviewGuide ol { grid-template-columns: 1fr; gap: 20px; }
+}
+@media (max-width: 359px) {
+  .overviewMetrics { gap: 8px; }
+  .overviewMetric { padding: 12px; }
+  .overviewMetric > div > svg { width: 15px; }
+  .overviewMetric > div { font-size: 10px; gap: 5px; }
+  .overviewFormatCopy strong { font-size: 13px; }
+}

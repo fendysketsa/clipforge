@@ -1,0 +1,44 @@
+{
+  "checked_at": "2026-11-20T17:09:46.728340+00:00",
+  "archived": {
+    "9aae9796b57a4121880809d317a1014b": "backend/data/rejected_uploads/youtube/9aae9796b57a4121880809d317a1014b.json",
+    "9332975dac33445aa9d6e9635e8633ae": "backend/data/rejected_uploads/youtube/9332975dac33445aa9d6e9635e8633ae.json",
+    "c62a3a771edf47549916f9ae4a613349": "backend/data/rejected_uploads/youtube/c62a3a771edf47549916f9ae4a613349.json"
+  },
+  "deleted_upload_ids": [
+    "9332975dac33445aa9d6e9635e8633ae",
+    "9aae9796b57a4121880809d317a1014b",
+    "c62a3a771edf47549916f9ae4a613349"
+  ],
+  "decisions": [
+    {
+      "upload_id": "9aae9796b57a4121880809d317a1014b",
+      "title": "Apa Kabar? Aku Baru Turun Kapal: Cerita Penumpang Setengah Mati",
+      "decision": "DROP_SOURCE",
+      "reason": "confirmed_content_id_claim",
+      "media_already_removed": true,
+      "remote_id": ""
+    },
+    {
+      "upload_id": "9332975dac33445aa9d6e9635e8633ae",
+      "title": "Rencong, Senjata Wanita untuk Pertahanan Dekat – Curd Nyakdin #Islam #Shorts",
+      "decision": "DROP_SOURCE",
+      "reason": "confirmed_content_id_claim",
+      "media_already_removed": true,
+      "remote_id": ""
+    },
+    {
+      "upload_id": "c62a3a771edf47549916f9ae4a613349",
+      "title": "Apa yang membuat 30 tahun masih lahir ulama? #Islam #Shorts",
+      "decision": "DROP_SOURCE",
+      "reason": "confirmed_content_id_claim",
+      "media_already_removed": true,
+      "remote_id": ""
+    }
+  ],
+  "local_queue_records_removed": 3,
+  "remote_mutations": 0,
+  "verified_upload_identities_preserved": true,
+  "held_after": 0,
+  "attention_worker_running": true
+}

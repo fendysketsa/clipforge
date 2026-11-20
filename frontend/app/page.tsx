@@ -1,11 +1,14 @@
 "use client";
 
+import dynamic from "next/dynamic";
+import { StudioOverview } from "./_components/StudioOverview";
 import { CronActivity } from "./_components/CronActivity";
-import { ConnectionsPanel } from "./_components/ConnectionsPanel";
-import { FacebookWorkspace } from "./_components/FacebookWorkspace";
+const ConnectionsPanel = dynamic(() => import("./_components/ConnectionsPanel").then(module => module.ConnectionsPanel), { loading: () => <div className="studioPanelLoading" role="status">Memuat panel…</div> });
+const AIOfficePanel = dynamic(() => import("./_components/AIOfficePanel").then(module => module.AIOfficePanel), { loading: () => <div className="studioPanelLoading" role="status">Memuat Kantor AI…</div> });
+const FacebookWorkspace = dynamic(() => import("./_components/FacebookWorkspace").then(module => module.FacebookWorkspace), { loading: () => <div className="studioPanelLoading" role="status">Memuat Facebook Studio…</div> });
 import { UploadQueuePanel } from "./_components/UploadQueuePanel";
 import { STUDIO_VIEWS, studioViewFromHash, type StudioView } from "../lib/workspaceNavigation";
-import { ArrowRight, Clapperboard, Film, UploadCloud, Activity } from "lucide-react";
+import { ArrowRight, Clapperboard } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
@@ -96,16 +99,16 @@ import type {
   YouTubeConfig,
   YouTubeUploadJob,
 } from "../types/clip.type";
-import { ControlPanel } from "./_components/ControlPanel";
+const ControlPanel = dynamic(() => import("./_components/ControlPanel").then(module => module.ControlPanel), { loading: () => <div className="studioPanelLoading" role="status">Memuat panel…</div> });
 import { BrowserTaskIndicator } from "./_components/BrowserTaskIndicator";
 import { DeleteAllToast } from "./_components/DeleteAllToast";
-import { HistorySection } from "./_components/HistorySection";
+const HistorySection = dynamic(() => import("./_components/HistorySection").then(module => module.HistorySection), { loading: () => <div className="studioPanelLoading" role="status">Memuat panel…</div> });
 import { OutputWorkspace } from "./_components/OutputWorkspace";
 import { QuickStartCard } from "./_components/QuickStartCard";
-import { ResultsSection } from "./_components/ResultsSection";
+const ResultsSection = dynamic(() => import("./_components/ResultsSection").then(module => module.ResultsSection), { loading: () => <div className="studioPanelLoading" role="status">Memuat panel…</div> });
 import { StatusPanel } from "./_components/StatusPanel";
 import { Topbar } from "./_components/Topbar";
-import { ViralAnalysisResults } from "./_components/ViralAnalysisResults";
+const ViralAnalysisResults = dynamic(() => import("./_components/ViralAnalysisResults").then(module => module.ViralAnalysisResults), { loading: () => <div className="studioPanelLoading" role="status">Memuat panel…</div> });
 import {articleText, articleFilmText, hypitStoryBody, isArticleFilmPrompt, isArticlePresenterPrompt, isHypitAutoPrompt, isHypitQuickPrompt, prepareStoryInput, promptDurationSeconds, type StoryInputFormat} from "../lib/storyInput";
 
 const isProcessJob = (item: ClipJob | null) =>
@@ -204,7 +207,11 @@ export default function HomePage() {
   const [activeJob, setActiveJob] = useState<ClipJob | null>(null);
   const [job, setJob] = useState<ClipJob | null>(null);
   const [jobs, setJobs] = useState<ClipJob[]>([]);
-  const [studioView, setStudioView] = useState<StudioView>("create");
+  const [hasOpenedCreate, setHasOpenedCreate] = useState(false);
+  const [dataReady, setDataReady] = useState({ jobs: false, youtube: false, tiktok: false });
+  const [overviewReady, setOverviewReady] = useState(false);
+  const [dataError, setDataError] = useState("");
+  const [studioView, setStudioView] = useState<StudioView>("overview");
   useEffect(() => {
     const syncView = () => {
       setStudioView(studioViewFromHash(window.location.hash));
@@ -224,6 +231,7 @@ export default function HomePage() {
       window.removeEventListener("clipforge:open-results", openResults);
     };
   }, []);
+  useEffect(() => { if (studioView === "create") setHasOpenedCreate(true); }, [studioView]);
   const [youtubeConfig, setYoutubeConfig] = useState<YouTubeConfig | null>(null);
   const [youtubeUploads, setYoutubeUploads] = useState<YouTubeUploadJob[]>([]);
   const [tiktokConfig, setTiktokConfig] = useState<TikTokConfig | null>(null);
@@ -389,6 +397,7 @@ export default function HomePage() {
     }
     unreportedFailures.forEach((item) => reportedFailureIds.current.add(item.id));
     setJobs(nextJobs);
+    setDataReady(current => ({ ...current, jobs: true }));
     return nextJobs;
   }, [activeJobId]);
 
@@ -396,6 +405,7 @@ export default function HomePage() {
     const [config, uploads] = await Promise.all([getYouTubeConfig(), getYouTubeUploads()]);
     setYoutubeConfig(config);
     setYoutubeUploads(uploads);
+    setDataReady(current => ({ ...current, youtube: true }));
     return uploads;
   }, []);
 
@@ -403,6 +413,7 @@ export default function HomePage() {
     const [config, uploads] = await Promise.all([getTikTokConfig(), getTikTokUploads()]);
     setTiktokConfig(config);
     setTiktokUploads(uploads);
+    setDataReady(current => ({ ...current, tiktok: true }));
     return uploads;
   }, []);
 
@@ -424,6 +435,7 @@ export default function HomePage() {
     setIsRefreshingData(true);
     try {
       await Promise.all([loadJobs(), loadYouTubeUploads(), loadTikTokUploads(), loadCronSchedule()]);
+      setDataError(""); setOverviewReady(true);
       if (activeJobId) {
         const nextJob = await getJob(activeJobId).catch(() => null);
         if (nextJob) {
@@ -433,6 +445,7 @@ export default function HomePage() {
       }
       toast.success("Data job, riwayat, dan klip sudah disinkronkan");
     } catch (syncError) {
+      setDataError("Sebagian status belum dapat diperbarui.");
       toast.error(syncError instanceof Error ? syncError.message : "Gagal sinkronisasi data");
     } finally {
       setIsRefreshingData(false);
@@ -440,10 +453,13 @@ export default function HomePage() {
   }, [activeJobId, isRefreshingData, loadCronSchedule, loadJobs, loadTikTokUploads, loadYouTubeUploads]);
 
   useEffect(() => {
-    loadJobs().catch(() => undefined);
-    loadYouTubeUploads().catch(() => undefined);
-    loadTikTokUploads().catch(() => undefined);
-    loadCronSchedule().catch(() => undefined);
+    let current = true;
+    void Promise.allSettled([loadJobs(), loadYouTubeUploads(), loadTikTokUploads(), loadCronSchedule()]).then(results => {
+      if (!current) return;
+      setOverviewReady(true);
+      setDataError(results.some(result => result.status === "rejected") ? "Sebagian status belum dapat dimuat." : "");
+    });
+    return () => { current = false; };
   }, [loadCronSchedule, loadJobs, loadTikTokUploads, loadYouTubeUploads]);
 
   useEffect(() => {
@@ -453,10 +469,12 @@ export default function HomePage() {
       if (refreshing || document.hidden) return;
       refreshing = true;
       try {
-        const [jobResult, uploadResult] = await Promise.allSettled([
+        const [jobResult, uploadResult, tiktokResult, cronResult] = await Promise.allSettled([
           loadJobs(), loadYouTubeUploads(), loadTikTokUploads(), loadCronSchedule(),
         ]);
-        if (cancelled || jobResult.status !== "fulfilled") return;
+        if (cancelled) return;
+        setDataError([jobResult, uploadResult, tiktokResult, cronResult].some(result => result.status === "rejected") ? "Sebagian status belum dapat diperbarui." : "");
+        if (jobResult.status !== "fulfilled") return;
         const nextJobs = jobResult.value;
         const nextUploads = uploadResult.status === "fulfilled" ? uploadResult.value : [];
         setJob((current) => {
@@ -1603,7 +1621,7 @@ export default function HomePage() {
   }, [cronSchedule, isTogglingCron]);
 
   return (
-    <main className="shell">
+    <main className="shell" id="workspace-content" tabIndex={-1}>
       <BrowserTaskIndicator
         job={activityJob}
       />
@@ -1616,19 +1634,18 @@ export default function HomePage() {
         onToggleCron={handleToggleCron}
       />
 
-      <header className="studioPageHeading">
+      {studioView !== "facebook" ? <header className="studioPageHeading">
         <div><span>RUANG PRODUKSI ANDA</span><h1>{STUDIO_VIEWS[studioView].title}</h1><p>{STUDIO_VIEWS[studioView].description}</p></div>
         {studioView !== "create" ? <a className="studioNewVideo" href="/#quick-start-title"><Clapperboard size={16} /> Buat video <ArrowRight size={15} /></a> : null}
-      </header>
+      </header> : null}
 
-      {studioView === "create" ? <section className="studioSummary" aria-label="Ringkasan workspace">
-        <a href="/#history"><span><Activity size={16} /> Sedang diproses</span><strong>{jobs.filter(item => item.status === "running" || item.status === "queued").length}<small>proses</small></strong><span>Lihat aktivitas produksi <ArrowRight size={13} /></span></a>
-        <a href="/#results"><span><Film size={16} /> Hasil tersedia</span><strong>{jobs.reduce((sum,item)=>sum+item.clips.length,0)}<small>video</small></strong><span>Siap untuk ditinjau <ArrowRight size={13} /></span></a>
-        <a href="/#automation"><span><UploadCloud size={16} /> Antrean upload</span><strong>{[...youtubeUploads,...tiktokUploads].filter(item=>item.status === "queued" || item.status === "running").length}<small>upload</small></strong><span>YouTube & TikTok <ArrowRight size={13} /></span></a>
-        <a href="/#automation"><span><Clapperboard size={16} /> Target cron hari ini</span><strong>{cronSchedule?.daily_plan?.total_uploaded ?? "—"}<small>/ {cronSchedule?.daily_plan?.total_target ?? 23}</small></strong><span>{cronSchedule?.enabled ? "Otomasi aktif" : cronSchedule ? "Otomasi dijeda" : "Membaca status"} <ArrowRight size={13} /></span></a>
-      </section> : null}
+      {studioView === "overview" ? <StudioOverview jobs={jobs} youtube={youtubeUploads} tiktok={tiktokUploads}
+        schedule={cronSchedule} ready={overviewReady} dataReady={dataReady} error={dataError}
+        onSelectJob={item => { handleSelectHistoryJob(item); window.location.hash = item.clips.length ? "results" : "history"; }}
+        onCreate={mode => { handleClipModeChange(mode); window.location.hash = "quick-start-title"; }} /> : null}
 
       {studioView === "automation" ? <div className="studioAutomation">
+        <AIOfficePanel />
         <CronActivity schedule={cronSchedule} receivedAt={cronReceivedAt} refreshFailed={cronRefreshFailed} />
         <UploadQueuePanel youtube={youtubeUploads} tiktok={tiktokUploads} />
       </div> : null}
@@ -1644,7 +1661,7 @@ export default function HomePage() {
       /> : null}
 
 
-      <div className="studioCreateColumns" hidden={studioView !== "create"}>
+      {hasOpenedCreate || studioView === "create" ? <div className="studioCreateColumns" hidden={studioView !== "create"}>
         <div className="studioCreateMain">
       <QuickStartCard
         url={url}
@@ -1727,7 +1744,7 @@ export default function HomePage() {
           onAiEnabledChange={handleAiEnabledChange}
         />
         </aside>
-      </div>
+      </div> : null}
 
 
       {studioView === "create" && job?.request.review_only && job.candidates.length ? (
@@ -1737,7 +1754,7 @@ export default function HomePage() {
         />
       ) : null}
 
-      <div hidden={studioView !== "results" && studioView !== "history"}>
+      {studioView === "results" || studioView === "history" ? <div>
       {studioView === "results" && jobs.some(item => item.clips.length) ? <label className="studioResultPicker"><span>Hasil dari produksi</span><select aria-label="Pilih hasil produksi" value={job?.clips.length ? job.id : ""} onChange={event => {const selected = jobs.find(item => item.id === event.target.value);if (selected) handleSelectHistoryJob(selected);}}>{jobs.filter(item => item.clips.length).map(item => <option key={item.id} value={item.id}>{item.source_title || `Produksi ${item.id.slice(0,8)}`} · {item.clips.length} video</option>)}</select></label> : null}
       <OutputWorkspace activeView={studioView === "history" ? "history" : "results"}>
         <ResultsSection
@@ -1791,7 +1808,7 @@ export default function HomePage() {
           onToggleJobSelection={handleToggleHistoryJobSelection}
         />
       </OutputWorkspace>
-      </div>
+      </div> : null}
     </main>
   );
 }

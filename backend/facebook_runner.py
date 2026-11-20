@@ -29,6 +29,7 @@ class Runner:
         self.reconcile=reconcile
         self.cleanup=cleanup
         self.stop=threading.Event();self.lock=threading.Lock();self.activity_lock=threading.Lock();self.thread=None
+        self.start_lock=threading.Lock()
 
     def state(self):
         data=self.store()
@@ -36,6 +37,7 @@ class Runner:
             result=policy.snapshot(data.data.get('autopilot'),data.data.get('autopilot_runs',{}),
                 list(data.data['uploads'].values()),data.data.get('activity'),monetization=data.data.get('monetization'))
             result.update(scheduler_running=bool(self.thread and self.thread.is_alive()),
+                series_catalog=originals.series_catalogue(),
                 heartbeat=data.data.get('autopilot_heartbeat'),message=data.data.get('autopilot_message'),
                 activity_error=data.data.get('activity_error'))
             return result
@@ -58,7 +60,7 @@ class Runner:
         data=self.store()
         with data.lock:return policy.config(data.data.get('autopilot'))['enabled'] and not self.stop.is_set()
 
-    def request_original(self,request_id,topic=None):
+    def request_original(self,request_id,topic=None,series=None):
         """Reserve one new source; repeated HTTP requests keep the same identity."""
         key='requested:'+request_id
         data=self.store()
@@ -78,16 +80,18 @@ class Runner:
                     raise ValueError('Pembatasan Facebook masih aktif; publikasi ditahan.')
                 if any(age(u.get('created_at'))<3*3600 for u in data.data['uploads'].values()):
                     raise ValueError('Jeda tiga jam antarunggahan Facebook belum selesai.')
-                if topic is not None and topic not in {r[0] for r in originals.TOPICS}:
+                series=series or policy.config(data.data.get('autopilot'))['series']
+                available=originals.topic_keys(series)
+                if topic is not None and topic not in available:
                     raise ValueError('Topik animasi tidak tersedia.')
                 seed=key
                 if topic is None:
                     recent={r.get('topic') for r in sorted(rows.values(),key=lambda r:r.get('created_at',''))[-7:]}
-                    topic=creative.choose_topic(seed,[r[0] for r in originals.TOPICS],recent)
-                plan=originals.plan(seed,'reel',topic=topic)
+                    topic=creative.choose_topic(seed,available,recent)
+                plan=originals.plan(seed,'reel',topic=topic,series=series)
                 current=policy.local_now();start,end=policy.week(current)
                 row=dict(key=key,kind='reel',due_at=current.isoformat(),day=current.date().isoformat(),
-                    week_start=start,week_end=end,due=True,content_seed=seed,title=plan['title'],topic=topic,
+                    week_start=start,week_end=end,due=True,content_seed=seed,title=plan['title'],topic=topic,series=series,
                     status='reserved',job_id=uuid.uuid4().hex,created_at=now(),updated_at=now(),
                     progress_percent=0,message='Reel animasi baru dicatat; menunggu worker Facebook.')
                 rows[key]=row;data.save()
@@ -113,7 +117,7 @@ class Runner:
             try:
                 if len(path.stem)!=32 or uuid.UUID(path.stem).hex!=path.stem:continue
                 request=json.loads(path.read_text())
-                row=self.request_original(path.stem,request.get('topic'))
+                row=self.request_original(path.stem,request.get('topic'),request.get('series'))
             except ValueError as exc:
                 self.note(str(exc));return
             # Reservation is already durable. If interrupted here, tick()
@@ -185,7 +189,7 @@ class Runner:
                 source_plan=row.get('authored_plan')
                 if not source_plan:
                     with data.lock:previous=[r['script_sha256'] for r in data.data['autopilot_runs'].values() if r.get('script_sha256')]
-                    source_plan=originals.author(originals.plan(row['content_seed'],row['kind'],topic=row.get('topic')),previous)
+                    source_plan=originals.author(originals.plan(row['content_seed'],row['kind'],topic=row.get('topic'),series=row.get('series','digital')),previous)
                     self.update(key,authored_plan=source_plan,script_sha256=source_plan['script_sha256'],title=source_plan['title'])
                 if row.get('repair_attempted'):source_plan.update(repair_attempted=True,caption_font_size=58)
                 media=originals.render(source_plan,folder,progress)
@@ -320,11 +324,12 @@ class Runner:
             with api_job_capacity(self.api) as available:
                 if not available:self.note('Menunggu kapasitas produksi; maksimal dua proses bersamaan.');return
                 recent={r.get('topic') for r in sorted(runs.values(),key=lambda r:r.get('created_at',''))[-7:]}
-                topic=creative.choose_topic(slot['content_seed'],[row[0] for row in originals.TOPICS],recent)
-                content=originals.plan(slot['content_seed'],slot['kind'],topic=topic)
+                series=policy.config(data.data.get('autopilot'))['series']
+                topic=creative.choose_topic(slot['content_seed'],originals.topic_keys(series),recent)
+                content=originals.plan(slot['content_seed'],slot['kind'],topic=topic,series=series)
                 with data.lock:
                     if slot['key'] in data.data['autopilot_runs']:return
-                    row={**slot,'title':content['title'],'topic':content['topic'],'status':'reserved','job_id':uuid.uuid4().hex,
+                    row={**slot,'title':content['title'],'topic':content['topic'],'series':series,'status':'reserved','job_id':uuid.uuid4().hex,
                          'created_at':now(),'updated_at':now(),'progress_percent':0,'message':'Slot Facebook dicatat; menyiapkan demonstrasi asli.'}
                     data.data['autopilot_runs'][slot['key']]=row;data.save()
                 self.process(slot['key'])
@@ -339,13 +344,16 @@ class Runner:
             self.stop.wait(30)
 
     def start(self):
-        data=self.store()
-        with data.lock:
-            data.data.setdefault('autopilot',policy.config())
-            data.data.setdefault('autopilot_runs',{})
-            data.save()
-        if not self.thread or not self.thread.is_alive():
+        with self.start_lock:
+            if self.thread and self.thread.is_alive():
+                return False
+            data=self.store()
+            with data.lock:
+                data.data.setdefault('autopilot',policy.config())
+                data.data.setdefault('autopilot_runs',{})
+                data.save()
             self.stop.clear();self.thread=threading.Thread(target=self.loop,daemon=True,name='facebook-autopilot');self.thread.start()
+            return True
 
 
 from contextlib import contextmanager

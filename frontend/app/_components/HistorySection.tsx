@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from "react";
 import { ArrowUpRight, CalendarClock, CheckCheck, ChevronLeft, ChevronRight, Clock3, Film, History, Link2, Music2, MonitorPlay, Search, Smartphone, StopCircle, Trash2, Youtube } from "lucide-react";
+import { sourceRecoveryForJob } from "../../lib/sourceRecovery";
 import { API_BASE } from "../../lib/apiClient";
 import { statusCopy, statusIcon } from "../../lib/constants";
 import { formatDuration, jobElapsedSeconds } from "../../lib/utils";
@@ -309,7 +310,8 @@ export function HistorySection({
       </div>
       <div className="jobList" data-layout="history-four-columns">
         {visibleJobs.map((item) => {
-          const Icon = statusIcon[item.status];
+          const recovery = sourceRecoveryForJob(item, jobs);
+          const Icon = recovery ? statusIcon[recovery.status] : statusIcon[item.status];
           const count = item.clips.length ? `${item.clips.length} klip` : `${item.candidates.length} kandidat`;
           const canSelectForDelete = item.status !== "queued" && item.status !== "running";
           const canStop = item.status === "queued" || item.status === "running";
@@ -355,7 +357,7 @@ export function HistorySection({
 
           return (
             <article
-              className={`jobRow jobRow--${item.status} ${isSelected ? "selected" : ""}`}
+              className={`jobRow jobRow--${item.status}${recovery ? " hasSourceRecovery" : ""} ${isSelected ? "selected" : ""}`}
               key={item.id}
               style={{ "--job-progress": `${item.status === "completed" ? 100 : progressPercent}%` } as CSSProperties}
             >
@@ -368,7 +370,7 @@ export function HistorySection({
                   onChange={() => onToggleJobSelection(item.id)}
                 />
               ) : null}
-              <button className="jobRowMain" type="button" onClick={() => onSelectJob(item)} aria-label={`Buka ${sourceLabel(item)}`}>
+              <button className="jobRowMain" type="button" onClick={() => onSelectJob(recovery || item)} aria-label={`Buka ${recovery ? "pemulihan " : ""}${sourceLabel(item)}`}>
                 <div className={`jobCardPreview${thumbnail ? " hasThumbnail" : ""}`}>
                   {thumbnail ? <img src={`${API_BASE}${thumbnail}`} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : null}
                   <div className="jobCardPreviewFallback"><FormatIcon size={32} strokeWidth={1.3} /><span>{format.title}</span></div>
@@ -377,11 +379,11 @@ export function HistorySection({
                 </div>
                 <div className="jobCardBody">
                 <div className="jobRowTop">
-                  <span className={`jobRow-status status-${item.status}`}>
+                  <span className={`jobRow-status status-${recovery?.status || item.status}`}>
                     <span className="jobRow-statusIcon">
-                      <Icon className={item.status === "running" ? "spin" : ""} size={15} />
+                      <Icon className={(recovery?.status || item.status) === "running" ? "spin" : ""} size={15} />
                     </span>
-                    <span className="jobRow-statusLabel">{statusCopy[item.status]}</span>
+                    <span className="jobRow-statusLabel">{recovery ? recovery.status === "completed" ? "Sumber pulih" : "Sedang dipulihkan" : statusCopy[item.status]}</span>
                     {isProcessing ? <span className="jobRow-statusPercent">{progressPercent}%</span> : null}
                   </span>
                   <span className="jobClipCount"><Film size={13} />{count}</span>
@@ -407,7 +409,10 @@ export function HistorySection({
                         </div>
                     </div>
                     ) : null}
-                    {item.error ? <p className="jobCardError" title={item.error}>{item.error}</p> : null}
+                    {recovery ? <div className="jobSourceRecovery"><strong>{recovery.status === "completed" ? "Percobaan berikutnya sudah menghasilkan video." : "Sumber yang sama sedang diproses kembali."}</strong>
+                      <p>{recovery.status === "completed" ? "Buka hasil untuk meninjau kualitas dan status upload." : recovery.progress_detail || "Sistem melanjutkan pemulihan; Anda tidak perlu membuat job baru."}</p>
+                      <small>{recovery.status === "completed" ? `${recovery.clips.length} hasil tersedia` : `${Math.round(recovery.progress_percent || 0)}% · ${statusCopy[recovery.status]}`}</small>
+                    </div> : item.error ? <p className="jobCardError" title={item.error}>{item.error}</p> : null}
                     {item.director_recovery?.summary ? (
                       <div className="jobDirectorRecovery">
                         <strong>{item.director_recovery.outcome === "source_replaced" ? "Sumber pengganti diproses" : "Rencana sutradara"}</strong>
@@ -468,9 +473,10 @@ export function HistorySection({
                     </div>
                   ) : null}
                 </div>
-                <span className="jobOpenHint"><span>{isProcessing ? "Lihat progres" : "Buka hasil video"}</span><ArrowUpRight size={16} /></span>
+                <span className="jobOpenHint"><span>{recovery ? "Lihat pemulihan sumber" : isProcessing ? "Lihat progres" : item.status === "failed" ? "Lihat detail kegagalan" : "Buka hasil video"}</span><ArrowUpRight size={16} /></span>
                 </div>
               </button>
+              {recovery && item.error ? <details className="jobPreviousFailure"><summary>Rincian percobaan sebelumnya</summary><p>{item.error}</p></details> : null}
               {canStop ? (
                 <button
                   className="uiButton uiButton--ghostDanger stopJobRowButton"

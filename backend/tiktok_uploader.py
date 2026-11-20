@@ -1343,7 +1343,7 @@ def caption_prefix_matches_are_other_sources(page, caption: str, target_handle: 
     return len(observed) == expected_count
 
 
-def verify_remote_post(page, video_url: str, caption: str, target_handle: str, visibility: str):
+def verify_remote_post(page, video_url: str, caption: str, target_handle: str, visibility: str | None):
     """Verify one exact existing Studio row without selecting media or posting."""
     expected = clean_handle(target_handle)
     match = re.fullmatch(r'https://www\.tiktok\.com/@([\w.]+)/video/(\d{10,25})', video_url)
@@ -1371,7 +1371,7 @@ def verify_remote_post(page, video_url: str, caption: str, target_handle: str, v
             private = bool(labels & {'only me','only you','hanya saya','hanya anda','hanya kamu'})
             public = bool(labels & {'everyone','semua orang'})
             actual = 'only_you' if private and not public else 'public' if public and not private else ''
-            if actual != visibility:
+            if not actual or (visibility is not None and actual != visibility):
                 raise UploadError('Privasi posting TikTok berbeda atau belum terbaca; status lokal tidak diubah.')
             return dict(video_url=video_url, visibility=actual,
                 caption_sha256=hashlib.sha256(expected_caption.encode()).hexdigest())

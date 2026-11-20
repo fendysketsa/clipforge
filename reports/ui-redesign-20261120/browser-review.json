@@ -1,0 +1,276 @@
+{
+  "results": [
+    {
+      "view": "overview",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "headings": [
+        "Semua produksi, satu tempat."
+      ],
+      "cards": null
+    },
+    {
+      "view": "quick-start-title",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "headings": [
+        "Wujudkan ide berikutnya."
+      ],
+      "cards": null
+    },
+    {
+      "view": "history",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "headings": [
+        "Riwayat produksi"
+      ],
+      "cards": "273.5px 273.5px 273.5px 273.5px"
+    },
+    {
+      "view": "results",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "headings": [
+        "Hasil video"
+      ],
+      "cards": null
+    },
+    {
+      "view": "automation",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "headings": [
+        "Otomasi & antrean"
+      ],
+      "cards": null
+    },
+    {
+      "view": "settings",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "headings": [
+        "Koneksi platform"
+      ],
+      "cards": null
+    },
+    {
+      "view": "facebook",
+      "theme": "light",
+      "width": 1440,
+      "overflow": false,
+      "headings": [
+        "Ruang untuk karya berikutnya."
+      ],
+      "cards": null
+    },
+    {
+      "view": "overview",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "headings": [
+        "Semua produksi, satu tempat."
+      ],
+      "cards": null
+    },
+    {
+      "view": "quick-start-title",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "headings": [
+        "Wujudkan ide berikutnya."
+      ],
+      "cards": null
+    },
+    {
+      "view": "history",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "headings": [
+        "Riwayat produksi"
+      ],
+      "cards": "273.5px 273.5px 273.5px 273.5px"
+    },
+    {
+      "view": "results",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "headings": [
+        "Hasil video"
+      ],
+      "cards": null
+    },
+    {
+      "view": "automation",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "headings": [
+        "Otomasi & antrean"
+      ],
+      "cards": null
+    },
+    {
+      "view": "settings",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "headings": [
+        "Koneksi platform"
+      ],
+      "cards": null
+    },
+    {
+      "view": "facebook",
+      "theme": "dark",
+      "width": 1440,
+      "overflow": false,
+      "headings": [
+        "Ruang untuk karya berikutnya."
+      ],
+      "cards": null
+    },
+    {
+      "view": "overview",
+      "width": 1280,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "quick-start-title",
+      "width": 1280,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "history",
+      "width": 1280,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "results",
+      "width": 1280,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "automation",
+      "width": 1280,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "settings",
+      "width": 1280,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "facebook",
+      "width": 1280,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "overview",
+      "width": 390,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "quick-start-title",
+      "width": 390,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "history",
+      "width": 390,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "results",
+      "width": 390,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "automation",
+      "width": 390,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "settings",
+      "width": 390,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "facebook",
+      "width": 390,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "overview",
+      "width": 320,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "quick-start-title",
+      "width": 320,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "history",
+      "width": 320,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "results",
+      "width": 320,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "automation",
+      "width": 320,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "settings",
+      "width": 320,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "facebook",
+      "width": 320,
+      "overflow": false,
+      "overflowNodes": []
+    },
+    {
+      "view": "source-history",
+      "width": 320,
+      "overflow": false
+    }
+  ],
+  "errors": []
+}

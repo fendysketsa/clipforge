@@ -1,0 +1,43 @@
+{
+  "metrics": [
+    {
+      "port": 3000,
+      "js": 217010,
+      "css": 53687,
+      "jsRequests": 8
+    },
+    {
+      "port": 3100,
+      "js": 193257,
+      "css": 42610,
+      "jsRequests": 8
+    }
+  ],
+  "grids": [
+    {
+      "width": 1440,
+      "tracks": "273.5px 273.5px 273.5px 273.5px",
+      "overflow": false
+    },
+    {
+      "width": 1280,
+      "tracks": "233.5px 233.5px 233.5px 233.5px",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "tracks": "354px",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "tracks": "294px",
+      "overflow": false
+    }
+  ],
+  "pageErrors": [],
+  "historyFilters": "passed",
+  "draftPreserved": "passed",
+  "mobileFocusReturn": "passed",
+  "videoPreload": "none"
+}

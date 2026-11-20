@@ -20,10 +20,25 @@ import type {
 import { createQueueSubmitter, uploadApiBases } from "./queueSubmission";
 import type { LongProductionSnapshot } from "./longAutomation";
 import { createReadRequest } from "./readRequest";
+import type { AIOfficeSnapshot } from "./aiOffice";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8010";
 const CLIENT_API_BASE = API_BASE;
 const readRequest = createReadRequest((...args) => fetch(...args));
+
+export const getAIOffice = async (): Promise<AIOfficeSnapshot> => {
+  const result = await readRequest<AIOfficeSnapshot>(`${CLIENT_API_BASE}/api/ai-office`, "Status Kantor AI belum tersedia", 10_000);
+  if (result.version !== 1 || !Array.isArray(result.departments) || !Array.isArray(result.tasks)) {
+    throw new Error("Status Kantor AI belum kompatibel dengan tampilan ini");
+  }
+  return result;
+};
+
+export const requestAIOfficeCheck = async (): Promise<{ accepted: boolean; message: string }> => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/ai-office/run`, { method: "POST", signal: AbortSignal.timeout(10_000) });
+  if (!response.ok) throw new Error(await responseErrorMessage(response, "Koordinator belum dapat menerima pemeriksaan"));
+  return response.json();
+};
 
 export const getLongProductionStatus = async (): Promise<LongProductionSnapshot> => {
   const response = await fetch(`${CLIENT_API_BASE}/api/automation/viral-cc/long-production`, {
@@ -692,3 +707,13 @@ export const regenerateStoryboardKeyframe = async (input: {
 };
 
 export const getOutputUrl = (path: string) => `${API_BASE}${path}`;
+
+
+export const getUploadAttention = () => readRequest<import("./studioQueue").UploadAttentionSnapshot>(
+  `${CLIENT_API_BASE}/api/uploads/attention`, "Status penanganan otomatis belum dapat dimuat");
+
+export const requestUploadAttentionCheck = async (): Promise<{ accepted: boolean; message: string }> => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/uploads/attention/run`, { method: "POST" });
+  if (!response.ok) throw new Error("Pemeriksaan otomatis belum dapat diminta. Coba sinkronkan kembali.");
+  return response.json();
+};

@@ -1,0 +1,39 @@
+{
+  "checked_at": "2026-11-20T17:30:37.787506+00:00",
+  "source_release_id": "b87a8648c90feee7f021c94aa3da8bf9dd48b11a11065a9d18b0ee3157e05f6d",
+  "health": {
+    "status": "ok"
+  },
+  "office": {
+    "http_status": 404
+  },
+  "schedule": {
+    "enabled": true,
+    "scheduler_running": true,
+    "active_run_id": "40eb9df166e04c77a3d0790f2690e2c0",
+    "activity": {
+      "state": "running",
+      "label": "Cron sedang bekerja",
+      "detail": "1 kandidat terurut; mulai mengolah sumber terbaik",
+      "progress_percent": 18,
+      "stage": "selection",
+      "updated_at": "2026-11-20T17:26:57.097353+00:00",
+      "source_title": null
+    }
+  },
+  "jobs": [
+    {
+      "id": "12787506638e49488e705458c700bdc5",
+      "status": "running",
+      "progress_stage": "render"
+    }
+  ],
+  "youtube": [],
+  "tiktok": [],
+  "attention": {
+    "version": 1,
+    "enabled": true,
+    "worker_running": true,
+    "rejected_upload_cleanup_version": null
+  }
+}

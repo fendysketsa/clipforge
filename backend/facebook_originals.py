@@ -24,6 +24,8 @@ from PIL import Image, ImageDraw, ImageFont
 import facebook_strategy as strategy
 import facebook_creative as creative
 import facebook_motion as motion
+import facebook_motlab as motlab
+import facebook_education as education
 from audio_mix import normalize_narration
 import long_video_qc as qc
 from llm import AIConfig,chat_completion,extract_json
@@ -106,7 +108,16 @@ TOPICS = (
 )
 
 
-def plan(seed: str, kind='reel', *, topic=None) -> dict:
+def topic_keys(series='digital'):
+    return [row[0] for row in TOPICS] if series=='digital' else education.topic_keys(series)
+
+
+def series_catalogue():
+    return education.catalogue([dict(key=key,title=title) for key,title,*_ in TOPICS])
+
+
+def plan(seed: str, kind='reel', *, topic=None, series='digital') -> dict:
+    if series!='digital':return education.plan(seed,kind,topic,series)
     digest = hashlib.sha256(seed.encode()).hexdigest()
     selected=topic or creative.choose_topic(seed,[row[0] for row in TOPICS])
     index=next(i for i,row in enumerate(TOPICS) if row[0]==selected)
@@ -142,6 +153,7 @@ def plan(seed: str, kind='reel', *, topic=None) -> dict:
                 narration_provider='edge_neural_id-ID-ArdiNeural',example=example)
     result['creative_policy']=creative.policy(action,seed)
     result['motion_version']=motion.VERSION
+    result['render_engine']=motlab.ENGINE
     result['creative_policy'].update(first_result_preview=None,format='persistent_object_demonstration')
     result['plan_sha256']=hashlib.sha256(json.dumps(result,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     return result
@@ -159,6 +171,14 @@ def author(source_plan,previous=()):
     Missing author access may use an unused reviewed baseline, never replay it.
     """
     previous=set(previous)
+    if source_plan.get('education'):
+        education.verify_plan(source_plan)
+        result=json.loads(json.dumps(source_plan))
+        result['script_sha256']=script_identity(result)
+        if result['script_sha256'] in previous:
+            raise ValueError('Naskah edukasi identik sudah pernah diproduksi; pilih topik lain.')
+        result['authoring']='curated_education_script'
+        return result
     config=provider_config()
     plan=json.loads(json.dumps(source_plan))
     if config.get('base_url') and config.get('model'):
@@ -238,12 +258,12 @@ def audio_windows(length):
     return rows
 
 
-def voice(stages,folder,progress):
+def voice(stages,folder,progress,*,voice_name='id-ID-ArdiNeural',rate='+3%'):
     rows=[];audio=[];cursor=0.0
     for i,stage in enumerate(stages):
         progress(12+i*7,'voice',f'Membuat narasi asli {i+1}/{len(stages)}')
         path=folder/f'voice_{i}.mp3';subtitle=folder/f'voice_{i}.srt'
-        subprocess.run([sys.executable,'-m','edge_tts','--voice','id-ID-ArdiNeural','--rate=+3%',
+        subprocess.run([sys.executable,'-m','edge_tts','--voice',voice_name,'--rate='+rate,
             '--text',stage['text'],'--write-media',str(path),'--write-subtitles',str(subtitle)],
             check=True,capture_output=True,timeout=150)
         decoded=folder/f'voice_{i}.wav'
@@ -415,11 +435,21 @@ def frame(plan,t,cues):
 
 
 def render(plan,folder: Path,progress=lambda *args:None) -> Path:
+    # Persisted legacy plans keep their renderer. New plans select Motlab and
+    # stop before paid narration if its runtime is unavailable; no fallback.
+    use_motlab=plan.get('render_engine')==motlab.ENGINE
+    if plan.get('render_engine') not in (None,motlab.ENGINE):
+        raise ValueError('Engine render Facebook tidak dikenal.')
+    if use_motlab:motlab.require_motlab_runtime()
     folder.mkdir(parents=True,exist_ok=True)
     (folder/'source-plan.json').write_text(json.dumps(plan,ensure_ascii=False,indent=2))
-    narration,segments,length=voice(plan['stages'],folder,progress)
+    if plan.get('education'):
+        education.verify_plan(plan)
+        narration,segments,length=voice(plan['stages'],folder,progress,
+            voice_name=plan['narration_voice'],rate='-5%')
+    else:narration,segments,length=voice(plan['stages'],folder,progress)
     if plan.get('motion_version')==motion.VERSION:
-        plan['motion_timeline']=motion.timeline(plan,segments)
+        plan['motion_timeline']=education.timeline(plan,segments) if plan.get('education') else motion.timeline(plan,segments)
     fps=motion.FPS if plan.get('motion_version')==motion.VERSION else FPS
     audio_design=None;sounds=None
     if (plan.get('creative_policy') or {}).get('version')==creative.VERSION:
@@ -435,8 +465,13 @@ def render(plan,folder: Path,progress=lambda *args:None) -> Path:
     media=folder/'facebook_original.mp4'
     subtitle=media.with_suffix('.srt')
     subtitle.write_text('\n\n'.join(f'{i}\n{srt_time(a)} --> {srt_time(b)}\n{text}' for i,(a,b,text) in enumerate(cues,1))+'\n')
-    command=['ffmpeg','-v','error','-y','-f','rawvideo','-pix_fmt','rgb24','-s','1080x1920','-r',str(fps),
-        '-i','pipe:0','-i',str(narration)]
+    renderer_stamp=None
+    if use_motlab:
+        silent,renderer_stamp=motlab.render(plan,cues,length,folder,state,progress)
+        command=['ffmpeg','-v','error','-y','-i',str(silent),'-i',str(narration)]
+    else:
+        command=['ffmpeg','-v','error','-y','-f','rawvideo','-pix_fmt','rgb24','-s','1080x1920','-r',str(fps),
+            '-i','pipe:0','-i',str(narration)]
     graph=f'[0:v]{watermark_filter("vertical_short")}[v]'
     if sounds:
         command+=['-i',str(sounds),'-i',str(narration)]
@@ -451,12 +486,14 @@ def render(plan,folder: Path,progress=lambda *args:None) -> Path:
     log=folder/'render.log'
     try:
         with log.open('wb') as errors:
-            process=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.DEVNULL,stderr=errors)
+            process=subprocess.Popen(command,stdin=subprocess.DEVNULL if use_motlab else subprocess.PIPE,
+                stdout=subprocess.DEVNULL,stderr=errors)
             try:
-                for index in range(math.ceil(length*fps)):
-                    if index%fps==0:progress(40+int(index/(length*fps)*40),'render',f'Menggerakkan objek contoh · {index//fps}/{math.ceil(length)} detik')
-                    process.stdin.write(frame(plan,index/fps,cues).tobytes())
-                process.stdin.close()
+                if not use_motlab:
+                    for index in range(math.ceil(length*fps)):
+                        if index%fps==0:progress(40+int(index/(length*fps)*40),'render',f'Menggerakkan objek contoh · {index//fps}/{math.ceil(length)} detik')
+                        process.stdin.write(frame(plan,index/fps,cues).tobytes())
+                    process.stdin.close()
                 if process.wait(timeout=180):raise ValueError('Encoding FB gagal; lihat log render lokal.')
             finally:
                 if process.poll() is None:process.kill();process.wait()
@@ -472,13 +509,13 @@ def render(plan,folder: Path,progress=lambda *args:None) -> Path:
     subprocess.run(['ffmpeg','-v','error','-y','-ss','1.8','-i',str(media),'-frames:v','1',str(thumbnail)],check=True,timeout=30)
     sidecar=dict(title=plan['title'],text=' '.join(s['text'] for s in plan['stages']),
         source_identity=plan['seed'],narrative_arc_complete=True,original_demo=plan,
-        sound_design=audio_design,
+        sound_design=audio_design,renderer=renderer_stamp,
         facebook={'version':strategy.VERSION,'caption':plan['caption'],'watermark':watermark_metadata('vertical_short')},
         render_quality_qc={'quality_gate_passed':True,'blocking':False,'full_decode_passed':True,
                            'frame_timestamps_seconds':[s['start']+.5 for s in plan['stages']]},
         render_source_sha256=qc.sha256(folder/'source-plan.json'),media_sha256=qc.sha256(media),
         output_duration_seconds=float(probe['format']['duration']),
-        source_provenance={'kind':'authored_original_simulation','original_script_and_visuals':True,
+        source_provenance={'kind':'authored_educational_animation' if plan.get('education') else 'authored_original_simulation','original_script_and_visuals':True,
                            'third_party_video':False,'music':False,'neural_narration':True,
                            'original_sound_effects':audio_design is not None},
         growth_readiness={'measured_retention':None,'predicted_score':None,'not_a_monetization_approval':True})
@@ -489,10 +526,11 @@ def render(plan,folder: Path,progress=lambda *args:None) -> Path:
             *[cue['start']+.1 for cue in audio_design['events']]})
     if plan.get('motion_version')==motion.VERSION:
         clock=plan['motion_timeline']
+        scene=lambda t:education.scene(plan,t) if plan.get('education') else motion.scene(plan,t,state)
         sidecar['educational_motion']=dict(version=motion.VERSION,fps=fps,clock=clock,
-            component='persistent_objects_2d',labels_upright=True,
-            initial=motion.scene(plan,plan['stages'][1]['start']+.5,state),
-            result=motion.scene(plan,min(length-.5,clock['arrival']+.4),state))
+            component='character_led_education' if plan.get('education') else 'persistent_objects_2d',labels_upright=True,
+            initial=scene(plan['stages'][1]['start']+.5),
+            result=scene(min(length-.5,plan['stages'][3]['start']+.4)))
         sidecar['render_quality_qc']['frame_timestamps_seconds']=sorted({
             *sidecar['render_quality_qc']['frame_timestamps_seconds'],.5,1.1,clock['select'],
             *[clock['departure']+(clock['arrival']-clock['departure'])*q for q in (.11,.22,.5,.78,.9)],
@@ -542,12 +580,15 @@ def audit(media: Path,job_id: str,clip_url: str,*,reviewer=None,repair_attempted
             raise ValueError('Identitas media/rencana sumber berubah.')
         if plan!=sidecar.get('original_demo') or plan.get('version')!=VERSION or not plan.get('seed'):
             raise ValueError('Bukti sumber asli tidak lengkap.')
+        if plan.get('render_engine')==motlab.ENGINE:
+            motlab.verify_evidence(media.parent,sidecar.get('renderer'))
         gates['rights']=plan.get('third_party_footage') is False and plan.get('third_party_music') is False
         probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(media)],timeout=30))
         if strategy.media_issues(probe):raise ValueError('Format atau durasi FB tidak valid.')
         subprocess.run(['ffmpeg','-v','error','-xerror','-threads','1','-i',str(media),'-f','null','-'],capture_output=True,check=True,timeout=180)
         gates['media_integrity']=True
-        gates['meaning_preserved']=plan['topic'] in {row[0] for row in TOPICS}
+        if plan.get('education'):education.verify_plan(plan)
+        gates['meaning_preserved']=plan['topic'] in topic_keys(plan.get('series','digital'))
         gates['context_safe']=True
         if not all(gates.values()):raise ValueError('Gerbang bukti sumber gagal.')
         if plan.get('motion_version')==motion.VERSION:
@@ -585,7 +626,9 @@ def audit(media: Path,job_id: str,clip_url: str,*,reviewer=None,repair_attempted
         evidence=dict(target_platform='facebook',original_demo=True,job=context,plan=plan,
             media={'duration_seconds':length},output_subtitles=subtitles,audio_samples=samples,
             sound_design=design,
-            originality_scope='Original script and animated demonstration; labelled simulation with synthetic narration.')
+            education=plan.get('education'),
+            originality_scope='Original educational cartoon, vector characters and synthetic narration.' if plan.get('education') else
+                'Original script and animated demonstration; labelled simulation with synthetic narration.')
         phase='provider'
         config=provider_config()
         if config['audio_review_mode']=='local_whisper' and reviewer is None:
@@ -634,6 +677,8 @@ def automatic_pass(media: Path,job_id: str,clip_url: str) -> bool:
         audit=saved.get('audit') or {}
         context=dict(source_job_id=job_id,source_clip_url=clip_url,repair_attempted=audit.get('repair_attempted') is True,score_floor_met=True)
         sidecar=json.loads(media.with_suffix('.json').read_text())
+        if (sidecar.get('original_demo') or {}).get('render_engine')==motlab.ENGINE:
+            motlab.verify_evidence(media.parent,sidecar.get('renderer'))
         return bool(saved.get('fingerprint')==audit_fingerprint(media,context)
             and saved.get('media_sha256')==qc.sha256(media) and audit.get('source_job_id')==job_id
             and sidecar.get('render_source_sha256')==qc.sha256(media.parent/'source-plan.json')

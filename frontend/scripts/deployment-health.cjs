@@ -5,12 +5,14 @@ const crypto = require('node:crypto');
 const root = path.resolve(__dirname, '..');
 const digest = data => crypto.createHash('sha256').update(data).digest('hex');
 const requiredJS = ['jobDirectorRecovery', 'history-four-columns', 'jobPlatformQueue', '/reconcile',
+  'Arahan & pekerjaan', '/api/ai-office', 'aiOfficeDepartments',
   'dijadwalkan ulang otomatis', 'pengaturan privasi tertunda', 'Hasil posting perlu diperiksa',
   'cronActivityHeading', 'Detail pemeriksaan', 'cronDailyLanes',
   'studioSidebar', 'studioQueueRow', 'connectionCard', 'studioThemeToggle',
-  'fbWorkspace', 'facebook/uploads', 'Facebook Reels', 'fbMonetization', 'facebook/monetization',
-  'fbAutopilot', 'facebook/autopilot', 'fbAutoBonus', 'fbPublished', 'File lokal dibersihkan otomatis',
-  'animasi objek 2D', 'Buat Reel animasi'];
+  'Klip yang ditolak dibersihkan otomatis', 'Sedang dipulihkan', 'Rincian percobaan sebelumnya', 'Penanganan otomatis aktif', '/api/uploads/attention', 'overviewMetrics', 'overviewRecentRow', 'Semua produksi, satu tempat.', 'Buka navigasi',
+  'fbWorkspace', 'facebook/uploads', 'Facebook Reels', 'fbControlGrid',
+  'fbAutopilot', 'facebook/autopilot', 'facebook/storage/cleanup', 'fbStorage',
+  'Antrean produksi & upload', 'Buat Reel baru', 'Tonton preview', 'fbSeriesPicker', 'Tema animasi', 'Gunakan tema untuk jadwal'];
 const grid = /\.outputWorkspacePane\s+\.jobList\s*\{[^}]*grid-template-columns\s*:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/;
 const resultGrid = /\.clipGrid\s*\{[^}]*grid-template-columns\s*:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/;
 function walk(dir) {
@@ -35,6 +37,7 @@ function build() {
   const sources = sourceFingerprint(root);
   const manifest = {schema:1, dist, build_id:fs.readFileSync(path.join(root,dist,'BUILD_ID'),'utf8').trim(),
     release_id:digest(JSON.stringify(sources)),sources,
+    ui_assets:files.filter(file => file.endsWith('.css') || (file.endsWith('.js') && requiredJS.some(text => fs.readFileSync(file,'utf8').includes(text)))).map(file=>path.relative(root,file)),
     assets:Object.fromEntries(files.map(file=>[path.relative(root,file),digest(fs.readFileSync(file))]))};
   fs.writeFileSync(path.join(root,'deployment-manifest.json'),JSON.stringify(manifest));
   fs.writeFileSync(path.join(root,'public/deployment.json'),JSON.stringify({schema:1,build_id:manifest.build_id,release_id:manifest.release_id,ui_verified:true}));
@@ -63,8 +66,10 @@ async function health() {
   if (served.build_id !== manifest.build_id || served.release_id !== manifest.release_id) throw Error('Served frontend release mismatch');
   const urls = [...new Set([...html.matchAll(/(?:src|href)="([^" ]+)"/g)].map(m=>m[1].replaceAll('&amp;','&'))
     .filter(url=>url.startsWith('/_next/static/') && /\.(js|css)(\?|$)/.test(url)))];
+  // Dynamic workspace panels are verified without forcing them into the initial browser bundle.
+  const panelUrls = (manifest.ui_assets || []).map(file => '/_next/'+file.slice(manifest.dist.length+1));
   let js='',css='';
-  for(const url of urls) {
+  for(const url of new Set([...urls,...panelUrls])) {
     const name=new URL(url,base).pathname.replace('/_next/',manifest.dist+'/');
     const body=await read(base+url);
     if(!manifest.assets[name] || digest(body)!==manifest.assets[name]) throw Error('Served assets differ from built frontend');

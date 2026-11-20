@@ -66,7 +66,15 @@
     ".next-fb-motion/types/**/*.ts",
     ".next-fb-motion/dev/types/**/*.ts",
     ".next-fb-publish/types/**/*.ts",
-    ".next-fb-publish/dev/types/**/*.ts"
+    ".next-fb-publish/dev/types/**/*.ts",
+    ".next-ui-redesign/types/**/*.ts",
+    ".next-ui-redesign/dev/types/**/*.ts",
+    ".next-upload-attention/types/**/*.ts",
+    ".next-upload-attention/dev/types/**/*.ts",
+    ".next-source-recovery/types/**/*.ts",
+    ".next-source-recovery/dev/types/**/*.ts",
+    ".next-rejection-cleanup/types/**/*.ts",
+    ".next-rejection-cleanup/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

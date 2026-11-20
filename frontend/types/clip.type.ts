@@ -251,6 +251,7 @@ export type ClipJob = {
   source_title?: string | null;
   source_url?: string | null;
   source_uploader?: string | null;
+  download_diagnostics?: { version: number; category: string; transport_failure: boolean; recovered: boolean; evidence_retained: boolean; event_count: number } | null;
   repair_source_job_id?: string | null;
   repair_source_clip_url?: string | null;
   director_recovery?: {

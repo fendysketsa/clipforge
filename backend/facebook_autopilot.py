@@ -1,6 +1,7 @@
 """Facebook-only durable schedule. No fake engagement and no catch-up bursts."""
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+from facebook_education import SERIES
 import hashlib
 import re
 
@@ -19,7 +20,10 @@ def config(saved=None):
     saved=saved or {}
     if not isinstance(saved,dict) or type(saved.get('enabled',True)) is not bool:
         raise ValueError('Pengaturan otomasi Facebook tidak valid; publikasi ditahan.')
-    return {**DEFAULTS, 'enabled':saved.get('enabled',True), 'version':VERSION}
+    series=saved.get('series','digital')
+    if not isinstance(series,str) or series not in SERIES:
+        raise ValueError('Seri otomasi Facebook tidak valid; publikasi ditahan.')
+    return {**DEFAULTS, 'enabled':saved.get('enabled',True), 'series':series, 'version':VERSION}
 
 
 def week(current=None):

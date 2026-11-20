@@ -29,6 +29,7 @@ services:
       - ${YOUTUBE_HOST_RUNTIME_DIR:-/run/user/1000}:/run/fendy-clipper-host-user:ro
     environment:
       CLIPFORGE_SERVICE: backend
+      AI_OFFICE_ENABLED: ${AI_OFFICE_ENABLED:-true}
       CLIPFORGE_VERIFY_SOURCE_DIR: /opt/clipforge-source/backend
       IN_DOCKER: "1"
       NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}

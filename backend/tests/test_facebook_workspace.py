@@ -256,3 +256,21 @@ def test_retry_never_reposts_an_ambiguous_submission(client):
     result=client.post('/api/facebook/uploads/u/retry')
     assert result.status_code==409
     assert 'remote' in result.json()['detail']
+
+
+@pytest.mark.parametrize('change,allowed',[
+    ({'attempts':1},True),({'attempts':2},True),({'attempts':3},False),
+    ({'submission_started':True},False),({'upload_confirmed':True},False),
+    ({'video_url':'https://www.facebook.com/reel/123/'},False),({'status':'running'},False),
+])
+def test_upload_list_exposes_the_same_retry_policy_as_the_endpoint(client,change,allowed):
+    row={'id':'u','job_id':'job','status':'failed','attempts':1,'submission_started':False,
+         'upload_confirmed':False,'clip_name':'clip.mp4','created_at':api.now_iso(),**change}
+    ledger=api.JOBS_PATH.parent/'facebook_workspace.json'
+    ledger.write_text(json.dumps({'schema':1,'uploads':{'u':row},'session':{}}))
+    shown=client.get('/api/facebook/uploads').json()[0]
+    assert shown['can_retry'] is allowed
+    assert bool(shown['retry_block_reason']) is not allowed
+    if not allowed:
+        response=client.post('/api/facebook/uploads/u/retry')
+        assert response.status_code==409 and response.json()['detail']==shown['retry_block_reason']

@@ -24,6 +24,7 @@ from rich.console import Console
 from rich.table import Table
 from slugify import slugify
 from yt_dlp import YoutubeDL
+import source_download
 
 import cron_director_effects
 import cron_short_director
@@ -151,14 +152,17 @@ class RetryAwareYtdlpLogger:
     exception is still retained by the caller for the final diagnostic.
     """
 
+    def __init__(self):
+        self.messages: list[str] = []
+
     def debug(self, _message: str) -> None:
         return
 
-    def warning(self, _message: str) -> None:
-        return
+    def warning(self, message: str) -> None:
+        self.messages = [*self.messages, source_download.redact(message)[:400]][-6:]
 
-    def error(self, _message: str) -> None:
-        return
+    def error(self, message: str) -> None:
+        self.messages = [*self.messages, source_download.redact(message)[:400]][-6:]
 
 
 def format_download_bytes(value: object) -> str:
@@ -2771,17 +2775,17 @@ def youtube_review_audio_strategies(work_dir: Path, cache_key: str) -> list[dict
 
 
 def is_network_error(message: str) -> bool:
-    lowered = message.lower()
-    return any(pattern in lowered for pattern in NETWORK_ERROR_PATTERNS)
+    return source_download.category(message) in source_download.TRANSIENT
 
 
 def friendly_youtube_error(exc: Exception, stage: str) -> str:
     message = str(exc).strip()
     if is_network_error(message):
         return (
-            f"Koneksi server ke YouTube gagal saat {stage}. "
-            "Pastikan server/container punya akses internet keluar. "
-            "Kalau jaringan hosting memblokir YouTube, gunakan tab Upload Video sebagai fallback."
+            f"Koneksi jalur unduh YouTube terputus saat {stage}. "
+            "Pemulihan otomatis dengan jeda belum berhasil; rincian gangguan disimpan untuk pemeriksaan. "
+            "Gangguan ini tidak membuktikan akses internet server mati permanen. "
+            "Upload Video tetap tersedia jika Anda mempunyai file sumber."
         )
     if "private video" in message.lower():
         return "Video YouTube bersifat privat, jadi tidak bisa diproses dari link publik."
@@ -2809,7 +2813,7 @@ def friendly_youtube_error(exc: Exception, stage: str) -> str:
             "bukan penolakan hak cipta oleh aplikasi. Coba lagi setelah beberapa menit; bila tetap aktif, "
             "gunakan file sumber yang Anda miliki/izinkan melalui tab Upload Video."
         )
-    return f"Gagal mengambil video dari YouTube saat {stage}: {message}"
+    return f"Gagal mengambil video dari YouTube saat {stage}: {source_download.redact(message)}"
 
 
 def make_even(value: float, minimum: int) -> int:
@@ -5368,12 +5372,54 @@ def is_source_branding_segment(segment: TranscriptSegment | str) -> bool:
     return source_branding_reason(text) is not None
 
 
-def fetch_metadata(url: str) -> dict:
+def extract_source_with_recovery(url: str, options: dict, *, download: bool,
+                                 diagnostic_dir: Path | None, stage: str, strategy: str,
+                                 retry_state: dict | None = None) -> dict:
+    """Resume the same format/partial file after a transient transport outage."""
+    state = retry_state if retry_state is not None else {"used": 0}
+    cookies = options.get("cookiefile")
+    cookie_text = cookies.getvalue() if isinstance(cookies, io.StringIO) else None
+
+    def retain_attempt(**event) -> None:
+        try:
+            source_download.record(diagnostic_dir, url, stage=stage, strategy=strategy, **event)
+        except OSError:
+            console.print("[yellow]Bukti unduhan belum dapat disimpan; penyebab asli tetap dipertahankan.[/yellow]")
+
+    for attempt in range(len(source_download.RETRY_DELAYS) + 1):
+        attempt_options = dict(options)
+        if "logger" not in attempt_options or isinstance(attempt_options["logger"], RetryAwareYtdlpLogger):
+            attempt_options["logger"] = RetryAwareYtdlpLogger()
+        if cookie_text is not None:
+            attempt_options["cookiefile"] = io.StringIO(cookie_text)
+        try:
+            with YoutubeDL(attempt_options) as ydl:
+                info = ydl.extract_info(url, download=download)
+            if attempt or state["used"]:
+                retain_attempt(attempt=attempt+1, recovered=True)
+                console.print("[green]Koneksi sumber pulih; proses dilanjutkan tanpa mengulang job.[/green]")
+            return info
+        except Exception as exc:
+            retain_attempt(attempt=attempt+1, error=exc,
+                           messages=getattr(attempt_options["logger"], "messages", []))
+            if source_download.category(exc) not in source_download.TRANSIENT or state["used"] >= len(source_download.RETRY_DELAYS):
+                raise
+            delay = source_download.RETRY_DELAYS[state["used"]]
+            state["used"] += 1
+            retry_number = state["used"]
+            emit_progress(5, "source", f"Koneksi unduh terputus sementara; pemulihan otomatis {retry_number}/2 dalam {delay} detik")
+            console.print(f"[yellow]Koneksi sumber terputus ({source_download.category(exc)}); "
+                          f"mencoba jalur yang sama dalam {delay} detik ({retry_number}/2).[/yellow]")
+            time.sleep(delay)
+    raise RuntimeError("Source retry budget exhausted")  # pragma: no cover
+
+
+def fetch_metadata(url: str, diagnostic_dir: Path | None = None) -> dict:
     global _YOUTUBE_AUTH_REQUIRED
     ydl_opts = ytdlp_base_options(skip_download=True)
     try:
-        with YoutubeDL(ydl_opts) as ydl:
-            return sanitize_metadata(ydl.extract_info(url, download=False))
+        return sanitize_metadata(extract_source_with_recovery(url, ydl_opts, download=False,
+            diagnostic_dir=diagnostic_dir, stage="metadata", strategy="anonymous"))
     except Exception as exc:
         message = str(exc).casefold()
         auth_challenge = (
@@ -5389,10 +5435,9 @@ def fetch_metadata(url: str) -> dict:
         "[yellow]YouTube meminta verifikasi; mencoba ulang dengan sesi login tersimpan...[/yellow]"
     )
     try:
-        with YoutubeDL(
-            ytdlp_base_options(skip_download=True, use_youtube_auth=True)
-        ) as ydl:
-            metadata = sanitize_metadata(ydl.extract_info(url, download=False))
+        metadata = sanitize_metadata(extract_source_with_recovery(url,
+            ytdlp_base_options(skip_download=True, use_youtube_auth=True), download=False,
+            diagnostic_dir=diagnostic_dir, stage="metadata", strategy="authenticated"))
     except Exception as auth_exc:
         raise UserFacingError(
             friendly_youtube_error(auth_exc, "membaca metadata dengan sesi tersimpan")
@@ -5498,6 +5543,7 @@ def download_video(
     file_path: Path | None = None
     download_errors: list[Exception] = []
     integrity_errors: list[str] = []
+    transport_retry_state = {"used": 0}
     strategies = youtube_download_strategies(max_height, work_dir)
     total_attempts = len(strategies)
     for attempt, strategy in enumerate(strategies, start=1):
@@ -5531,12 +5577,14 @@ def download_video(
                 f"dengan jalur {strategy_name} ({attempt}/{total_attempts})..."
             )
         try:
-            with YoutubeDL(ydl_opts) as ydl:
-                attempt_info = ydl.extract_info(url, download=True)
-                if isinstance(attempt_info, dict):
-                    info = attempt_info
+            attempt_info = extract_source_with_recovery(url, ydl_opts, download=True,
+                diagnostic_dir=work_dir, stage="video", strategy=strategy_name, retry_state=transport_retry_state)
+            if isinstance(attempt_info, dict):
+                info = attempt_info
         except Exception as exc:
             download_errors.append(exc)
+            if source_download.category(exc) in {"rate_limited", "authentication", "source_unavailable"}:
+                break
             if attempt < total_attempts:
                 console.print(
                     "[yellow]Jalur download "
@@ -5583,8 +5631,9 @@ def download_video(
         representative_error = next(
             (
                 error
-                for error in download_errors
-                if "403" in str(error) or "forbidden" in str(error).casefold()
+                for error in reversed(download_errors)
+                if source_download.category(error) in source_download.TRANSIENT
+                or "403" in str(error) or "forbidden" in str(error).casefold()
             ),
             download_errors[-1],
         )
@@ -5632,6 +5681,7 @@ def download_review_audio(
     info: dict = {}
     file_path: Path | None = None
     download_errors: list[Exception] = []
+    transport_retry_state = {"used": 0}
     strategies = youtube_review_audio_strategies(work_dir, cache_key)
     total_attempts = len(strategies)
     for attempt, strategy in enumerate(strategies, start=1):
@@ -5663,12 +5713,14 @@ def download_review_audio(
                 f"dengan jalur {strategy_name} ({attempt}/{len(strategies)})..."
             )
         try:
-            with YoutubeDL(ydl_opts) as ydl:
-                attempt_info = ydl.extract_info(url, download=True)
-                if isinstance(attempt_info, dict):
-                    info = attempt_info
+            attempt_info = extract_source_with_recovery(url, ydl_opts, download=True,
+                diagnostic_dir=work_dir, stage="review_audio", strategy=strategy_name, retry_state=transport_retry_state)
+            if isinstance(attempt_info, dict):
+                info = attempt_info
         except Exception as exc:
             download_errors.append(exc)
+            if source_download.category(exc) in {"rate_limited", "authentication", "source_unavailable"}:
+                break
             continue
         file_path = select_usable_review_audio(work_dir, cache_key)
         if file_path is not None:
@@ -5678,8 +5730,9 @@ def download_review_audio(
         representative_error = next(
             (
                 error
-                for error in download_errors
-                if "403" in str(error) or "forbidden" in str(error).casefold()
+                for error in reversed(download_errors)
+                if source_download.category(error) in source_download.TRANSIENT
+                or "403" in str(error) or "forbidden" in str(error).casefold()
             ),
             download_errors[-1],
         )
@@ -20385,6 +20438,8 @@ def cleanup_intermediate(work_dir: Path, source_video: Path) -> None:
     # and source_fallback.*. Keep those inside the same deletion boundary.
     for pattern in ("source.*", "source_*", "audio*.wav"):
         for item in work_dir.glob(pattern):
+            if item.name == "source_download_diagnostics.json":
+                continue
             try:
                 if item.resolve() == source_video.resolve() and source_video.parent != work_dir:
                     continue
@@ -21688,7 +21743,7 @@ def main() -> int:
         emit_progress(16, "source", "Video upload lokal siap diproses")
     else:
         console.print("[bold]Fetching metadata...[/bold]")
-        metadata = fetch_metadata(args.url)
+        metadata = fetch_metadata(args.url, diagnostic_dir=root)
         if args.clip_mode == "highlight_5m" and args.cron_long_strategy:
             profile = cron_long_strategy.source_profile(metadata)
             if not profile["eligible"]:

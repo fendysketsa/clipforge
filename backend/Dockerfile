@@ -81,6 +81,8 @@ RUN cd /app/motlab \
     && npm ci --omit=dev --ignore-scripts \
     && node render.mjs --check \
     && node --check scene.mjs \
+    && node --check facebook-scene.mjs \
+    && node --check education-scene.mjs \
     && npm cache clean --force
 
 RUN chmod 0755 /app/docker-entrypoint.sh \

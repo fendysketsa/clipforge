@@ -1,0 +1,142 @@
+{
+  "receipt": {
+    "version": 1,
+    "original_job_id": "0e00b171d00d499e956d1c439c382203",
+    "original_status": "failed",
+    "original_clip_count": 0,
+    "original_candidate_count": 0,
+    "review_only": false,
+    "publication_review_required": false,
+    "replacement_status": "completed",
+    "replacement_clip_count": 1,
+    "recovered_by_job_id": "2c3f719e76b34944baa586fbc58bc3eb",
+    "source_id": "akd6qhczJz8",
+    "clip_mode": "short",
+    "target_platform": "standard",
+    "previous_error": "Koneksi server ke YouTube gagal saat mengunduh video. Pastikan server/container punya akses internet keluar. Kalau jaringan hosting memblokir YouTube, gunakan tab Upload Video sebagai fallback. Workspace dan seluruh file sementara proses gagal telah dihapus.",
+    "recovered_at": "2026-11-20T16:20:10.337301+00:00",
+    "archived_at": "2026-11-20T16:48:54.231261+00:00",
+    "original_created_at": "2026-11-20T15:23:10.602273+00:00",
+    "original_finished_at": "2026-11-20T15:27:47.576859+00:00",
+    "checkpoint_reconciliation": "pending_normal_deployment",
+    "original_checkpoints": [
+      {
+        "run_id": "1e2cff8aa33e45939620c410f8a580bf",
+        "run_status": "failed",
+        "item": {
+          "source": {
+            "url": "https://www.youtube.com/watch?v=akd6qhczJz8",
+            "title": "Yuta, Mio Dan Baby Celine Jadi Penjaga Pos Ronda || ROBLOX",
+            "uploader": "Popo Mimi ROBLOX",
+            "channel_id": "UCnzbx11s43-5ncWWwejPVHg",
+            "duration": 1490,
+            "definition": "hd",
+            "height": null,
+            "views": 121887,
+            "views_per_day": 121887,
+            "engagement_rate": 0.00839,
+            "age_days": 0,
+            "likes": 1023,
+            "upload_date": "20261120",
+            "license": "youtube",
+            "rights_verified": false,
+            "license_metadata_verified": false,
+            "source_preflight": "passed",
+            "content_id_risk": "review",
+            "content_id_risk_reasons": [],
+            "source_rights_review_reasons": [],
+            "score": 65.68,
+            "viral_score": 362.22,
+            "momentum_score": 100.0,
+            "information_score": 0.0,
+            "fresh_conversation_profile": {
+              "version": 1,
+              "qualified": false,
+              "score": 34.0,
+              "age_days": 0,
+              "duration_seconds": 1490.0,
+              "views_per_day": 121887,
+              "matched_markers": [],
+              "requires_distinct_clip_angles": true,
+              "rights_or_monetization_guarantee": false
+            },
+            "fresh_conversation_score": 34.0,
+            "niche": "cron_trend_expansion",
+            "niche_label": "Perluasan Tren Google/YouTube (Cronjob)",
+            "niche_score": 44,
+            "language_score": 100.0,
+            "ranking_reason": "Topik/tren 44/100 • Bahasa Indonesia 100/100 • chart cocok 5 token • momentum hanya sinyal 100/100",
+            "cron_trend_score": 44,
+            "trend_signal_score": 30,
+            "trend_matches": [
+              "baby",
+              "celine",
+              "mio",
+              "roblox",
+              "yuta"
+            ],
+            "cron_theme_key": "gaming_story",
+            "cron_theme_label": "Game, Mabar & Cerita Pemain",
+            "search_provider": "youtube_data_api",
+            "filter_match": "exact",
+            "relaxed_filters": [],
+            "source_preflight_score": 80.47,
+            "source_preflight_floor": 60,
+            "source_preflight_breakdown": {
+              "editorial_fit": 65.68,
+              "momentum": 100.0,
+              "language": 100.0,
+              "engagement": 41.95,
+              "velocity": 100.0,
+              "freshness": 100.0,
+              "multi_clip_opportunity": 100.0
+            },
+            "source_preflight_decision": "scan_transcript",
+            "source_preflight_reason": "Pra-rating 80/100 lolos minimum 60; hook/payoff tetap wajib lolos audit transkrip dan skor clip 80."
+          },
+          "title": "Yuta, Mio Dan Baby Celine Jadi Penjaga Pos Ronda || ROBLOX",
+          "url": "https://www.youtube.com/watch?v=akd6qhczJz8",
+          "status": "running",
+          "editorial_pair": {
+            "theme": "gaming_story",
+            "tone": "enerjik, natural, dan terasa seperti editor gaming manusia; utamakan interaksi, keputusan, kegagalan, comeback, atau punchline asli",
+            "short_role": "pilih satu momen gameplay yang langsung punya taruhan manusiawi, perubahan situasi, dan payoff; jangan mengambil gameplay datar tanpa cerita; buka masalah atau tindakan tokoh dalam dua detik pertama, pertahankan nama karakter dari sumber, lalu tuntaskan akibatnya; seri konsisten tanpa cliffhanger atau memperpanjang durasi",
+            "long_role": "susun setup permainan, keputusan pemain, konsekuensi, reaksi asli, dan hasil akhirnya sebagai cerita yang mudah diikuti"
+          },
+          "job_id": "0e00b171d00d499e956d1c439c382203",
+          "job_status": "queued"
+        }
+      }
+    ],
+    "confirmed_uploads": [
+      {
+        "id": "3a4f9778e4df4dcfb1a8996a0970a44e",
+        "platform": "youtube",
+        "status": "completed",
+        "upload_confirmed": true,
+        "url": "https://www.youtube.com/watch?v=tv9D7PIotOk"
+      },
+      {
+        "id": "70110ec016f94ff2a11c7cbaecccf1e2",
+        "platform": "tiktok",
+        "status": "completed",
+        "upload_confirmed": true,
+        "url": "https://www.tiktok.com/@titikbalikislami/video/7710290579321605377"
+      }
+    ],
+    "replacement_render_qc": [
+      {
+        "render_qc_passed": false,
+        "render_qc_blocking": false,
+        "youtube_upload_ready": true
+      }
+    ]
+  },
+  "deletion": {
+    "status": "ok",
+    "removed_jobs": 1,
+    "removed_outputs": 0
+  },
+  "old_job_http": 404,
+  "upload_identities_preserved": true
+}

@@ -25,6 +25,7 @@ import facebook_autopilot
 import facebook_creative as creative
 import facebook_motion as motion
 import facebook_cleanup
+from source_download import redact as redact_diagnostic
 
 
 class FacebookJobInput(BaseModel):
@@ -47,11 +48,13 @@ class FacebookUploadInput(BaseModel):
 
 class FacebookAutopilotInput(BaseModel):
     enabled: bool
+    series: str | None = Field(default=None,max_length=32)
 
 
 class FacebookOriginalInput(BaseModel):
     request_id: str = Field(pattern=r'^[a-f0-9]{32}$')
     topic: str | None = Field(default=None,max_length=30)
+    series: str | None = Field(default=None,max_length=32)
 
 
 class FacebookVerifyInput(BaseModel):
@@ -60,6 +63,16 @@ class FacebookVerifyInput(BaseModel):
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def retry_block_reason(row):
+    if row.get('submission_started') or row.get('upload_confirmed') or row.get('video_url'):
+        return 'Post mungkin sudah dikirim. Cocokkan remote; upload ulang diblokir.'
+    if row.get('status') != 'failed':
+        return 'Retry hanya tersedia untuk upload yang gagal sebelum Post.'
+    if row.get('attempts', 1) >= 3:
+        return 'Batas tiga percobaan tercapai. Periksa kendala sebelum melanjutkan.'
+    return None
 
 
 def start_background(target, *args):
@@ -231,6 +244,9 @@ def install(app, api):
                 'local_cleanup_version': facebook_cleanup.VERSION,
                 'educational_motion_version': motion.VERSION,
                 'originals_request_version': 1,
+                'original_renderer': originals.motlab.capabilities(),
+                'upload_retry_policy_version': 1,
+                'education_catalogue_version': originals.education.VERSION,
                 'target_email': browser.TARGET_EMAIL,
                 'target_seconds': 30, 'max_seconds': 55,
                 'shared_browser': api.social_browser_is_shared(),
@@ -344,7 +360,9 @@ def install(app, api):
         data = store()
         with data.lock:
             titles={r.get('job_id'):r.get('title') for r in data.data.get('autopilot_runs',{}).values()}
-            return sorted([{**row,'title':row.get('title') or titles.get(row['job_id']) or row.get('clip_name')}
+            return sorted([{**row,'title':row.get('title') or titles.get(row['job_id']) or row.get('clip_name'),
+                            'can_retry':retry_block_reason(row) is None,
+                            'retry_block_reason':retry_block_reason(row)}
                            for row in data.data['uploads'].values()],
                           key=lambda row: row['created_at'], reverse=True)
 
@@ -398,10 +416,9 @@ def install(app, api):
             row = dict(data.data['uploads'].get(identifier) or {})
         if not row:
             raise HTTPException(404, 'Upload tidak ditemukan.')
-        if row.get('submission_started') or row.get('upload_confirmed') or row.get('video_url'):
-            raise HTTPException(409, 'Post mungkin sudah dikirim. Cocokkan remote; upload ulang diblokir.')
-        if row['status'] != 'failed' or row.get('attempts', 1) >= 3:
-            raise HTTPException(409, 'Retry hanya tersedia untuk kegagalan sebelum Post, maksimal tiga percobaan.')
+        reason = retry_block_reason(row)
+        if reason:
+            raise HTTPException(409, reason)
         job, clip, _ = api.find_job_clip(row['job_id'], row['clip_url'])
         audit = qc(job, clip)
         if audit['issues'] or audit.get('sha256') != row['sha256']:
@@ -411,7 +428,7 @@ def install(app, api):
             raise HTTPException(409, 'Akun target belum terverifikasi.')
         with data.lock:
             current = data.data['uploads'][identifier]
-            if current['status'] != 'failed' or current.get('submission_started'):
+            if retry_block_reason(current):
                 raise HTTPException(409, 'Status upload berubah; periksa antrean.')
             data.update(identifier, status='queued', attempts=current.get('attempts', 1) + 1,
                         finished_at=None, message='Mengulang file yang sama; belum pernah menekan Post.')
@@ -445,6 +462,36 @@ def install(app, api):
         lambda identifier,url:reconcile(identifier,FacebookVerifyInput(video_url=url)),
         cleanup=cleanup_local)
 
+    def office_snapshot():
+        data=store()
+        with data.lock:
+            enabled=facebook_autopilot.config(data.data.get('autopilot'))['enabled']
+            active={str(row.get('job_id') or key) for key,row in data.data.get('autopilot_runs',{}).items()
+                    if row.get('status') in {'reserved','rendering','qc','ready','queued','running'}}
+            active.update(str(row.get('job_id') or key) for key,row in data.data.get('uploads',{}).items()
+                          if row.get('status') in {'queued','running'})
+            detail=data.data.get('autopilot_message') or 'Menunggu jadwal atau hasil pemeriksaan Facebook.'
+            qc_wait=[row for row in data.data.get('autopilot_runs',{}).values() if row.get('status')=='qc_wait']
+            if qc_wait and not active:
+                latest=max(qc_wait,key=lambda row:str(row.get('updated_at') or row.get('created_at') or ''))
+                detail=f"Menunggu QC independen untuk {len(qc_wait)} video. " + str(latest.get('message') or 'Bukti pemeriksaan belum lengkap.')
+        detail=redact_diagnostic(originals.qc.safe_error_detail(RuntimeError(str(detail))))[:400]
+        running=bool(runner.thread and runner.thread.is_alive())
+        return dict(enabled=enabled,worker_running=running,active_count=len(active),
+            state='disabled' if not enabled else 'degraded' if not running else 'working' if active else 'waiting',
+            detail=detail if enabled else 'Otomasi Facebook dijeda oleh pengaturan operator.')
+
+    def ensure_office_worker():
+        data=store()
+        with data.lock:
+            enabled=facebook_autopilot.config(data.data.get('autopilot'))['enabled']
+        if not enabled or runner.stop.is_set():
+            return False
+        return runner.start()
+
+    api.facebook_office_snapshot=office_snapshot
+    api.ensure_facebook_office_worker=ensure_office_worker
+
     @app.post('/api/facebook/storage/cleanup')
     def cleanup_storage():
         return cleanup_local()
@@ -455,7 +502,7 @@ def install(app, api):
 
     @app.post('/api/facebook/originals')
     def original(request: FacebookOriginalInput):
-        try:row=runner.request_original(request.request_id,request.topic)
+        try:row=runner.request_original(request.request_id,request.topic,request.series)
         except ValueError as exc:raise HTTPException(409,str(exc)) from exc
         start_background(runner.process_requested,row['key'])
         return row
@@ -464,8 +511,11 @@ def install(app, api):
     def autopilot_settings(request: FacebookAutopilotInput):
         data=store()
         with data.lock:
-            data.data['autopilot']=facebook_autopilot.config(data.data.get('autopilot'))
-            data.data['autopilot']['enabled']=request.enabled
+            settings={**facebook_autopilot.config(data.data.get('autopilot')),'enabled':request.enabled}
+            if request.series is not None:settings['series']=request.series
+            try:settings=facebook_autopilot.config(settings)
+            except ValueError as exc:raise HTTPException(422,str(exc)) from exc
+            data.data['autopilot']=settings
             data.save()
         return runner.state()
 

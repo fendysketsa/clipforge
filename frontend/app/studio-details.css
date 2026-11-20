@@ -43,8 +43,20 @@ html[data-theme] .studioApp :is(.youtubeUploadError,.tiktokUploadError) :is(stro
 html[data-theme] .studioApp .youtubeUploadError button { color: var(--danger); border-color: var(--danger-border); background: var(--panel); box-shadow: none; }
 html[data-theme] .studioApp .queuePositionBadge { color: var(--warning); border-color: var(--warning-border); background: var(--warning-soft); }
 html[data-theme] .studioApp :is(.jobPlatformStatus,.jobPlatformQueue,.jobPlatformHold) { color: var(--text-secondary); background: var(--bg-soft); border-color: var(--border); font-family: var(--font-sans); }
-html[data-theme] .studioApp .jobPlatformStatus :is(small,strong,em) { font-family: var(--font-sans); }
+html[data-theme] .studioApp .jobPlatformStatus :is(small,strong,em) { font-family: var(--font-sans); color: inherit; }
+html[data-theme] .studioApp .jobProgress { color: var(--text-secondary); background: var(--bg-soft); border-color: var(--border); }
+html[data-theme] .studioApp .jobProgressMeta span { color: var(--text-secondary); }
+html[data-theme] .studioApp .jobProgressMeta b { color: var(--primary); }
+html[data-theme] .studioApp .jobProgressTrack { background: var(--panel-strong); }
+html[data-theme] .studioApp .jobProgressFill { background: var(--primary); }
 html[data-theme] .studioApp :is(.jobSourceLine,.jobDetailGrid span,.jobDetailGrid small,.jobDetailGrid b) { color: var(--text-muted); font-family: var(--font-sans); }
+html[data-theme] .studioApp .jobSourceRecovery { padding: 11px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-secondary); background: var(--bg-soft); }
+html[data-theme] .studioApp .jobSourceRecovery strong { color: var(--info); font-size: 11px; line-height: 1.6; }
+html[data-theme] .studioApp .jobSourceRecovery p { margin: 7px 0; font-size: 11px; line-height: 1.7; }
+html[data-theme] .studioApp .jobSourceRecovery small { color: var(--text-muted); font-size: 10px; }
+html[data-theme] .studioApp .jobPreviousFailure { margin: 0 12px 12px; padding-top: 10px; border-top: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; }
+html[data-theme] .studioApp .jobPreviousFailure summary { cursor: pointer; min-height: 30px; }
+html[data-theme] .studioApp .jobPreviousFailure p { margin-top: 7px; line-height: 1.7; overflow-wrap: anywhere; }
 html[data-theme] .studioApp .jobOpenHint { padding-top: 10px; margin-top: 12px; color: var(--primary); border-color: var(--border); font: 500 10px/1.5 var(--font-sans); }
 html[data-theme] .studioApp :is(.status-completed,.state-verified,.jobPlatformStatus.state-verified,.jobPlatformStatus.state-verified strong) { color: var(--success); }
 html[data-theme] .studioApp :is(.status-running,.status-queued,.state-running,.state-queued) { color: var(--info); }
@@ -55,7 +67,7 @@ html[data-theme] .studioApp :is(.storyStudioComposer,.storyPromptInputs,.autoPol
 html[data-theme] .studioApp .storyStudioComposer { padding: 16px; border-radius: 12px; }
 html[data-theme] .studioApp .clipperHero.isLong .clipperHeroCopy { text-align: left; justify-items: start; }
 html[data-theme] .studioApp .clipperHero.isLong .clipperKicker { color: var(--primary); background: none; border: 0; box-shadow: none; }
-html[data-theme] .studioApp .clipperHero.isLong .formatChoice > button.active { color: var(--primary); background: var(--success-soft); border-color: var(--border-strong); box-shadow: none; }
+html[data-theme] .studioApp .clipperHero.isLong .formatChoice > button.active { color: var(--primary); background: var(--primary-soft); border-color: var(--border-strong); box-shadow: none; }
 html[data-theme] .studioApp .formatChoice > button b { color: var(--text-primary); }
 html[data-theme] .studioApp .formatChoice > button.active b { color: var(--primary); }
 html[data-theme] .studioApp .clipperHero.isWorking .sourceActionGrid .createShortButton:disabled { background: var(--success-soft); border-color: var(--success-border); color: var(--success); opacity: 1; }
@@ -77,14 +89,14 @@ html[data-theme] .studioApp .polishSection > header small { color: var(--text-mu
 html[data-theme] .studioApp .polishSection > header > span { color: var(--primary); background: var(--success-soft); border-color: var(--success-border); }
 html[data-theme] .studioApp .autoPolishBanner > b { color: var(--success); background: var(--success-soft); border-color: var(--success-border); }
 html[data-theme] .studioApp .shortToggle:focus-within { outline: 2px solid var(--primary); outline-offset: 3px; }
-html[data-theme] .studioApp .longDurationGrid > button.active { color: var(--primary); background: var(--success-soft); border-color: var(--border-strong); }
+html[data-theme] .studioApp .longDurationGrid > button.active { color: var(--primary); background: var(--primary-soft); border-color: var(--border-strong); }
 html[data-theme] .studioApp :is(.advancedFields label > span,.shortTargetGrid label > span,.adaptivePolishSelect > span,.polishAdvanced > summary > span) { color: var(--text-secondary); font: 500 11px/1.5 var(--font-sans); }
 html[data-theme] .studioApp :is(.adaptivePolishSelect select,.shortTargetSelect select,.advancedFields input,.advancedFields select) { color: var(--text-primary); background: var(--input-bg); border-color: var(--border); font-family: var(--font-sans); font-size: 12px; }
 html[data-theme] .studioApp .shortTargetGrid label > div:not(.shortTargetSelect) { background: var(--input-bg); border-color: var(--border); }
 html[data-theme] .studioApp :is(.shortTargetGrid input,.shortTargetGrid small,.adaptivePolishCopy em,.adaptivePolishCopy b,.polishAdvanced > summary > small) { color: var(--text-secondary); font-family: var(--font-sans); font-size: 10px; }
 html[data-theme] .studioApp .adaptivePolishCopy b { background: var(--success-soft); color: var(--success); }
 html[data-theme] .studioApp .storyPromptExamples button { min-height: 34px; padding: 8px 10px; font: 500 11px/1.5 var(--font-sans); }
-html[data-theme] .studioApp .storyPromptExamples button[aria-pressed="true"] { color: var(--primary); border-color: var(--border-strong); background: var(--success-soft); }
+html[data-theme] .studioApp .storyPromptExamples button[aria-pressed="true"] { color: var(--primary); border-color: var(--border-strong); background: var(--primary-soft); }
 html[data-theme] .studioApp .storyPromptExamples > span { color: var(--text-muted); font: 500 9px/1.5 var(--font-sans); }
 html[data-theme] .studioApp :is(.storyInputField textarea,.storyboardScene input,.storyboardScene textarea) { color: var(--text-primary); background: var(--input-bg); border: 1px solid var(--border); font: 400 13px/1.7 var(--font-sans); }
 html[data-theme] .studioApp .storyInputField textarea::placeholder { color: var(--text-muted); }

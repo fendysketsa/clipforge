@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { Facebook, Loader2, RefreshCw, LogIn, ExternalLink } from 'lucide-react';
+import { Facebook, Loader2, RefreshCw, LogIn, ShieldCheck } from 'lucide-react';
 import { facebookRequest, type FacebookConfig, type FacebookSession } from '../../lib/facebook';
 
 export function FacebookConnection({onChange}: {onChange?: (session: FacebookSession) => void}) {
@@ -26,20 +26,17 @@ export function FacebookConnection({onChange}: {onChange?: (session: FacebookSes
   const labels: Record<string, string> = {ready:'Akun target terverifikasi', login_required:'Perlu login Facebook',
     account_unverified:'Identitas perlu diperiksa', browser_unavailable:'Browser belum terhubung'};
   return <section className="connectionCard fbConnection" aria-label="Koneksi Facebook">
-    <header><span className="connectionLogo fbLogo"><Facebook size={25}/></span><div><h2>Facebook Reels</h2><p>{config?.target_email || 'fendysketsa@gmail.com'}</p></div></header>
+    <header><span className="connectionLogo fbLogo"><Facebook size={22}/></span><div><h2>Akun tujuan</h2><p>{config?.target_email || 'Memuat akun…'}</p></div></header>
     <span className={`connectionState ${session.account_verified ? 'isReady' : ''}`}>
-      {busy ? <Loader2 size={14} className="spin"/> : <Facebook size={14}/>}
+      {busy ? <Loader2 size={14} className="spin"/> : <ShieldCheck size={14}/>}
       {busy ? 'Memeriksa browser…' : labels[session.status || ''] || 'Sesi belum diperiksa'}
     </span>
-    <p>{error || session.message || 'Gunakan browser bersama YouTube dan TikTok untuk menyimpan login Facebook.'}</p>
+    <p className="fbConnectionMessage">{error || session.message || 'Gunakan browser bersama YouTube dan TikTok untuk menyimpan login Facebook.'}</p>
     {error ? <p role="alert" className="fbError">Koneksi belum siap digunakan.</p> : null}
     <div className="connectionActions">
-      <button className="uiButton uiButton--primary" type="button" disabled={busy || !config} onClick={() => check(true)}><LogIn size={15}/> Buka login bersama</button>
+      <button className="uiButton" type="button" disabled={busy || !config} onClick={() => check(true)}><LogIn size={15}/> Login akun</button>
       <button className="uiButton" type="button" disabled={busy || !config} onClick={() => check()}><RefreshCw size={15}/> Periksa sesi</button>
-      <a className="uiButton" href="https://www.facebook.com/" target="_blank" rel="noreferrer"><ExternalLink size={14}/> Buka Facebook</a>
     </div>
-    <small>{config?.login_note || 'Login tiap platform tersimpan di satu profil browser. Verifikasi ulang dapat diminta oleh platform.'}</small>
-    {session.account_verified ? <small>{session.professional_mode === true ? 'Mode profesional terdeteksi pada profil.' : 'Mode profesional belum terverifikasi; periksa profil Facebook.'}</small> : null}
     {session.checked_at ? <small>Terakhir diperiksa: {new Date(session.checked_at).toLocaleString('id-ID', {timeZone:'Asia/Jakarta'})} WIB</small> : null}
   </section>;
 }

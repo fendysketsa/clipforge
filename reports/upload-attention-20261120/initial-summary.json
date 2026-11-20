@@ -1,0 +1,10 @@
+{
+  "total": 71,
+  "by_action": {
+    "verify_remote": 56,
+    "reconcile_duplicate": 12,
+    "hold": 3
+  },
+  "youtube": 57,
+  "tiktok": 14
+}

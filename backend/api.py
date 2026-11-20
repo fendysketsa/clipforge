@@ -77,6 +77,8 @@ import cron_editorial
 import ryuundy_reference_catalog
 from motlab_story_renderer import rendering_capabilities
 import automatic_retry
+import source_download
+import upload_attention
 import automatic_output_cleanup
 import ryuundy_growth_learning
 from cron_drama import (
@@ -1032,6 +1034,7 @@ class ClipJob(BaseModel):
     repair_source_clip_url: str | None = None
     source_recovery_parent_job_id: str | None = None
     director_recovery: dict[str, Any] | None = None
+    download_diagnostics: dict[str, Any] | None = None
     logs: list[str] = []
     clips: list[ClipFile] = []
     candidates: list[ClipCandidate] = []
@@ -4760,10 +4763,12 @@ MAX_CONCURRENT_STORY_JOBS = max(
 story_job_slots = threading.BoundedSemaphore(MAX_CONCURRENT_STORY_JOBS)
 youtube_worker_lock = threading.Lock()
 youtube_worker_running = False
+youtube_worker_thread: threading.Thread | None = None
 youtube_performance_collector_lock = threading.Lock()
 youtube_performance_collector_running = False
 tiktok_worker_lock = threading.Lock()
 tiktok_worker_running = False
+tiktok_worker_thread: threading.Thread | None = None
 social_upload_execution_lock = threading.Lock()
 social_upload_turn_condition = threading.Condition()
 social_upload_waiting_turns: list[object] = []
@@ -4792,6 +4797,7 @@ auto_viral_schedule_control_lock = threading.Lock()
 auto_viral_schedule_enabled_override = load_auto_viral_schedule_override()
 completed_job_upload_sweeper_lock = threading.Lock()
 completed_job_upload_sweeper_running = False
+completed_job_upload_sweeper_thread: threading.Thread | None = None
 completed_job_upload_sweeper_wakeup = threading.Event()
 tiktok_retry_sweeper_lock = threading.Lock()
 tiktok_retry_sweeper_running = False
@@ -8788,7 +8794,7 @@ def youtube_clip_claim_block(
             key=lambda item: item.finished_at or item.updated_at,
             reverse=True,
         )
-    return next(
+    active_claim = next(
         (
             upload
             for upload in candidates
@@ -8803,6 +8809,29 @@ def youtube_clip_claim_block(
         ),
         None,
     )
+    if active_claim is not None:
+        return active_claim
+    # Exact claimed bytes remain blocked after their queue card is archived.
+    if clip_sha256 and re.fullmatch(r"[a-fA-F0-9]{64}", clip_sha256):
+        path = upload_attention.rejection_folder(YOUTUBE_UPLOADS_PATH) / "by-sha256" / (clip_sha256.lower() + ".json")
+        try:
+            if path.stat().st_size > 512_000:
+                raise ValueError("Rejected upload evidence exceeds size limit")
+            receipt = json.loads(path.read_text())
+            original = receipt["upload"]
+            if (receipt.get("version") == upload_attention.REJECTION_CLEANUP_VERSION
+                    and receipt.get("decision") == "DROP_SOURCE"
+                    and receipt.get("reason") == "confirmed_content_id_claim"
+                    and original.get("clip_sha256", "").lower() == clip_sha256.lower()):
+                claim = YouTubeUploadJob.model_validate(original)
+                if claim.status in {"failed", "cancelled"} and not claim.dry_run and not claim.upload_confirmed:
+                    return claim
+            raise ValueError("Invalid rejected clip evidence")
+        except FileNotFoundError:
+            pass
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise HTTPException(409, "Bukti penolakan klip belum dapat dibaca; upload ditunda.") from exc
+    return None
 
 
 def youtube_upload_has_explicit_claim_evidence(upload: YouTubeUploadJob) -> bool:
@@ -8872,17 +8901,40 @@ def youtube_upload_was_claimed(upload: YouTubeUploadJob) -> bool:
 
 
 def delete_claimed_youtube_upload_record(upload_id: str) -> bool:
-    """Remove the terminal claim card after its local clip cleanup finishes."""
+    """Archive a rejected clip before removing its terminal local queue card."""
     with youtube_uploads_lock:
         upload = youtube_uploads.get(upload_id)
-        if (
-            upload is None
-            or upload.status not in {"failed", "cancelled"}
-            or not youtube_upload_was_claimed(upload)
-        ):
+    if (upload is None or upload.status not in {"failed", "cancelled"} or upload.dry_run
+            or upload.upload_confirmed or not youtube_upload_was_claimed(upload)):
+        return False
+    with youtube_upload_creation_lock, tiktok_upload_creation_lock:
+        with process_lock:
+            if upload_id in youtube_upload_processes or upload.source_job_id in job_processes:
+                return False
+        with jobs_lock:
+            if any(clip.url == upload.clip_url for job in jobs.values() for clip in job.clips):
+                return False
+        path = output_path_from_url(upload.clip_url)
+        if path is None or path.exists():
             return False
-        youtube_uploads.pop(upload_id, None)
-        save_youtube_uploads_unlocked()
+        with tiktok_uploads_lock:
+            if any(row.clip_url == upload.clip_url and row.status in {"queued", "running"}
+                   for row in tiktok_uploads.values()):
+                return False
+        with youtube_uploads_lock:
+            current = youtube_uploads.get(upload_id)
+            if (current is None or current.dry_run or upload_attention.evidence_revision(current.model_dump()) !=
+                    upload_attention.evidence_revision(upload.model_dump())
+                    or any(row.clip_url == upload.clip_url and row.status in {"queued", "running"}
+                           for row in youtube_uploads.values())):
+                return False
+            upload_attention.archive_rejection(YOUTUBE_UPLOADS_PATH, current.model_dump(), now_iso())
+            youtube_uploads.pop(upload_id)
+            try:
+                save_youtube_uploads_unlocked()
+            except OSError:
+                youtube_uploads[upload_id] = current
+                raise
     return True
 
 
@@ -9004,6 +9056,9 @@ def claimed_clip_cleanup_worker(upload_id: str) -> None:
                 upload = youtube_uploads.get(upload_id)
             if upload is None:
                 return
+            if (upload.status not in {"failed", "cancelled"} or upload.dry_run
+                    or upload.upload_confirmed or not youtube_upload_was_claimed(upload)):
+                return
 
             with jobs_lock:
                 source_job = jobs.get(upload.source_job_id)
@@ -9012,6 +9067,10 @@ def claimed_clip_cleanup_worker(upload_id: str) -> None:
                     and any(clip.url == upload.clip_url for clip in source_job.clips)
                 )
             if not clip_exists:
+                path = output_path_from_url(upload.clip_url)
+                if path is None or path.exists():
+                    set_youtube_upload(upload_id, clip_delete_error="File yatim belum dapat dipastikan bersih; cleanup dijadwalkan ulang.")
+                    return
                 set_youtube_upload(
                     upload_id,
                     clip_deleted_at=upload.clip_deleted_at or now_iso(),
@@ -12709,7 +12768,7 @@ def execute_social_upload(platform: Literal['youtube', 'tiktok'], upload_id: str
 
 
 def youtube_upload_worker_loop() -> None:
-    global youtube_worker_running
+    global youtube_worker_running, youtube_worker_thread
     while True:
         with youtube_uploads_lock:
             queued = [
@@ -12727,16 +12786,29 @@ def youtube_upload_worker_loop() -> None:
             if still_queued:
                 continue
             youtube_worker_running = False
+            if youtube_worker_thread is threading.current_thread():
+                youtube_worker_thread = None
             return
 
 
 def start_youtube_worker_if_needed() -> None:
-    global youtube_worker_running
+    global youtube_worker_running, youtube_worker_thread
     with youtube_worker_lock:
-        if youtube_worker_running:
+        if youtube_worker_thread is not None and youtube_worker_thread.is_alive():
             return
+        # A surviving uploader owns its remote attempt even if its wrapper
+        # thread died. A supervisor must not start a second transfer over it.
+        with process_lock:
+            if any(process.poll() is None for process in youtube_upload_processes.values()):
+                return
+        youtube_worker_thread = threading.Thread(target=youtube_upload_worker_loop, daemon=True, name='youtube-upload')
         youtube_worker_running = True
-    threading.Thread(target=youtube_upload_worker_loop, daemon=True).start()
+        try:
+            youtube_worker_thread.start()
+        except Exception:
+            youtube_worker_running = False
+            youtube_worker_thread = None
+            raise
 
 
 def set_tiktok_upload(upload_id: str, **updates: Any) -> None:
@@ -13251,7 +13323,7 @@ def run_tiktok_upload(upload_id: str) -> None:
 
 
 def tiktok_worker_loop() -> None:
-    global tiktok_worker_running
+    global tiktok_worker_running, tiktok_worker_thread
     while True:
         with tiktok_uploads_lock:
             queued = sorted(
@@ -13266,16 +13338,27 @@ def tiktok_worker_loop() -> None:
                 if any(item.status == "queued" for item in tiktok_uploads.values()):
                     continue
             tiktok_worker_running = False
+            if tiktok_worker_thread is threading.current_thread():
+                tiktok_worker_thread = None
             return
 
 
 def start_tiktok_worker_if_needed() -> None:
-    global tiktok_worker_running
+    global tiktok_worker_running, tiktok_worker_thread
     with tiktok_worker_lock:
-        if tiktok_worker_running:
+        if tiktok_worker_thread is not None and tiktok_worker_thread.is_alive():
             return
+        with process_lock:
+            if any(process.poll() is None for process in tiktok_upload_processes.values()):
+                return
+        tiktok_worker_thread = threading.Thread(target=tiktok_worker_loop, daemon=True, name='tiktok-upload')
         tiktok_worker_running = True
-    threading.Thread(target=tiktok_worker_loop, daemon=True).start()
+        try:
+            tiktok_worker_thread.start()
+        except Exception:
+            tiktok_worker_running = False
+            tiktok_worker_thread = None
+            raise
 
 
 def queue_tiktok_upload_jobs(items: list[TikTokUploadJob]) -> None:
@@ -13770,24 +13853,25 @@ def resume_queued_youtube_uploads() -> None:
     if env_bool("AUTO_UPLOAD_COMPLETED_JOBS", False):
         queue_youtube_draft_recoveries_once()
     with youtube_uploads_lock:
-        has_queued = any(upload.status == "queued" for upload in youtube_uploads.values())
-        claimed_cleanup_ids = [
-            upload.id
-            for upload in youtube_uploads.values()
-            if upload.status == "failed"
-            and not upload.clip_deleted_at
-            and youtube_upload_was_claimed(upload)
-        ]
-        pending_cleanup_ids = [
-            upload.id
-            for upload in youtube_uploads.values()
-            if upload.status == "completed"
-            and upload.video_url
-            and upload.upload_confirmed
-            and upload.clip_delete_after
-            and not upload.clip_deleted_at
-            and not upload.dry_run
-        ]
+        upload_snapshot = list(youtube_uploads.values())
+    has_queued = any(upload.status == "queued" for upload in upload_snapshot)
+    claimed_cleanup_ids = [
+        upload.id
+        for upload in upload_snapshot
+        if upload.status in {"failed", "cancelled"}
+        and not upload.dry_run and not upload.upload_confirmed
+        and youtube_upload_was_claimed(upload)
+    ]
+    pending_cleanup_ids = [
+        upload.id
+        for upload in upload_snapshot
+        if upload.status == "completed"
+        and upload.video_url
+        and upload.upload_confirmed
+        and upload.clip_delete_after
+        and not upload.clip_deleted_at
+        and not upload.dry_run
+    ]
     if has_queued:
         start_youtube_worker_if_needed()
     for upload_id in claimed_cleanup_ids:
@@ -14405,11 +14489,16 @@ def start_tiktok_retry_sweeper_if_needed() -> None:
     global tiktok_retry_sweeper_running,tiktok_retry_sweeper_thread
     if not env_bool('TIKTOK_AUTOMATIC_RETRY_ENABLED',True):return
     with tiktok_retry_sweeper_lock:
-        if tiktok_retry_sweeper_running:return
+        if tiktok_retry_sweeper_thread is not None and tiktok_retry_sweeper_thread.is_alive():return
         tiktok_retry_sweeper_running=True
         tiktok_retry_sweeper_stop.clear()
-    tiktok_retry_sweeper_thread=threading.Thread(target=tiktok_retry_sweeper_loop,daemon=True,name='tiktok-safe-retry')
-    tiktok_retry_sweeper_thread.start()
+        tiktok_retry_sweeper_thread=threading.Thread(target=tiktok_retry_sweeper_loop,daemon=True,name='tiktok-safe-retry')
+        try:
+            tiktok_retry_sweeper_thread.start()
+        except Exception:
+            tiktok_retry_sweeper_running=False
+            tiktok_retry_sweeper_thread=None
+            raise
 
 
 @app.on_event('shutdown')
@@ -14573,6 +14662,32 @@ def queue_completed_job_uploads_once() -> dict[str, int]:
     return counts
 
 
+# Historical upload reconciliation runs independently of new production intake.
+from upload_attention_runtime import AttentionService
+upload_attention_service = AttentionService(sys.modules[__name__])
+
+
+@app.get("/api/uploads/attention")
+def get_upload_attention_status() -> dict:
+    try:
+        return upload_attention_service.snapshot()
+    except (ValueError, OSError):
+        return {"version": 1, "enabled": False, "worker_running": False, "items": [],
+                "error": "Status penanganan belum dapat dibaca; catatan upload tetap dipertahankan."}
+
+
+@app.post("/api/uploads/attention/run")
+def request_upload_attention_check() -> dict:
+    requested = upload_attention_service.request_check()
+    return {"accepted": upload_attention_service.enabled(), "requested": requested,
+            "message": "Pemeriksaan otomatis diminta; tidak ada pengiriman ulang tanpa bukti."}
+
+
+@app.on_event("startup")
+def start_upload_attention_worker() -> None:
+    upload_attention_service.start()
+
+
 def completed_job_upload_sweeper_loop() -> None:
     global completed_job_upload_sweeper_running
     try:
@@ -14599,14 +14714,21 @@ def completed_job_upload_sweeper_loop() -> None:
 
 @app.on_event("startup")
 def start_completed_job_upload_sweeper_if_needed() -> None:
-    global completed_job_upload_sweeper_running
+    global completed_job_upload_sweeper_running, completed_job_upload_sweeper_thread
     if not env_bool("AUTO_UPLOAD_COMPLETED_JOBS", False):
         return
     with completed_job_upload_sweeper_lock:
-        if completed_job_upload_sweeper_running:
+        if completed_job_upload_sweeper_thread is not None and completed_job_upload_sweeper_thread.is_alive():
             return
         completed_job_upload_sweeper_running = True
-    threading.Thread(target=completed_job_upload_sweeper_loop, daemon=True).start()
+        completed_job_upload_sweeper_thread = threading.Thread(
+            target=completed_job_upload_sweeper_loop, daemon=True, name='completed-upload-sweeper')
+        try:
+            completed_job_upload_sweeper_thread.start()
+        except Exception:
+            completed_job_upload_sweeper_running = False
+            completed_job_upload_sweeper_thread = None
+            raise
 
 
 def discover_clips(started_at: float, output_root: Path | None = None) -> list[ClipFile]:
@@ -15243,8 +15365,8 @@ def is_network_error(message: str) -> bool:
 
 def friendly_network_error() -> str:
     return (
-        "Koneksi server ke YouTube tidak tersedia. "
-        "Pastikan server/container punya akses internet keluar, atau gunakan tab Upload Video."
+        "Koneksi pengambilan sumber terputus; penyebab jaringan perlu dicocokkan dengan bukti unduhan. "
+        "Sistem tidak menganggap ini gangguan permanen. Upload Video tersedia jika Anda memiliki file sumber."
     )
 
 
@@ -15432,6 +15554,61 @@ def cleanup_job_artifacts(output_root: Path) -> int:
         return 1
     except OSError:
         return 0
+
+
+def preserve_source_download_evidence(job_id: str, output_root: Path) -> None:
+    """Retain redacted transport causes before a failed media workspace is removed."""
+    with jobs_lock:
+        job = jobs.get(job_id)
+    if job is None:
+        return
+    expected = source_download.source_id(job.request.url)
+    if not expected:
+        return
+    events = []
+    for path in [output_root / "source_download_diagnostics.json", *output_root.glob("*/source_download_diagnostics.json")][:8]:
+        try:
+            if not path.is_file() or path.stat().st_size > 128_000 or output_root.resolve() not in path.resolve().parents:
+                continue
+            data = json.loads(path.read_text())
+            if data.get("version") != 1 or data.get("source_id") != expected or not isinstance(data.get("events"), list):
+                continue
+            for event in data["events"][-24:]:
+                if not isinstance(event, dict):
+                    continue
+                clean = {key:source_download.redact(str(event[key])) for key in
+                    ("stage", "strategy", "checked_at", "category", "error_type", "message") if key in event}
+                clean.update(attempt=int(event.get("attempt",0)), recovered=event.get("recovered") is True)
+                if isinstance(event.get("downloader_messages"), list):
+                    clean["downloader_messages"] = [source_download.redact(str(value))[:400] for value in event["downloader_messages"][-3:]]
+                if isinstance(event.get("causes"), list):
+                    clean["causes"] = [{key:source_download.redact(str(cause.get(key, ""))) for key in ("type", "message")}
+                        for cause in event["causes"][:4] if isinstance(cause, dict)]
+                events.append(clean)
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+    if not events:
+        return
+    events = sorted(events, key=lambda row:row.get("checked_at", ""))[-48:]
+    folder = SOURCE_USAGE_HISTORY_PATH.parent / "source_download_diagnostics"
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        target = folder / (job_id + ".json")
+        temporary = target.with_suffix(".tmp")
+        temporary.write_text(json.dumps(dict(version=1, job_id=job_id, source_id=expected, events=events), ensure_ascii=False, indent=2))
+        temporary.chmod(0o600); temporary.replace(target)
+        failures = [event for event in events if event.get("category")]
+        set_job(job_id, download_diagnostics=dict(version=1, event_count=len(events),
+            category=failures[-1]["category"] if failures else "recovered",
+            transport_failure=any(event.get("category") in source_download.TRANSIENT for event in failures),
+            recovered=events[-1]["recovered"], evidence_retained=True))
+    except OSError:
+        print(f"Bukti gangguan unduh {job_id[:10]} belum dapat disimpan; catatan kegagalan dipertahankan.", flush=True)
+
+
+@app.get("/api/runtime/source-download")
+def get_source_download_capabilities() -> dict:
+    return source_download.capabilities()
 
 
 def preserve_director_recovery_evidence(job_id: str, output_root: Path) -> None:
@@ -16263,6 +16440,7 @@ def run_job(job_id: str) -> None:
             )
             return
 
+        preserve_source_download_evidence(job_id, output_root)
         preserve_director_recovery_evidence(job_id, output_root)
         clips = discover_clips(started_at, output_root)
         had_rendered_clips = bool(clips)
@@ -16410,6 +16588,7 @@ def run_job(job_id: str) -> None:
                 completed_job = jobs.get(job_id)
             if completed_job is not None:
                 retire_targeted_repair_source(completed_job)
+                cleanup_recovered_source_jobs_once()
                 with jobs_lock:
                     completed_job = jobs.get(job_id)
             if completed_job is not None:
@@ -16468,6 +16647,7 @@ def run_job(job_id: str) -> None:
             discard_failed_targeted_repair_job(job_id, failure_reason)
     except Exception as exc:
         render_process.terminate(process, CANCEL_GRACE_SECONDS)
+        preserve_source_download_evidence(job_id, output_root)
         preserve_director_recovery_evidence(job_id, output_root)
         preserve_partial_render = (
             any(output_root.rglob("clips/*.mp4"))
@@ -19868,6 +20048,149 @@ SHORT_SELECTION_REJECTION_PREFIX = (
     "Tidak ditemukan potongan dengan kalimat tuntas, alur utuh, "
     "retensi memadai, dan konteks aman."
 )
+
+
+def archived_source_download_failure(job_id: str) -> str | None:
+    """A removed card may still have a durable, fully scoped recovery receipt."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", job_id):
+        return None
+    path = SOURCE_USAGE_HISTORY_PATH.parent / "source_download_recoveries" / (job_id + ".json")
+    try:
+        if path.stat().st_size > 128_000:
+            return None
+        receipt = json.loads(path.read_text())
+        if (receipt.get("version") == 1 and receipt.get("original_job_id") == job_id
+                and receipt.get("original_status") == "failed"
+                and receipt.get("original_clip_count") == 0 and receipt.get("original_candidate_count") == 0
+                and receipt.get("review_only") is False and receipt.get("publication_review_required") is False
+                and receipt.get("replacement_status") == "completed" and receipt.get("replacement_clip_count",0) > 0
+                and re.fullmatch(r"[A-Za-z0-9_-]{11}", str(receipt.get("source_id") or ""))
+                and source_download.is_download_failure(receipt.get("previous_error"))):
+            return str(receipt["previous_error"])
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+    return None
+
+
+def reconcile_terminal_source_download_checkpoints_once() -> int:
+    """A failed campaign cannot keep its terminal download child queued forever."""
+    with process_lock:
+        active = set(job_processes)
+    with jobs_lock:
+        known_job_ids = set(jobs)
+        terminal = {key:row for key,row in jobs.items() if row.status == "failed" and not row.clips
+            and not row.candidates and key not in active and not row.request.review_only
+            and not row.request.publication_review_required
+            and source_download.is_download_failure(row.error, row.download_diagnostics)}
+    updates = {}; previous = {}; changed = 0
+    with auto_viral_lock:
+        for run in auto_viral_runs.values():
+            if run.status not in {"failed", "cancelled"}:
+                continue
+            processed = []; count = 0
+            for original in run.processed:
+                item = dict(original)
+                child_id = str(item.get("job_id") or "")
+                child = terminal.get(child_id)
+                error = child.error if child else archived_source_download_failure(child_id) if child_id not in known_job_ids else None
+                if error and (item.get("status") != "failed" or item.get("job_status") != "failed"):
+                    item.update(status="failed", job_status="failed", clip_count=0,
+                        error=source_download.redact(error),
+                        source_download_original_state={"status":item.get("status"), "job_status":item.get("job_status")},
+                        source_download_reconciled_at=now_iso())
+                    count += 1
+                processed.append(item)
+            if count:
+                previous[run.id] = run
+                updates[run.id] = run.model_copy(update={"processed":processed})
+                changed += count
+        if updates:
+            auto_viral_runs.update(updates)
+            try:
+                save_auto_viral_runs_unlocked()
+            except OSError:
+                auto_viral_runs.update(previous)
+                raise
+    return changed
+
+
+def cleanup_recovered_source_jobs_once() -> int:
+    """Archive an empty failed download only after a later matching source succeeds."""
+    try:
+        reconcile_terminal_source_download_checkpoints_once()
+    except OSError:
+        return 0
+    with auto_viral_lock:
+        consumers = {str(item.get("job_id")) for run in auto_viral_runs.values() for item in run.processed
+            if item.get("job_id") and (item.get("status") != "failed" or item.get("job_status") != "failed")}
+    removed = 0
+    removed_rows = {}
+    removed_secrets = {}
+    with youtube_upload_creation_lock, tiktok_upload_creation_lock:
+        with youtube_uploads_lock:
+            protected = {row.source_job_id for row in youtube_uploads.values()}
+        with tiktok_uploads_lock:
+            protected.update(row.source_job_id for row in tiktok_uploads.values())
+        with process_lock, jobs_lock:
+            rows = list(jobs.values())
+            for old in rows:
+                transport_failure = source_download.is_download_failure(old.error, old.download_diagnostics)
+                if (old.status != "failed" or not transport_failure or old.clips or old.candidates
+                        or old.id in protected or old.id in consumers or old.id in job_processes
+                        or old.request.review_only or old.request.publication_review_required
+                        or (OUTPUTS_DIR / old.id).exists()):
+                    continue
+                if any(row.status in {"queued", "running"} and old.id in {
+                        row.repair_source_job_id, row.source_recovery_parent_job_id} for row in rows):
+                    continue
+                identity = source_download.source_id(old.source_url or old.request.url)
+                if not identity:
+                    continue
+                failed_at = parsed_datetime(old.finished_at or old.updated_at)
+                if failed_at is None:
+                    continue
+                replacement = next((row for row in sorted(rows, key=lambda item:item.created_at, reverse=True)
+                    if row.status == "completed" and row.clips and row.id != old.id
+                    and (parsed_datetime(row.created_at) or failed_at) > failed_at
+                    and source_download.source_id(row.source_url or row.request.url) == identity
+                    and row.request.clip_mode == old.request.clip_mode
+                    and row.request.target_platform == old.request.target_platform
+                    and not row.request.review_only and not row.request.publication_review_required), None)
+                if replacement is None:
+                    continue
+                folder = SOURCE_USAGE_HISTORY_PATH.parent / "source_download_recoveries"
+                try:
+                    folder.mkdir(parents=True, exist_ok=True)
+                    target = folder / (old.id + ".json")
+                    temporary = target.with_suffix(".tmp")
+                    temporary.write_text(json.dumps(dict(version=1, original_job_id=old.id, original_status="failed",
+                        original_clip_count=0, original_candidate_count=0,
+                        review_only=False, publication_review_required=False,
+                        replacement_status="completed", replacement_clip_count=len(replacement.clips),
+                        recovered_by_job_id=replacement.id, source_id=identity, clip_mode=old.request.clip_mode,
+                        previous_error=source_download.redact(old.error or ""),
+                        download_diagnostics=old.download_diagnostics, recovered_at=replacement.finished_at,
+                        archived_at=now_iso()), ensure_ascii=False, indent=2))
+                    temporary.chmod(0o600); temporary.replace(target)
+                except OSError:
+                    continue  # A card is retained when its recovery evidence cannot be persisted.
+                removed_rows[old.id] = jobs.pop(old.id)
+                if old.id in job_secrets:
+                    removed_secrets[old.id] = job_secrets.pop(old.id)
+                removed += 1
+            if removed:
+                try:
+                    save_jobs_unlocked()
+                except OSError:
+                    jobs.update(removed_rows)
+                    job_secrets.update(removed_secrets)
+                    return 0
+    return removed
+
+
+@app.on_event("startup")
+def cleanup_recovered_source_jobs_on_startup() -> None:
+    cleanup_recovered_source_jobs_once()
 
 
 def cleanup_rejected_source_jobs_once() -> int:
@@ -23950,6 +24273,7 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 message=f"{completed_count}/{run_request.video_count} video sukses",
             )
             try:
+                cleanup_recovered_source_jobs_once()
                 cleanup_rejected_source_jobs_once()
             except OSError as exc:
                 append_auto_viral_log(run_id, f"Pembersihan kartu gagal ditunda: {type(exc).__name__}")
@@ -24105,6 +24429,10 @@ def run_auto_viral_campaign(run_id: str) -> None:
                 auto_viral_active_run_id = None
             auto_viral_secrets.pop(run_id, None)
             cancelled_auto_viral_run_ids.discard(run_id)
+        try:
+            reconcile_terminal_source_download_checkpoints_once()
+        except OSError as exc:
+            append_auto_viral_log(run_id, f"Penyelarasan checkpoint unduhan ditunda: {type(exc).__name__}")
         if source_replacement_pending:
             auto_viral_scheduler_wakeup.set()
 
@@ -26021,6 +26349,7 @@ def auto_viral_scheduler_loop() -> None:
                     auto_viral_scheduler_health.update(last_tick_at=now.isoformat(), phase="checking")
                 queue_scheduled_upload_recoveries_once()
                 reconcile_stalled_scheduled_upload_runs(now)
+                cleanup_recovered_source_jobs_once()
                 cleanup_rejected_source_jobs_once()
                 try:
                     queue_youtube_private_buffer_promotions_once()
@@ -26172,12 +26501,15 @@ def auto_viral_scheduler_loop() -> None:
 @app.on_event("startup")
 def start_auto_viral_scheduler_if_enabled() -> None:
     global auto_viral_scheduler_running, auto_viral_scheduler_thread
-    with auto_viral_lock:
-        save_auto_viral_runs_unlocked()
     if not auto_viral_schedule_enabled():
         return
     with auto_viral_scheduler_lock:
-        if auto_viral_scheduler_running:
+        if auto_viral_scheduler_thread is not None and auto_viral_scheduler_thread.is_alive():
+            return
+    with auto_viral_lock:
+        save_auto_viral_runs_unlocked()
+    with auto_viral_scheduler_lock:
+        if auto_viral_scheduler_thread is not None and auto_viral_scheduler_thread.is_alive():
             return
         auto_viral_scheduler_running = True
         auto_viral_scheduler_thread = threading.Thread(
@@ -26185,7 +26517,12 @@ def start_auto_viral_scheduler_if_enabled() -> None:
             name="auto-viral-scheduler",
             daemon=True,
         )
-        auto_viral_scheduler_thread.start()
+        try:
+            auto_viral_scheduler_thread.start()
+        except Exception:
+            auto_viral_scheduler_running = False
+            auto_viral_scheduler_thread = None
+            raise
 
 
 @app.post("/api/automation/viral-cc", response_model=AutoViralRun)
@@ -28565,3 +28902,7 @@ def cancel_job(job_id: str) -> dict[str, str | bool]:
 # Register the isolated Facebook workspace after the shared job/browser contracts.
 from facebook_api import install as install_facebook_workspace
 install_facebook_workspace(app, sys.modules[__name__])
+
+# Supervises existing owners only; does not create a competing production lane.
+from ai_office import install as install_ai_office
+install_ai_office(app, sys.modules[__name__])
