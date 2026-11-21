@@ -19788,14 +19788,36 @@ def search_auto_viral_sources(
         if max_metadata_checks is not None and metadata_checks >= max_metadata_checks:
             break
         append_auto_viral_log(run_id, f"Mencari kandidat YouTube: {query}")
-        try:
-            with YoutubeDL(ytdlp_probe_options()) as ydl:
-                result = ydl.extract_info(
-                    f"{search_mode}{request.search_limit_per_query}:{query}",
-                    download=False,
+        attempts = [(search_mode, f"{search_mode}{request.search_limit_per_query}:{query}")]
+        if search_mode == "ytsearchdate":
+            # Older yt-dlp builds do not recognise date-sorted search URLs at
+            # all. Falling back to relevance keeps discovery alive instead of
+            # losing every query after an HTTP 429 quota fallback.
+            attempts.append(
+                ("ytsearch", f"ytsearch{request.search_limit_per_query}:{query}")
+            )
+        result: dict[str, Any] | None = None
+        last_error: Exception | None = None
+        for attempt_mode, search_expression in attempts:
+            try:
+                with YoutubeDL(ytdlp_probe_options()) as ydl:
+                    result = ydl.extract_info(search_expression, download=False)
+                break
+            except Exception as exc:
+                last_error = exc
+                if attempt_mode != "ytsearchdate":
+                    break
+                search_mode = "ytsearch"
+                append_auto_viral_log(
+                    run_id,
+                    "ytsearchdate tidak didukung yt-dlp ini; melanjutkan dengan "
+                    "urutan relevansi untuk menghindari fallback kosong.",
                 )
-        except Exception as exc:
-            append_auto_viral_error(run_id, f"Search gagal untuk '{query}': {exc}")
+        if result is None:
+            append_auto_viral_error(
+                run_id,
+                f"Search gagal untuk '{query}': {last_error}",
+            )
             continue
 
         entries = result.get("entries", []) if isinstance(result, dict) else []

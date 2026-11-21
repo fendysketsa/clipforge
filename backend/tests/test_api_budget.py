@@ -6623,6 +6623,44 @@ def test_ytdlp_search_honours_configured_date_mode(monkeypatch):
     assert any("ceramah indonesia nasihat kehidupan" in call for call in calls)
 
 
+def test_ytdlp_date_search_falls_back_when_build_does_not_support_it(monkeypatch):
+    import api
+
+    calls: list[str] = []
+
+    class FakeYDL:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, query, download=False):
+            calls.append(query)
+            if query.startswith("ytsearchdate"):
+                raise RuntimeError('Unsupported url scheme: "ytsearchdate5"')
+            return {"entries": []}
+
+    monkeypatch.setenv("VIRAL_CC_YTDLP_SEARCH_MODE", "ytsearchdate")
+    monkeypatch.setattr(api, "YoutubeDL", FakeYDL)
+    monkeypatch.setattr(api, "cron_humor_discovery_active", lambda *_args: False)
+    monkeypatch.setattr(api, "cron_trend_discovery_active", lambda *_args: False)
+
+    request = AutoViralRequest(
+        queries=["ceramah singkat indonesia"],
+        sort_order="relevance",
+        search_limit_per_query=5,
+    )
+
+    assert api.search_auto_viral_sources(request, "missing-run") == []
+    assert calls[0].startswith("ytsearchdate5:")
+    assert any(call.startswith("ytsearch5:") for call in calls)
+    assert sum(call.startswith("ytsearchdate5:") for call in calls) == 1
+
+
 def test_scheduled_quota_fallback_broadens_theme_queries_and_metadata_budget(monkeypatch):
     import api
 
