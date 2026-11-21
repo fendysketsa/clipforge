@@ -12,6 +12,7 @@ def isolate_runtime_state_files(monkeypatch, tmp_path):
     api = sys.modules.get("api")
     if api is not None:
         monkeypatch.setenv('AI_OFFICE_ENABLED', 'false')
+        monkeypatch.setenv('UPLOAD_ATTENTION_AUTOMATIC_ENABLED', 'false')
         monkeypatch.setenv('AUTO_VIRAL_SCHEDULE_DYNAMIC_EDITORIAL_ENABLED', 'false')
         monkeypatch.setenv('TIKTOK_AUTOMATIC_RETRY_ENABLED','false')
         monkeypatch.setenv('AUTO_VIRAL_DAILY_PLAN_ENABLED', 'false')

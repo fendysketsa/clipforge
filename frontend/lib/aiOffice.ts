@@ -32,6 +32,19 @@ export function officeStatus(snapshot: AIOfficeSnapshot | null, now: number, ref
   return { state: snapshot.state, label: snapshot.label, detail: snapshot.detail, stale: false };
 }
 
+/** Motion follows observed work; pausing the view never pauses server workers. */
+export function officeMotion(snapshot: AIOfficeSnapshot | null, now: number, refreshFailed = false, visible = true) {
+  const status = officeStatus(snapshot, now, refreshFailed);
+  const current = Boolean(snapshot?.enabled && snapshot.worker_running && !status.stale
+    && status.state !== "starting" && status.state !== "disabled");
+  return {
+    canAnimate: current && visible,
+    monitoring: current && visible && ["working", "waiting"].includes(status.state),
+    activeDepartments: current ? snapshot!.departments.filter(department => department.state === "working"
+      && Number.isFinite(department.active_count) && department.active_count > 0).map(department => department.id) : [],
+  };
+}
+
 export const officeStateLabel: Record<OfficeState, string> = {
   starting: "Menyiapkan", working: "Bekerja", waiting: "Menunggu giliran", disabled: "Dijeda", degraded: "Perlu pemulihan",
 };

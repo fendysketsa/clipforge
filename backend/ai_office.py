@@ -100,11 +100,14 @@ class OfficeService:
         with a.jobs_lock:
             active_jobs = [row for row in a.jobs.values() if row.status in {'queued', 'running'}]
             quality_jobs = sum(bool(row.repair_source_job_id) or row.progress_stage in {'qc', 'quality_control'}
+                               or str(getattr(row, 'progress_detail', '') or '').casefold().startswith(('audit ', 'qc '))
                                for row in active_jobs)
         with a.youtube_uploads_lock:
-            youtube = [(row.status, bool(row.upload_confirmed)) for row in a.youtube_uploads.values() if not row.dry_run]
+            youtube = [(row.status, bool(row.upload_confirmed)) for row in a.youtube_uploads.values()
+                       if not row.dry_run and not getattr(row, 'attention_archived_at', None)]
         with a.tiktok_uploads_lock:
-            tiktok = [(row.status, bool(row.upload_confirmed)) for row in a.tiktok_uploads.values() if not row.dry_run]
+            tiktok = [(row.status, bool(row.upload_confirmed)) for row in a.tiktok_uploads.values()
+                      if not row.dry_run and not getattr(row, 'attention_archived_at', None)]
         with a.long_qc_lock:
             quality_jobs += len(a.long_qc_active)
         with a.claimed_clip_cleanup_lock:
@@ -306,7 +309,7 @@ class OfficeService:
             c = context
             department('production', 'Produksi & riset', 'Memilih sumber dan memproduksi Short serta Long.',
                        c['cron_enabled'], c['jobs'], c['cron_alive'],
-                       f"{c['jobs']} pekerjaan video aktif." if c['jobs'] else
+                       f"{c['jobs']} pekerjaan video aktif atau mengantre." if c['jobs'] else
                        'Menunggu jadwal, kapasitas, atau sumber yang memenuhi syarat.' if c['cron_enabled'] else
                        'Produksi otomatis dijeda sesuai setelan operator.')
             quality_enabled = c['cron_enabled'] or c['generic_enabled'] or c['facebook']['enabled']
@@ -333,7 +336,7 @@ class OfficeService:
             departments.append(dict(id='facebook', name='Facebook Studio',
                 role='Mengelola produksi, QC, dan antrean Facebook.', state=fb['state'],
                 detail=fb['detail'], active_count=fb['active_count']))
-        degraded = bool(error or failed_departments or (enabled and not worker_running)
+        degraded = bool(error or (enabled and not worker_running)
                         or any(row['state'] == 'degraded' for row in departments))
         state = ('disabled' if not enabled else 'starting' if last is None and not error else
                  'degraded' if degraded else 'working' if any(row['state'] == 'working' for row in departments) else 'waiting')

@@ -40,9 +40,9 @@ class AttentionService:
         return bool(not policy.submitted(platform, row) and any(str(line).startswith('UPLOAD_FAILED_BEFORE_FILE_SELECTION:')
                     for line in row.get('logs', [])))
 
-    def snapshot(self):
+    def snapshot(self, records=None):
         now = time.time()
-        records = self.records()
+        records = self.records() if records is None else records
         saved = self.store.read()['items']
         items = []
         for platform, rows in records.items():
@@ -53,10 +53,14 @@ class AttentionService:
                 item = policy.decision(platform, row, rows, media_exists=bool(path and path.is_file()),
                                        retry_allowed=self.retry_allowed(platform, row),
                                        claim_confirmed=(platform == 'youtube' and self.api.youtube_upload_was_claimed(
-                                           self.api.YouTubeUploadJob.model_validate(row))))
+                                           self.api.YouTubeUploadJob.model_validate(row))),
+                                       saved=saved.get(f'{platform}-{row["id"]}', {}), now=now)
                 if item:
                     items.append(policy.status(item, saved.get(item['id'], {}), now))
         return {'version': policy.VERSION, 'rejected_upload_cleanup_version': policy.REJECTION_CLEANUP_VERSION,
+                'autonomous_backlog_version': policy.AUTONOMOUS_BACKLOG_VERSION,
+                'terminal_attention_archive': True, 'local_reconciliation_during_upload': True,
+                'history_auto_disposition': callable(getattr(self.api, 'process_autonomous_history_once', None)),
                 'terminal_claim_action': 'DROP_SOURCE', 'rejected_upload_archive': True, 'enabled': self.enabled(),
                 'worker_running': bool(self.thread and self.thread.is_alive()), 'items': items}
 
@@ -69,7 +73,8 @@ class AttentionService:
 
     def unchanged(self, row, item):
         return bool(row and policy.evidence_revision(row.model_dump()) == item['revision']
-                    and row.status not in {'queued', 'running'} and not row.dry_run)
+                    and row.status not in {'queued', 'running'} and not row.dry_run
+                    and not getattr(row, 'attention_archived_at', None))
 
     def reconcile_duplicate(self, item):
         a = self.api; platform = item['platform']
@@ -131,12 +136,25 @@ class AttentionService:
             actual = policy.youtube_id(proof.get('video_url'))
             checkpoint = policy.youtube_id(live.video_url)
             channel = a.os.environ.get('YOUTUBE_TARGET_CHANNEL_ID', a.DEFAULT_YOUTUBE_TARGET_CHANNEL_ID)
+            metadata_matches = (policy.normalized_text(proof.get('title')) == policy.normalized_text(live.title)
+                                and proof.get('description_sha256') == policy.text_hash(live.description))
+            exact_original = bool(checkpoint and actual == checkpoint
+                and policy.distinctive_filename(live.clip_name)
+                and proof.get('reader_version') == policy.READER_VERSION
+                and proof.get('file_name_matched') is True
+                and proof.get('original_filename') == live.clip_name
+                and proof.get('remote_processing_complete') is True)
+            if exact_original:
+                exact_original = not any(other.id != live.id and not other.dry_run
+                    and other.clip_name == live.clip_name
+                    and other.target_channel.casefold() == live.target_channel.casefold()
+                    and not policy.same_media(live.model_dump(), other.model_dump())
+                    for other in list(a.youtube_uploads.values()))
             return bool(actual and (not checkpoint or actual == checkpoint)
                 and (checkpoint or proof.get('file_name_matched'))
                 and proof.get('target_channel_id') == channel
                 and proof.get('source') == 'authenticated_studio_exact_video'
-                and policy.normalized_text(proof.get('title')) == policy.normalized_text(live.title)
-                and proof.get('description_sha256') == policy.text_hash(live.description)
+                and (metadata_matches or exact_original)
                 and proof.get('visibility') in {'public', 'private', 'unlisted'}
                 and (not live.publish_at or proof.get('visibility') == 'public'))
         expected_handle = a.tiktok_target_handle()
@@ -162,6 +180,10 @@ class AttentionService:
                     updated_at=a.now_iso(), finished_at=live.finished_at or a.now_iso(),
                     logs=[*live.logs, 'ATTENTION_REMOTE_CONFIRMED:'+proof['video_url'],
                         'ID dan metadata posting terverifikasi baca-saja; tidak ada upload atau perubahan privasi.'][-160:])
+                if platform == 'youtube' and (policy.normalized_text(proof.get('title')) != policy.normalized_text(live.title)
+                        or proof.get('description_sha256') != policy.text_hash(live.description)):
+                    changes['logs'] = [*live.logs, 'ATTENTION_REMOTE_CONFIRMED:'+proof['video_url'],
+                        'ATTENTION_METADATA_EDIT_CONFIRMED: ID, channel, nama file asli, dan status selesai cocok; metadata remote pernah disunting.'][-160:]
                 if platform == 'youtube':
                     changes.update(video_url=proof['video_url'], visibility=proof['visibility'], publish_at=None)
                 else:
@@ -204,8 +226,14 @@ class AttentionService:
             return 0
         changed = 0
         try:
-            snapshot = self.snapshot()
+            history = getattr(self.api, 'process_autonomous_history_once', None)
+            if callable(history):
+                try:
+                    changed += int(history())
+                except Exception as error:
+                    print('Penanganan riwayat dijadwalkan ulang: '+type(error).__name__, flush=True)
             records = self.records()
+            snapshot = self.snapshot(records)
             # Local rejection cleanup needs no browser and cannot be starved by
             # old remote verification rows or a busy social upload session.
             for item in snapshot['items']:
@@ -214,17 +242,36 @@ class AttentionService:
                 live = self.current(item['platform'], item['upload_id'])
                 if self.unchanged(live, item) and self.api.youtube_upload_was_claimed(live):
                     changed += int(self.api.schedule_claimed_clip_cleanup(live.id))
-            if any(row['status'] in {'queued', 'running'} for rows in records.values() for row in rows):
-                return changed
-            for item in policy.due([item for item in snapshot['items'] if item['action'] != 'drop_source'], time.time())[:12]:
+            # Local work does not need the browser and must finish even while
+            # an unrelated platform is uploading. Keep remote attempts intact.
+            local = [item for item in policy.due(snapshot['items'], time.time())
+                     if item['action'] in {'reconcile_duplicate', 'archive_unknown'}]
+            for item in local[:64]:
                 platform = item['platform']; key = item['id']
-                if item['action'] == 'reconcile_duplicate':
-                    success = self.reconcile_duplicate(item)
+                try:
+                    live = self.current(platform, item['upload_id'])
+                    if not self.unchanged(live, item):
+                        continue
+                    if item['action'] == 'archive_unknown':
+                        success = self.api.archive_unresolved_upload_record(platform, item['upload_id'],
+                            item['revision'], item['archive_evidence'])
+                    else:
+                        success = self.reconcile_duplicate(item)
                     if success:
-                        self.store.update(key, revision=item['revision'], state='resolved', checked_at=time.time(),
-                                          message='Diselaraskan dengan posting file yang sama yang sudah terverifikasi.')
+                        self.store.update(key, revision=item['revision'],
+                            state='archived' if item['action'] == 'archive_unknown' else 'resolved', checked_at=time.time(),
+                            archive_evidence=item.get('archive_evidence'),
+                            message='Catatan diarsipkan otomatis; hasil remote tidak diasumsikan.' if item['action'] == 'archive_unknown'
+                            else 'Diselaraskan dengan posting file yang sama yang sudah terverifikasi.')
                         changed += 1
-                    continue
+                except Exception as error:
+                    # Do not overwrite the completed read evidence needed to
+                    # safely retry an archive after a temporary storage error.
+                    self.store.update(key, local_error_type=type(error).__name__)
+            if getattr(self.api, 'social_upload_waiting_turns', []):
+                return changed
+            for item in policy.due([item for item in snapshot['items'] if item['action'] in {'verify_remote','retry_upload'}], time.time())[:12]:
+                platform = item['platform']; key = item['id']
                 if not self.api.social_upload_execution_lock.acquire(blocking=False):
                     break
                 try:
@@ -233,8 +280,10 @@ class AttentionService:
                         continue
                     attempts = item['attempts'] + 1
                     now = time.time()
+                    previous_observations = policy.unknown_observation_count(self.store.read()['items'].get(key, {}))
                     self.store.update(key, revision=item['revision'], state='checking', checked_at=now,
                                       attempts=attempts, next_check_at=now + 180,
+                                      reader_version=policy.READER_VERSION if item['action'] == 'verify_remote' else 0,
                                       message='Sedang mencocokkan bukti di Studio secara otomatis.')
                     proof = {}
                     if item['action'] == 'verify_remote':
@@ -243,8 +292,16 @@ class AttentionService:
                     else:
                         success = self.retry(item)
                     changed += int(success)
+                    previous = self.store.read()['items'].get(key, {})
+                    observations = previous_observations
+                    complete = item['action'] == 'verify_remote' and policy.completed_unknown_observation(proof)
+                    if complete:
+                        observations += 1
                     self.store.update(key, revision=item['revision'], state='resolved' if success else 'waiting',
                         checked_at=time.time(), attempts=attempts, proof=proof if success else {},
+                        unknown_observations=observations,
+                        verification_version=policy.READER_VERSION if complete else previous.get('verification_version', 0),
+                        error_type=proof.get('error_type'),
                         next_check_at=time.time()+policy.BACKOFF[min(attempts-1,len(policy.BACKOFF)-1)],
                         message='Selesai ditangani otomatis.' if success else proof.get('message') or
                             'Bukti belum lengkap; pemeriksaan berikutnya dijadwalkan otomatis.')

@@ -48,14 +48,14 @@ test('deep links select the requested workspace and unknown hashes safely select
 test('automatic handling exposes its reason and next check without masking a successful upload', () => {
   const attention={version:1,enabled:true,worker_running:true,items:[{id:'youtube-one',state:'waiting',reason:'Mencocokkan ID tersimpan.',next_check_at:1800000000,attempts:1,action:'verify_remote'}]};
   const pending=studioQueueItems([upload({upload_confirmed:false})],[],attention)[0];
-  assert.equal(pending.label,'Ditangani otomatis');assert.equal(pending.automatic,true);
+  assert.equal(pending.label,'Terjadwal otomatis');assert.equal(pending.automatic,true);
   assert.equal(pending.detail,'Mencocokkan ID tersimpan.');assert.equal(pending.nextCheckAt,1800000000);
   assert.equal(studioQueueItems([upload()],[],attention)[0].state,'verified');
 });
 test('holds have their own category and never appear as an active upload', () => {
   const attention={version:1,enabled:true,worker_running:true,items:[{id:'youtube-one',state:'held',reason:'Sumber berklaim.',attempts:0,action:'hold'}]};
   const held=studioQueueItems([upload({upload_confirmed:false})],[],attention)[0];
-  assert.equal(held.state,'held');assert.equal(held.label,'Ditahan sistem');
+  assert.equal(held.state,'held');assert.equal(held.label,'Menunggu bukti');
   const busy=studioQueueItems([upload({status:'running'})],[],attention)[0];
   assert.equal(busy.state,'running');
 });
@@ -63,4 +63,35 @@ test('holds have their own category and never appear as an active upload', () =>
 test('reconciled TikTok attempts for the same exact post appear once', () => {
   const row={id:'tt',caption:'Video',clip_name:'clip',status:'completed',upload_confirmed:true,profile_url:'https://www.tiktok.com/@channel/video/1234567890123456789',updated_at:'2026-11-20T01:00:00Z'};
   assert.equal(studioQueueItems([],[row,{...row,id:'retry'}]).length,1);
+});
+
+test('archived tombstones never appear as pending or verified dashboard work',()=>{
+  const archived=upload({attention_archived_at:'2026-11-21T01:00:00Z',attention_disposition:'unresolved_archived'});
+  const tt={id:'tt',status:'completed',upload_confirmed:true,
+    profile_url:'https://www.tiktok.com/@channel/video/1234567890123456789',
+    updated_at:'2026-11-21T01:00:00Z',attention_archived_at:'2026-11-21T01:00:00Z'};
+  assert.equal(studioQueueItems([archived],[tt]).length,0);
+  const sibling=upload({id:'real',updated_at:'2026-11-14T00:00:00Z'});
+  assert.equal(studioQueueItems([archived,sibling],[])[0].id,'youtube-real');
+});
+
+test('a stopped automatic worker cannot claim it is checking or processing',()=>{
+  const base={version:1,enabled:true,worker_running:false,items:[{id:'youtube-one',state:'checking',
+    reason:'Bukti lama masih dipertahankan.',attempts:2,action:'verify_remote'}]};
+  const stopped=studioQueueItems([upload({upload_confirmed:false})],[],base)[0];
+  assert.equal(stopped.label,'Menunggu worker');assert.equal(stopped.automatic,false);
+  const paused=studioQueueItems([upload({upload_confirmed:false})],[],{...base,enabled:false})[0];
+  assert.equal(paused.label,'Otomatis dijeda');assert.equal(paused.automatic,false);
+});
+
+test('only explicit urgent attention requires action, with active transfers still protected',()=>{
+  const attention={version:1,enabled:true,worker_running:true,items:[{id:'youtube-one',state:'waiting',
+    reason:'Akun memerlukan autentikasi ulang.',attempts:1,action:'verify_remote',urgent:true}]};
+  const urgent=studioQueueItems([upload({upload_confirmed:false})],[],attention)[0];
+  assert.equal(urgent.label,'Perlu tindakan Anda');assert.equal(urgent.urgent,true);assert.equal(urgent.automatic,false);
+  const working=studioQueueItems([upload({status:'running'})],[],attention)[0];
+  assert.equal(working.state,'running');assert.notEqual(working.label,'Perlu tindakan Anda');
+  const routine=studioQueueItems([upload({upload_confirmed:false})],[],{...attention,
+    items:[{...attention.items[0],urgent:false}]})[0];
+  assert.equal(routine.urgent,false);assert.equal(routine.label,'Terjadwal otomatis');
 });

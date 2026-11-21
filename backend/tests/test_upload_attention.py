@@ -139,9 +139,20 @@ def test_active_uploads_and_disabled_setting_take_priority(service,monkeypatch):
     api.youtube_uploads['one']=row(video_url='https://www.youtube.com/watch?v=AbCdEfGh123')
     api.youtube_uploads['active']=row(id='active',status='running')
     monkeypatch.setattr(service,'observe',lambda *_:pytest.fail('Deferred'))
-    assert service.run_once()==0
+    api.social_upload_execution_lock.acquire()
+    try:assert service.run_once()==0
+    finally:api.social_upload_execution_lock.release()
     api.youtube_uploads.pop('active');monkeypatch.setenv('UPLOAD_ATTENTION_AUTOMATIC_ENABLED','false')
     assert service.run_once()==0
+
+
+def test_stale_unrelated_running_record_does_not_starve_an_available_browser(service,monkeypatch):
+    api.youtube_uploads['one']=row(video_url='https://www.youtube.com/watch?v=AbCdEfGh123')
+    api.youtube_uploads['stale']=row(id='stale',status='running',clip_url='/outputs/other.mp4')
+    calls=[]
+    monkeypatch.setattr(service,'observe',lambda *_:calls.append(True) or {'confirmed':False})
+    assert service.run_once()==0
+    assert calls==[True] and api.youtube_uploads['stale'].status=='running'
 
 
 def test_busy_social_browser_does_not_spend_budget(service):

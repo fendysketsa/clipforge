@@ -79,6 +79,7 @@ from motlab_story_renderer import rendering_capabilities
 import automatic_retry
 import source_download
 import upload_attention
+import autonomous_history
 import automatic_output_cleanup
 import ryuundy_growth_learning
 from cron_drama import (
@@ -1035,6 +1036,7 @@ class ClipJob(BaseModel):
     source_recovery_parent_job_id: str | None = None
     director_recovery: dict[str, Any] | None = None
     download_diagnostics: dict[str, Any] | None = None
+    automatic_handling: dict[str, Any] | None = None
     logs: list[str] = []
     clips: list[ClipFile] = []
     candidates: list[ClipCandidate] = []
@@ -1275,6 +1277,9 @@ class YouTubePerformanceUpdateRequest(BaseModel):
 
 
 class YouTubeUploadJob(BaseModel):
+    attention_archived_at: str | None = None
+    attention_disposition: str = ""
+    attention_archive_reason: str = ""
     source_video_url: str = ""
     cron_daily_lane: Literal["", "scheduled_short", "private_short", "long"] = ""
     cron_production_day: str = ""
@@ -1434,6 +1439,9 @@ class TikTokPerformanceUpdateRequest(BaseModel):
 
 
 class TikTokUploadJob(BaseModel):
+    attention_archived_at: str | None = None
+    attention_disposition: str = ""
+    attention_archive_reason: str = ""
     queued_at: str | None = None
     auto_retry_count: int = Field(default=0, ge=0)
     auto_retry_at: str | None = None
@@ -4372,6 +4380,9 @@ def enrich_job_for_display(job: "ClipJob") -> "ClipJob":
         enrich_job_codex_feedback(enrich_job_clip_titles(job))
     )
     enriched = enrich_job_director_recovery(enriched)
+    handler = globals().get("automatic_history_handling")
+    if callable(handler):
+        enriched = enriched.model_copy(update={"automatic_handling": handler(enriched)})
     if enriched.status != "completed" or not enriched.clips:
         return attach_job_telemetry(enriched)
 
@@ -8512,6 +8523,8 @@ def create_tiktok_upload_record(
     *,
     allow_audited_automation: bool = False,
 ) -> TikTokUploadJob:
+    if not request.dry_run:
+        ensure_no_archived_upload_resubmission("tiktok", job_id, request.clip_url, "")
     job, clip, index = find_job_clip(job_id, request.clip_url)
     if daily_cron_plan_enabled() and job.request.cron_daily_lane == "private_short":
         request = request.model_copy(update={"visibility": "only_you"})
@@ -8530,6 +8543,7 @@ def create_tiktok_upload_record(
     if duration_issue:
         raise HTTPException(status_code=409, detail=duration_issue.replace("Upload", "Upload TikTok", 1))
     fingerprint = file_sha256(clip_path)
+    ensure_no_archived_upload_resubmission("tiktok", job_id, clip.url, fingerprint)
     existing = reusable_tiktok_upload(job_id, clip.url, fingerprint)
     if existing is not None and not (request.dry_run and existing.status == "completed"):
         return existing
@@ -9341,6 +9355,8 @@ def queue_youtube_draft_recoveries_once(*, source_job_ids: set[str] | None = Non
             return 0
         now = datetime.now(timezone.utc)
         for row in sorted(rows, key=lambda item: item.updated_at):
+            if row.attention_archived_at:
+                continue
             if source_job_ids is not None and row.source_job_id not in source_job_ids:
                 continue
             # The previous worker could inspect a loading/hidden dialog before
@@ -9420,6 +9436,8 @@ def queue_youtube_draft_recoveries_once(*, source_job_ids: set[str] | None = Non
 
 
 def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> YouTubeUploadJob:
+    if not request.dry_run:
+        ensure_no_archived_upload_resubmission("youtube", job_id, request.clip_url, "")
     try:
         job, clip, index = find_job_clip(job_id, request.clip_url)
     except HTTPException as exc:
@@ -9461,6 +9479,7 @@ def create_youtube_upload_record(job_id: str, request: YouTubeUploadRequest) -> 
         clip_fingerprint = file_sha256(clip_path)
     except OSError as exc:
         raise HTTPException(status_code=409, detail=f"File clip tidak dapat dibaca: {exc}") from exc
+    ensure_no_archived_upload_resubmission("youtube", job_id, clip.url, clip_fingerprint)
     claimed_upload = youtube_clip_claim_block(job_id, clip.url, clip_fingerprint)
     if claimed_upload is not None:
         raise HTTPException(
@@ -11994,7 +12013,7 @@ def run_youtube_restart_verification(upload_id: str) -> None:
 def run_youtube_upload(upload_id: str) -> None:
     with youtube_uploads_lock:
         upload = youtube_uploads.get(upload_id)
-    if upload is None:
+    if upload is None or upload.attention_archived_at:
         return
 
     publish_at = parsed_datetime(upload.publish_at)
@@ -12750,7 +12769,7 @@ def execute_social_upload(platform: Literal['youtube', 'tiktok'], upload_id: str
         lock, records = (youtube_uploads_lock, youtube_uploads) if platform == 'youtube' else (tiktok_uploads_lock, tiktok_uploads)
         with lock:
             upload = records.get(upload_id)
-        if upload is None or upload.status != 'queued':
+        if upload is None or upload.attention_archived_at or upload.status != 'queued':
             return
         remaining = social_upload_cooldown_remaining()
         if remaining > 1:
@@ -12774,7 +12793,7 @@ def youtube_upload_worker_loop() -> None:
             queued = [
                 upload
                 for upload in sorted(youtube_uploads.values(), key=lambda item: item.created_at)
-                if upload.status == "queued"
+                if upload.status == "queued" and not upload.attention_archived_at
             ]
         if queued:
             execute_social_upload('youtube', queued[0].id)
@@ -12782,7 +12801,7 @@ def youtube_upload_worker_loop() -> None:
 
         with youtube_worker_lock:
             with youtube_uploads_lock:
-                still_queued = any(upload.status == "queued" for upload in youtube_uploads.values())
+                still_queued = any(upload.status == "queued" and not upload.attention_archived_at for upload in youtube_uploads.values())
             if still_queued:
                 continue
             youtube_worker_running = False
@@ -13067,7 +13086,7 @@ def schedule_cross_platform_cleanup_after_tiktok(upload: TikTokUploadJob) -> Non
 def run_tiktok_upload(upload_id: str) -> None:
     with tiktok_uploads_lock:
         upload = tiktok_uploads.get(upload_id)
-    if upload is None:
+    if upload is None or upload.attention_archived_at:
         return
     # Recheck legacy queues immediately before browser work. They may have
     # been created by an older API that only checked successful siblings.
@@ -13327,7 +13346,7 @@ def tiktok_worker_loop() -> None:
     while True:
         with tiktok_uploads_lock:
             queued = sorted(
-                (item for item in tiktok_uploads.values() if item.status == "queued"),
+                (item for item in tiktok_uploads.values() if item.status == "queued" and not item.attention_archived_at),
                 key=tiktok_queue_order,
             )
         if queued:
@@ -13335,7 +13354,7 @@ def tiktok_worker_loop() -> None:
             continue
         with tiktok_worker_lock:
             with tiktok_uploads_lock:
-                if any(item.status == "queued" for item in tiktok_uploads.values()):
+                if any(item.status == "queued" and not item.attention_archived_at for item in tiktok_uploads.values()):
                     continue
             tiktok_worker_running = False
             if tiktok_worker_thread is threading.current_thread():
@@ -14011,6 +14030,8 @@ def completed_job_upload_retry_ready(
         and str(getattr(item, "clip_url", "") or "") == clip_url_value
         and not bool(getattr(item, "dry_run", False))
     ]
+    if any(getattr(item, "attention_archived_at", None) for item in exact):
+        return False
     if any(
         getattr(item, "status", "") in {"queued", "running"}
         or (
@@ -14327,6 +14348,8 @@ def queue_retryable_tiktok_uploads_once(now: datetime | None = None, *, source_j
     with tiktok_upload_creation_lock:
         with tiktok_uploads_lock:rows=list(tiktok_uploads.values())
         for upload in sorted(rows,key=lambda item:item.updated_at):
+            if upload.attention_archived_at:
+                continue
             if upload_ids is not None and upload.id not in upload_ids:
                 continue
             if source_job_ids is not None and upload.source_job_id not in source_job_ids:
@@ -14660,6 +14683,262 @@ def queue_completed_job_uploads_once() -> dict[str, int]:
                         flush=True,
                     )
     return counts
+
+
+autonomous_history_lock = threading.Lock()
+autonomous_history_status: dict[str, Any] = {"last_tick_at": None, "removed": 0, "last_error": None}
+
+
+def ensure_no_archived_upload_resubmission(platform: str, job_id: str, clip_url: str, digest: str) -> None:
+    lock = youtube_uploads_lock if platform == "youtube" else tiktok_uploads_lock
+    records = youtube_uploads if platform == "youtube" else tiktok_uploads
+    with lock:
+        blocked = any(row.attention_archived_at and not row.dry_run and (
+            (row.source_job_id == job_id and row.clip_url == clip_url)
+            or (digest and row.clip_sha256 == digest)) for row in records.values())
+    if blocked:
+        raise HTTPException(409, "Percobaan lama diarsipkan dengan status remote belum pasti; file yang sama tidak dikirim ulang.")
+
+
+def archive_unresolved_upload_record(platform: str, upload_id: str, expected_revision: str, evidence: dict) -> bool:
+    """Retire a proven exhausted local task while retaining its remote reservation."""
+    if platform not in {"youtube", "tiktok"} or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", upload_id):
+        return False
+    records = youtube_uploads if platform == "youtube" else tiktok_uploads
+    lock = youtube_uploads_lock if platform == "youtube" else tiktok_uploads_lock
+    save = save_youtube_uploads_unlocked if platform == "youtube" else save_tiktok_uploads_unlocked
+    with youtube_upload_creation_lock, tiktok_upload_creation_lock:
+        with lock:
+            upload = records.get(upload_id)
+        if (not upload or upload.attention_archived_at or upload.status in {"queued", "running"}
+                or upload.dry_run or upload_attention.confirmed(platform, upload.model_dump())
+                or upload_attention.evidence_revision(upload.model_dump()) != expected_revision):
+            return False
+        saved = upload_attention_service.store.read()["items"].get(platform + "-" + upload_id, {})
+        actual_evidence = upload_attention.unknown_archive_evidence(platform, upload.model_dump(), saved,
+            media_exists=False, now=time.time())
+        if actual_evidence is None or actual_evidence != evidence:
+            return False
+        path = output_path_from_url(upload.clip_url)
+        if path is None or path.exists():
+            return False
+        with process_lock:
+            if (upload.source_job_id in job_processes or upload_id in youtube_upload_processes
+                    or upload_id in tiktok_upload_processes):
+                return False
+        with jobs_lock:
+            if any(clip.url == upload.clip_url for job in jobs.values() for clip in job.clips):
+                return False
+            if any(job.status in {"queued", "running"} and upload.source_job_id in {
+                    job.id, job.repair_source_job_id, job.source_recovery_parent_job_id} for job in jobs.values()):
+                return False
+            source = jobs.get(upload.source_job_id)
+            if source and (source.request.review_only or source.request.publication_review_required):
+                return False
+        with youtube_uploads_lock:
+            siblings = list(youtube_uploads.values())
+        with tiktok_uploads_lock:
+            siblings += list(tiktok_uploads.values())
+        if any(row.status in {"queued", "running"} and (row.clip_url == upload.clip_url or
+                upload_attention.same_media(upload.model_dump(), row.model_dump())) for row in siblings):
+            return False
+        from failed_upload_cleanup import write_json
+        original = upload.model_dump()
+        original.update(logs=[source_download.redact(line) for line in upload.logs],
+                        error=source_download.redact(upload.error or ""))
+        archived_at = now_iso()
+        receipt = dict(version=1, disposition="unresolved_remote_archived", platform=platform,
+            upload_id=upload_id, revision=expected_revision, archived_at=archived_at,
+            original_upload=original, verification_evidence=evidence, remote_action="none",
+            upload_allowed=False, remote_outcome="unconfirmed", local_media_exists=False)
+        target = YOUTUBE_UPLOADS_PATH.parent / "attention_archive" / platform / (upload_id + ".json")
+        with lock:
+            current = records.get(upload_id)
+            if (current is None or current.attention_archived_at
+                    or upload_attention.evidence_revision(current.model_dump()) != expected_revision):
+                return False
+            write_json(target, receipt)
+            records[upload_id] = current.model_copy(update=dict(attention_archived_at=archived_at,
+                attention_disposition="unresolved_remote_archived",
+                attention_archive_reason="Verifikasi otomatis sudah habis dan media tidak tersedia; identitas posting tetap dicadangkan, tanpa upload ulang."))
+            try:
+                save()
+            except OSError:
+                records[upload_id] = current
+                raise
+        return True
+
+
+def autonomous_history_plan(job: ClipJob) -> tuple[dict, list[dict]]:
+    with jobs_lock:
+        children = [{key: getattr(row, key) for key in (
+            "id", "status", "repair_source_job_id", "source_recovery_parent_job_id")} for row in jobs.values()]
+    with process_lock:
+        active = job.id in job_processes
+        upload_processes = set(youtube_upload_processes) | set(tiktok_upload_processes)
+    with youtube_uploads_lock:
+        yt = [row.model_dump() for row in youtube_uploads.values() if row.source_job_id == job.id]
+    with tiktok_uploads_lock:
+        tt = [row.model_dump() for row in tiktok_uploads.values() if row.source_job_id == job.id]
+    with auto_viral_lock:
+        refs = [dict(run_id=run.id, run_status=run.status, item=dict(item))
+            for run in auto_viral_runs.values() for item in run.processed
+            if job.id in {item.get("job_id"), item.get("long_job_id"), item.get("repair_job_id")}]
+    busy = any(row["run_status"] in {"queued", "running"} for row in refs)
+    active = active or any(row["id"] in upload_processes for row in yt + tt)
+    with long_qc_lock:
+        active = active or any(key.startswith(job.id + "\n") for key in long_qc_active)
+    return autonomous_history.decision(job.model_dump(), jobs=children, youtube=yt, tiktok=tt,
+        process_active=active, workspace_exists=(OUTPUTS_DIR / job.id).exists(), checkpoint_busy=busy,
+        facebook_protected=facebook_upload_protected(job.id)), refs
+
+
+def automatic_history_handling(job: ClipJob) -> dict:
+    try:
+        plan, _ = autonomous_history_plan(job)
+        result = autonomous_history.planning_snapshot(plan,
+            next_check_at=(datetime.now(timezone.utc) + timedelta(seconds=30)).isoformat())
+        if not env_bool("AUTO_UPLOAD_TERMINAL_CLEANUP_ENABLED", True) and plan["action"] != "retain":
+            result.update(state="waiting", action="cleanup_paused", reason="Cleanup otomatis dijeda sesuai setelan operator.")
+        return result
+    except (OSError, ValueError, TypeError, AttributeError):
+        return dict(state="waiting", action="retry_evidence", urgent=False, next_check_at=None,
+                    reason="Bukti penanganan diperiksa ulang otomatis; pekerjaan yang ada tetap dipertahankan.")
+
+
+def checkpoint_autonomous_history_disposition(job: ClipJob, plan: dict) -> None:
+    """Persist terminal ownership before removing local history; never invent upload success."""
+    remaining = [clip for clip in job.clips if clip.url not in set(plan.get("clip_urls", []))] if plan["action"] == "drop_source" else []
+    with auto_viral_lock:
+        updates = {}; originals = {}
+        for run in auto_viral_runs.values():
+            if run.status in {"queued", "running"}:
+                continue
+            processed = []
+            changed = False
+            for original in run.processed:
+                item = dict(original)
+                if job.id in {item.get("job_id"), item.get("long_job_id"), item.get("repair_job_id")}:
+                    item.setdefault("automatic_history_original_state", {key: item.get(key)
+                        for key in ("status", "job_status", "long_job_status", "clip_count", "long_clip_count")})
+                    item.update(automatic_disposition="PARTIAL_DROP_SOURCE" if remaining else "DROP_SOURCE",
+                        automatic_disposition_reason=plan["reason"],
+                        cleanup_completed=not remaining, automatic_disposition_at=now_iso())
+                    if item.get("job_id") == job.id:
+                        item.update(job_status=job.status, clip_count=len(remaining))
+                        if not remaining:
+                            item.update(status="failed" if job.status == "failed" else "source_dropped")
+                    if item.get("long_job_id") == job.id:
+                        item.update(long_job_status=job.status, long_clip_count=0, long_upload_status="output_deleted")
+                    changed = True
+                processed.append(item)
+            if changed:
+                originals[run.id] = run
+                updates[run.id] = run.model_copy(update={"processed": processed})
+        if updates:
+            auto_viral_runs.update(updates)
+            try:
+                save_auto_viral_runs_unlocked()
+            except OSError:
+                auto_viral_runs.update(originals)
+                raise
+    if remaining:
+        return
+    with long_production_lock:
+        state = long_production_state()
+        changed = False
+        for attempt in state.get("attempts", []):
+            if attempt.get("job_id") == job.id:
+                attempt.update(disposition="deleted_terminal_output", cleanup_reason=plan["reason"], cleaned_at=now_iso())
+                changed = True
+        if changed:
+            save_long_production_state(state)
+
+
+def retire_autonomous_history_job(original: ClipJob) -> int:
+    preliminary, _ = autonomous_history_plan(original)
+    if preliminary["action"] == "retain" or not youtube_upload_creation_lock.acquire(blocking=False):
+        return 0
+    try:
+        if not tiktok_upload_creation_lock.acquire(blocking=False):
+            return 0
+        try:
+            with jobs_lock:
+                job = jobs.get(original.id)
+            if job is None:
+                return 0
+            plan, refs = autonomous_history_plan(job)
+            if plan["action"] == "retain" or plan["revision"] != preliminary["revision"]:
+                return 0
+            if plan["action"] == "drop_source":
+                selected = set(plan["clip_urls"])
+                targets = {path for clip in job.clips if clip.url in selected for path in clip_artifact_paths(clip)}
+                with jobs_lock:
+                    protected = {path for other in jobs.values() for clip in other.clips
+                        if other.id != job.id or clip.url not in selected for path in clip_artifact_paths(clip)}
+                if targets & protected:
+                    return 0
+            receipt = autonomous_history.archive(JOBS_PATH.parent / "autonomous_history", job.model_dump(),
+                plan, checkpoint_refs=refs, now=now_iso())
+            checkpoint_autonomous_history_disposition(job, plan)
+            if plan["action"] == "archive_empty_failure":
+                with process_lock, jobs_lock:
+                    live = jobs.get(job.id)
+                    if live is None or autonomous_history.revision(live.model_dump()) != plan["revision"]:
+                        return 0
+                    if job.id in job_processes or (OUTPUTS_DIR / job.id).exists() or any(
+                        child.status in {"queued", "running"} and job.id in {
+                            child.repair_source_job_id, child.source_recovery_parent_job_id} for child in jobs.values()):
+                        return 0
+                    secret = job_secrets.pop(job.id, None)
+                    jobs.pop(job.id)
+                    try:
+                        save_jobs_unlocked()
+                    except OSError:
+                        jobs[job.id] = live
+                        if secret is not None:
+                            job_secrets[job.id] = secret
+                        raise
+                removed = 1
+            else:
+                # Recheck ownership in the normal deletion API as well.
+                response = delete_job_clips_by_url(job.id, set(plan["clip_urls"]))
+                removed = response.removed_clips
+            from failed_upload_cleanup import write_json
+            data = json.loads(receipt.read_text())
+            data.update(local_disposition="completed", completed_at=now_iso())
+            write_json(receipt, data)
+            return removed
+        finally:
+            tiktok_upload_creation_lock.release()
+    finally:
+        youtube_upload_creation_lock.release()
+
+
+def process_autonomous_history_once() -> int:
+    if (not env_bool("AUTO_UPLOAD_TERMINAL_CLEANUP_ENABLED", True)
+            or not autonomous_history_lock.acquire(blocking=False)):
+        return 0
+    removed = 0
+    errors = []
+    try:
+        with jobs_lock:
+            candidates = [job for job in jobs.values() if job.request.scheduled_public_source_credit
+                and not job.request.review_only and job.request.target_platform == "standard"
+                and ((job.status == "failed" and not job.clips and not job.candidates
+                        and autonomous_history.terminal_failure_reason(job.model_dump()))
+                     or (job.status == "completed" and job.request.scheduled_news_hot
+                         and any(not clip.is_correct for clip in job.clips)))]
+        for original in candidates[:32]:
+            try:
+                removed += retire_autonomous_history_job(original)
+            except (OSError, ValueError, RuntimeError, HTTPException) as error:
+                errors.append(type(error).__name__)
+        autonomous_history_status.update(last_tick_at=now_iso(), removed=removed,
+            last_error=errors[-1] if errors else None)
+    finally:
+        autonomous_history_lock.release()
+    return removed
 
 
 # Historical upload reconciliation runs independently of new production intake.
@@ -26726,7 +27005,7 @@ def get_tiktok_config() -> TikTokConfig:
 @app.get("/api/tiktok/uploads", response_model=list[TikTokUploadJob])
 def list_tiktok_uploads(dashboard: bool = False) -> list[TikTokUploadJob]:
     with tiktok_uploads_lock:
-        items = list(tiktok_uploads.values())
+        items = [row for row in tiktok_uploads.values() if not dashboard or not row.attention_archived_at]
     positioned = sorted(tiktok_uploads_with_queue_positions(items), key=lambda item: item.created_at, reverse=True)
     return [dashboard_payload.compact_upload(item) for item in positioned] if dashboard else positioned
 
@@ -27109,7 +27388,7 @@ def enable_youtube_storage_state_upload_mode() -> None:
 @app.get("/api/youtube/uploads", response_model=list[YouTubeUploadJob])
 def list_youtube_uploads(dashboard: bool = False) -> list[YouTubeUploadJob]:
     with youtube_uploads_lock:
-        uploads = list(youtube_uploads.values())
+        uploads = [row for row in youtube_uploads.values() if not dashboard or not row.attention_archived_at]
     positioned = youtube_uploads_with_queue_positions(uploads)
     ordered = sorted(positioned, key=lambda item: item.created_at, reverse=True)
     return [dashboard_payload.compact_upload(item) for item in ordered] if dashboard else ordered

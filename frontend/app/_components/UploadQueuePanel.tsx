@@ -6,10 +6,10 @@ import type { TikTokUploadJob, YouTubeUploadJob } from "../../types/clip.type";
 import { getUploadAttention, requestUploadAttentionCheck } from "../../lib/apiClient";
 import { createPollingTask } from "../../lib/pollTask";
 import toast from "react-hot-toast";
-import type { UploadAttentionSnapshot } from "../../lib/studioQueue";
+import type { StudioQueueItem, UploadAttentionSnapshot } from "../../lib/studioQueue";
 import { queueDate, studioQueueItems } from "../../lib/studioQueue";
 
-type Filter = "active" | "attention" | "held" | "verified";
+type Filter = "active" | "attention" | "held" | "urgent" | "verified";
 
 export function UploadQueuePanel({ youtube, tiktok }: { youtube: YouTubeUploadJob[]; tiktok: TikTokUploadJob[] }) {
   const [filter, setFilter] = useState<Filter>("active");
@@ -40,9 +40,11 @@ export function UploadQueuePanel({ youtube, tiktok }: { youtube: YouTubeUploadJo
     finally { setRequesting(false); }
   };
   const rows = useMemo(()=>studioQueueItems(youtube,tiktok,attention),[youtube,tiktok,attention]);
-  const matches = (state:string, key:Filter) => key === "active" ? ["running","queued"].includes(state)
-    : key === "attention" ? ["attention","failed"].includes(state) : key === "held" ? state === "held" : state === "verified";
-  const filtered = rows.filter(row=>matches(row.state,filter) && `${row.title} ${row.platform}`.toLowerCase().includes(query.toLowerCase()));
+  const matches = (row:StudioQueueItem, key:Filter) => key === "urgent" ? row.urgent === true
+    : key === "active" ? ["running","queued"].includes(row.state)
+    : key === "attention" ? ["attention","failed"].includes(row.state)
+    : key === "held" ? row.state === "held" && !row.urgent : row.state === "verified";
+  const filtered = rows.filter(row=>matches(row,filter) && `${row.title} ${row.platform}`.toLowerCase().includes(query.toLowerCase()));
   const pages = Math.max(1,Math.ceil(filtered.length/12));
   const currentPage = Math.min(page,pages-1);
   const visible = filtered.slice(currentPage*12,currentPage*12+12);
@@ -53,15 +55,16 @@ export function UploadQueuePanel({ youtube, tiktok }: { youtube: YouTubeUploadJo
     <div className={`studioQueueAutomation${attention?.enabled && attention.worker_running ? " isRunning" : ""}`} role="status">
       <ShieldCheck size={18} /><div><strong>{attention?.enabled && attention.worker_running ? "Penanganan otomatis aktif" : attention ? "Penanganan otomatis sedang dijeda" : attentionError ? "Penanganan otomatis belum tersedia" : "Membaca status penanganan otomatis…"}</strong>
         <p>{attentionError || (attention?.rejected_upload_cleanup_version === 1
-          ? "Video yang lolos dilanjutkan. Klip yang ditolak dibersihkan otomatis; status posting yang belum pasti dicocokkan."
-          : "Posting yang sudah ada dicocokkan. Kegagalan aman dipulihkan; sumber yang belum memenuhi syarat ditahan.")}</p></div>
+          ? "Video yang lolos dilanjutkan. Klip yang ditolak dibersihkan otomatis; status posting yang belum pasti dicocokkan. Tombol hanya untuk mempercepat pemeriksaan."
+          : "Posting dicocokkan dan kegagalan aman dipulihkan otomatis. Tombol hanya untuk mempercepat pemeriksaan.")}</p></div>
       <button className="uiButton" type="button" disabled={requesting || !attention?.enabled} onClick={() => { void requestCheck(); }}>
-        {requesting ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />} Periksa sekarang
+        {requesting ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />} Percepat pemeriksaan
       </button>
     </div>
     <div className="studioQueueFilters" role="group" aria-label="Filter antrean upload">
-      {([{key:"active",label:"Aktif"},{key:"attention",label:"Ditangani otomatis"},{key:"held",label:"Ditahan"},{key:"verified",label:"Terverifikasi"}] as const).map(item=><button type="button" key={item.key} aria-pressed={filter===item.key}
-        className={filter===item.key?"isActive":""} onClick={()=>{setFilter(item.key);setPage(0);}}>{item.label}<span>{rows.filter(row=>matches(row.state,item.key)).length}</span></button>)}
+      {([{key:"active",label:"Aktif"},{key:"attention",label:"Ditangani otomatis"},{key:"held",label:"Menunggu bukti"},
+        ...(rows.some(row=>row.urgent) ? [{key:"urgent",label:"Perlu tindakan"}] as const : []),{key:"verified",label:"Terverifikasi"}] as const).map(item=><button type="button" key={item.key} aria-pressed={filter===item.key}
+        className={filter===item.key?"isActive":""} onClick={()=>{setFilter(item.key);setPage(0);}}>{item.label}<span>{rows.filter(row=>matches(row,item.key)).length}</span></button>)}
     </div>
     {visible.length ? <div className="studioQueueList">{visible.map(row=><article key={row.id} className={`studioQueueRow is-${row.state}${row.automatic && row.state !== "held" ? " isAutomatic" : ""}`}>
       <span className={`studioPlatformMark is${row.platform}`}>{row.platform === "YouTube" ? "Y" : "T"}</span>

@@ -232,6 +232,14 @@ export type JobProgressEvent = {
   at: string;
 };
 
+export type AutomaticHandling = {
+  state: "processing" | "waiting" | "archiving" | "archived" | "urgent";
+  action: string;
+  reason: string;
+  next_check_at: string | null;
+  urgent: boolean;
+};
+
 export type ClipJob = {
   id: string;
   status: JobStatus;
@@ -265,6 +273,7 @@ export type ClipJob = {
   clips: ClipFile[];
   candidates: ClipCandidate[];
   error: string | null;
+  automatic_handling?: AutomaticHandling | null;
   telemetry?: JobTelemetry | null;
   request: {
     target_platform?: "standard" | "facebook";
@@ -503,6 +512,9 @@ export type YouTubeConfig = {
 };
 
 export type YouTubeUploadJob = {
+  attention_archived_at?: string | null;
+  attention_disposition?: string;
+  attention_archive_reason?: string;
   publish_at?: string | null;
   file_selection_started?: boolean;
   id: string;
@@ -593,6 +605,9 @@ export type TikTokConfig = {
 };
 
 export type TikTokUploadJob = {
+  attention_archived_at?: string | null;
+  attention_disposition?: string;
+  attention_archive_reason?: string;
   queued_at?: string | null;
   auto_retry_count?: number;
   auto_retry_at?: string | null;

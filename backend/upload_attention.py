@@ -15,7 +15,78 @@ from source_download import redact
 
 VERSION = 1
 REJECTION_CLEANUP_VERSION = 1
-BACKOFF = (60, 300, 1800, 21600)
+AUTONOMOUS_BACKLOG_VERSION = 1
+READER_VERSION = 2
+MAX_UNKNOWN_OBSERVATIONS = 3
+MIN_UNKNOWN_AGE_SECONDS = 1800
+BACKOFF = (30, 120, 300, 900)
+
+
+def distinctive_filename(value: str) -> bool:
+    """Generic names cannot identify an upload after its public metadata changed."""
+    name = str(value or '')
+    if Path(name).name != name or not name.casefold().endswith('.mp4'):
+        return False
+    stem = Path(name).stem.casefold()
+    return bool(re.search(r'[a-f0-9]{24,}', stem) or
+                (len(stem) >= 24 and len(re.findall(r'[a-z]{3,}', stem)) >= 4))
+
+# These are completed read outcomes, not connection/login failures. Older
+# ledgers retained only their message; accept precisely these legacy outcomes.
+UNKNOWN_OBSERVATION_MESSAGES = (
+    'Posting dengan metadata yang unik belum ditemukan;',
+    'Posting dengan caption lengkap dan identitas unik belum terbukti;',
+    'Judul pada ID tersimpan berbeda;',
+    'Metadata video belum cocok lengkap;',
+    'Nama file sumber pada posting belum terbukti cocok;',
+    'Beberapa posting memakai caption yang sama;',
+    'Privasi posting TikTok belum terbaca;',
+)
+
+
+def completed_unknown_observation(proof: dict) -> bool:
+    return bool(not proof.get('confirmed') and not proof.get('error_type')
+                and (proof.get('observation_complete') is True or
+                     str(proof.get('message') or '').startswith(UNKNOWN_OBSERVATION_MESSAGES)))
+
+
+def unknown_observation_count(saved: dict) -> int:
+    count = max(0, int(saved.get('unknown_observations', 0)))
+    if ('unknown_observations' not in saved and saved.get('state') == 'waiting'
+            and str(saved.get('message') or '').startswith(UNKNOWN_OBSERVATION_MESSAGES)
+            and not saved.get('error_type')):
+        count = max(count, int(saved.get('attempts', 0)))
+    return count
+
+
+def unknown_archive_evidence(platform: str, row: dict, saved: dict, *, media_exists: bool, now: float) -> dict | None:
+    """An exhausted local card can close without asserting any remote outcome."""
+    if (media_exists or row.get('attention_archived_at') or row.get('dry_run')
+            or row.get('status') in {'queued', 'running'} or confirmed(platform, row)
+            or not submitted(platform, row) or saved.get('state') != 'waiting'
+            or saved.get('revision') != evidence_revision(row)):
+        return None
+    try:
+        created = datetime.fromisoformat(str(row.get('created_at') or '').replace('Z', '+00:00'))
+        if created.tzinfo is None or now - created.timestamp() < MIN_UNKNOWN_AGE_SECONDS:
+            return None
+        attempts = unknown_observation_count(saved)
+        # Legacy counters are accepted only alongside the exact completed-read
+        # message, never a generic timeout or an interrupted checking state.
+        checked = float(saved.get('checked_at') or 0)
+        if attempts < MAX_UNKNOWN_OBSERVATIONS or not 0 < checked <= now:
+            return None
+    except (TypeError, ValueError, OverflowError):
+        return None
+    remote = youtube_id(row.get('video_url')) if platform == 'youtube' else tiktok_url(row.get('profile_url'))
+    # An assigned YouTube ID first gets the stronger exact-filename reader.
+    if platform == 'youtube' and remote and saved.get('verification_version') != READER_VERSION:
+        return None
+    return dict(version=AUTONOMOUS_BACKLOG_VERSION, decision='ARCHIVE_UNKNOWN',
+                reason='unresolved_remote_missing_local_media', revision=saved['revision'],
+                attempts=attempts, checked_at=checked, remote_identity=remote,
+                message=str(saved.get('message') or ''), upload_allowed=False,
+                remote_deleted=False, requires_operator=False)
 
 
 def youtube_id(value: str | None) -> str:
@@ -78,6 +149,10 @@ def evidence_revision(row: dict) -> str:
               'caption', 'video_url', 'profile_url', 'visibility', 'publish_at', 'upload_confirmed', 'status', 'error',
               'clip_name', 'target_channel', 'target_handle', 'file_selection_started', 'submission_started',
               'submission_accepted', 'resume_existing_draft_only')}
+    # Preserve existing revision hashes until a row actually becomes archived.
+    for key in ('attention_archived_at', 'attention_disposition', 'attention_archive_reason'):
+        if row.get(key):
+            fields[key] = row[key]
     fields['safety_markers'] = [line for line in row.get('logs', []) if str(line).startswith(
         ('CLAIMED_UPLOAD_ABORTED:', 'REMOTE_UPLOAD_CHECKPOINT', 'POST_SUBMIT_INTENT:', 'POST_API_ACCEPTED:'))]
     return hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
@@ -106,12 +181,13 @@ def duplicate_for(platform: str, row: dict, rows: list[dict]) -> dict | None:
 
 
 def decision(platform: str, row: dict, rows: list[dict], *, media_exists: bool, retry_allowed: bool = False,
-             claim_confirmed: bool = False) -> dict | None:
-    if row.get('dry_run') or row.get('status') in {'queued', 'running'} or confirmed(platform, row):
+             claim_confirmed: bool = False, saved: dict | None = None, now: float | None = None) -> dict | None:
+    if row.get('attention_archived_at') or row.get('dry_run') or row.get('status') in {'queued', 'running'} or confirmed(platform, row):
         return None
     logs = [str(line) for line in row.get('logs', [])]
     message = str(row.get('error') or '').casefold()
     base = {'id': f'{platform}-{row["id"]}', 'upload_id': row['id'], 'platform': platform,
+            'urgent': False, 'requires_operator': False,
             'revision': evidence_revision(row), 'remote_id': youtube_id(row.get('video_url')) if platform == 'youtube' else tiktok_url(row.get('profile_url'))}
     if platform == 'youtube' and (claim_confirmed or any(line.startswith('CLAIMED_UPLOAD_ABORTED:') for line in logs)):
         return {**base, 'action': 'drop_source',
@@ -123,6 +199,11 @@ def decision(platform: str, row: dict, rows: list[dict], *, media_exists: bool, 
     if duplicate:
         return {**base, 'action': 'reconcile_duplicate', 'duplicate_id': duplicate['id'],
                 'reason': 'File yang sama sudah memiliki posting terverifikasi; catatan akan diselaraskan.'}
+    archive = unknown_archive_evidence(platform, row, saved or {}, media_exists=media_exists,
+                                      now=datetime.now(timezone.utc).timestamp() if now is None else now)
+    if archive:
+        return {**base, 'action': 'archive_unknown', 'archive_evidence': archive,
+                'reason': 'Verifikasi otomatis selesai tanpa bukti final dan file lokal tidak tersedia; catatan diarsipkan tanpa upload ulang.'}
     possible = submitted(platform, row)
     if row.get('status') == 'cancelled' and not possible:
         return None
@@ -205,6 +286,9 @@ def status(item: dict, saved: dict, now: float) -> dict:
     exhausted = item['action'] == 'retry_upload' and attempt >= 3
     held = item['action'] == 'hold' or exhausted
     next_at = float(saved.get('next_check_at') or 0)
+    if item['action'] == 'archive_unknown' or (item['action'] == 'verify_remote' and item.get('remote_id')
+            and saved.get('reader_version', 0) < READER_VERSION and not running):
+        next_at = now
     return {**item, 'state': 'held' if held else 'checking' if running else 'waiting', 'attempts': attempt,
             'reason': 'Batas tiga percobaan aman tercapai; catatan dan bukti disimpan.' if exhausted else item['reason'] if held else saved.get('message') or item['reason'],
             'checked_at': saved.get('checked_at'),

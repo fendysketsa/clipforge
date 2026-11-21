@@ -1,0 +1,88 @@
+{
+  "source": "preview_fixture_not_live_disposition",
+  "planned_history_jobs": [
+    "501039e30d18408380d6fd2a29b7d80a",
+    "7a1e951939344641807107f47c9a00f0",
+    "53c1da11d93b4365968c729d0758815f",
+    "f4ea91a324e64d1599ed0d7825ef0b6d",
+    "17ed87e3a6a1448a8d468de0f6e18aea"
+  ],
+  "automatic_history_cards": 5,
+  "no_manual_trigger_needed": true,
+  "browser_mutations": [],
+  "page_errors": [],
+  "checks": [
+    {
+      "view": "automation",
+      "width": 1440,
+      "theme": "dark",
+      "overflow": false
+    },
+    {
+      "view": "automation",
+      "width": 1440,
+      "theme": "light",
+      "overflow": false
+    },
+    {
+      "view": "automation",
+      "width": 390,
+      "theme": "dark",
+      "overflow": false
+    },
+    {
+      "view": "automation",
+      "width": 390,
+      "theme": "light",
+      "overflow": false
+    },
+    {
+      "view": "automation",
+      "width": 320,
+      "theme": "dark",
+      "overflow": false
+    },
+    {
+      "view": "automation",
+      "width": 320,
+      "theme": "light",
+      "overflow": false
+    },
+    {
+      "view": "history",
+      "width": 1440,
+      "theme": "dark",
+      "overflow": false
+    },
+    {
+      "view": "history",
+      "width": 1440,
+      "theme": "light",
+      "overflow": false
+    },
+    {
+      "view": "history",
+      "width": 390,
+      "theme": "dark",
+      "overflow": false
+    },
+    {
+      "view": "history",
+      "width": 390,
+      "theme": "light",
+      "overflow": false
+    },
+    {
+      "view": "history",
+      "width": 320,
+      "theme": "dark",
+      "overflow": false
+    },
+    {
+      "view": "history",
+      "width": 320,
+      "theme": "light",
+      "overflow": false
+    }
+  ]
+}

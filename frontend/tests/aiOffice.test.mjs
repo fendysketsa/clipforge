@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { officeStatus, officeTime } from '../lib/aiOffice.ts';
+import { officeMotion, officeStatus, officeTime } from '../lib/aiOffice.ts';
 
 const now = Date.parse('2026-11-21T01:00:00Z');
 const snapshot = overrides => ({version:1, enabled:true, worker_running:true, state:'working',
@@ -34,4 +34,40 @@ test('office times consistently use the operating timezone and handle missing da
   assert.match(officeTime('2026-11-21T01:00:00Z'),/08\.00 WIB/);
   assert.equal(officeTime(null),'Belum tersedia');
   assert.equal(officeTime('bad'),'Belum tersedia');
+});
+
+test('worker motion requires actual working state and a positive activity count', () => {
+  const value=snapshot({departments:[
+    {id:'production',state:'working',active_count:1},
+    {id:'quality',state:'waiting',active_count:2},
+    {id:'cleanup',state:'working',active_count:0},
+    {id:'facebook',state:'working',active_count:NaN},
+  ]});
+  const motion=officeMotion(value,now);
+  assert.equal(motion.canAnimate,true);
+  assert.deepEqual(motion.activeDepartments,['production']);
+});
+
+test('stale, unavailable, paused or missing managers never authorize process motion', () => {
+  for(const value of [null,snapshot({enabled:false}),snapshot({worker_running:false}),
+    snapshot({last_tick_at:'2026-11-21T00:50:00Z'}),snapshot({state:'starting',last_tick_at:null})]) {
+    const motion=officeMotion(value,now);
+    assert.equal(motion.canAnimate,false);
+    assert.equal(motion.monitoring,false);
+  }
+  assert.equal(officeMotion(snapshot({}),now,true).canAnimate,false);
+});
+
+test('healthy idle monitoring has a heartbeat without inventing worker progress', () => {
+  const motion=officeMotion(snapshot({state:'waiting'}),now);
+  assert.equal(motion.monitoring,true);
+  assert.deepEqual(motion.activeDepartments,[]);
+});
+
+test('a hidden or manually paused view stops motion while retaining observed worker state', () => {
+  const value=snapshot({departments:[{id:'production',state:'working',active_count:1}]});
+  const motion=officeMotion(value,now,false,false);
+  assert.equal(motion.canAnimate,false);
+  assert.equal(motion.monitoring,false);
+  assert.deepEqual(motion.activeDepartments,['production']);
 });

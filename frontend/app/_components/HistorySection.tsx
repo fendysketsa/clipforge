@@ -10,6 +10,8 @@ import type { ClipJob, JobStatus, TikTokUploadJob, YouTubeUploadJob } from "../.
 import {articleText, articleFilmText, isArticlePresenterPrompt} from "../../lib/storyInput";
 import { uploadQueuePosition } from "../../lib/uploadQueue";
 import { tiktokAutomaticRetryLabel, tiktokUploadForClip } from "../../lib/tiktokRetry";
+import { automaticHandlingView, automaticUploadSummary } from "../../lib/automaticHandling";
+import { queueDate } from "../../lib/studioQueue";
 
 function jobFormat(job: ClipJob) {
   if (job.request.clip_mode === "highlight_5m") {
@@ -74,7 +76,7 @@ function intakeSummary(job: ClipJob, intake: AutomaticIntake | null): PlatformUp
     return { state: "queued", label: "Menyiapkan upload", title: "Metadata dan antrean sedang disiapkan otomatis oleh server." };
   }
   if (rows.some((row) => !row.status || row.status === "pending")) {
-    return { state: "queued", label: "Antrean otomatis", title: "Operator akan melanjutkan upload Private setelah antrean sebelumnya selesai." };
+    return { state: "queued", label: "Antrean otomatis", title: "Server melanjutkan upload Private setelah antrean sebelumnya selesai." };
   }
   return null;
 }
@@ -86,10 +88,12 @@ function uploadSummary<T extends PlatformUpload>(
   tiktok = false,
 ): PlatformUploadSummary {
   const relevant = uploads
-    .filter((upload) => upload.source_job_id === job.id)
+    .filter((upload) => upload.source_job_id === job.id && !upload.attention_archived_at)
     .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
   if (!relevant.length) {
-    return { state: "idle", label: "Belum diunggah", title: "Belum ada proses upload untuk job ini." };
+    return { state: "idle", label: job.request.review_only ? "Mode review" : "Menunggu penanganan otomatis",
+      title: job.request.review_only ? "Mode review tidak masuk upload otomatis."
+        : "Belum ada catatan upload; sistem memeriksa kelayakan sebelum menyiapkan pengiriman." };
   }
 
   const latestByClip = new Map<string, T>();
@@ -100,8 +104,8 @@ function uploadSummary<T extends PlatformUpload>(
     for (const clipUrl of latestByClip.keys()) {
       const state = tiktokUploadForClip(relevant as TikTokUploadJob[], clipUrl);
       if (state.uncertain) return {
-        state: "unverified", label: "Periksa hasil Post",
-        title: "Percobaan sebelumnya sudah mencapai Post. Hasilnya perlu diverifikasi sebelum dikirim ulang agar tidak dobel.",
+        state: "unverified", label: "Menunggu verifikasi Post",
+        title: "Sistem mencocokkan percobaan yang sudah mencapai Post sebelum pengiriman berikutnya agar tidak dobel.",
       };
       if (state.latest) latestByClip.set(clipUrl, state.latest as T);
     }
@@ -143,8 +147,8 @@ function uploadSummary<T extends PlatformUpload>(
     if (retry) return { state: "queued", label: "Ulang otomatis", title: retry, queueHint: retry };
     return {
       state: "failed",
-      label: verified ? `${verified}/${total} berhasil · ada gagal` : "Upload gagal",
-      title: failed.error || "Upload terakhir gagal dan perlu dicoba ulang.",
+      label: verified ? `${verified}/${total} terverifikasi · pemulihan` : "Menunggu pemulihan",
+      title: failed.error || "Percobaan terakhir gagal; penanganan berikutnya mengikuti pemeriksaan otomatis backend.",
     };
   }
   if (verified >= total) {
@@ -171,7 +175,7 @@ function uploadSummary<T extends PlatformUpload>(
   if (statuses.has("cancelled")) {
     return { state: "cancelled", label: "Upload dibatalkan", title: "Proses upload dibatalkan." };
   }
-  return { state: "idle", label: "Belum diunggah", title: "Belum ada upload yang terverifikasi." };
+  return { state: "idle", label: "Menunggu penanganan otomatis", title: "Belum ada upload terverifikasi; sistem memeriksa langkah berikutnya." };
 }
 
 export function HistorySection({
@@ -270,7 +274,7 @@ export function HistorySection({
         <div className="sectionTitle">
           <span className="sectionEyebrow">Workspace</span>
           <h2>Riwayat Proses</h2>
-          <p>Progres produksi, hasil video, dan status upload dalam satu tempat.</p>
+          <p>Produksi, pemulihan, dan cleanup rutin dilanjutkan otomatis; hasil dan buktinya dapat dilihat di sini.</p>
         </div>
         <div className="historyActions">
           <span className="historyLiveCount"><span />{jobs.filter((item) => item.status === "running" || item.status === "queued").length} diproses</span>
@@ -304,14 +308,18 @@ export function HistorySection({
 
       <div className="studioHistoryToolbar">
         <div className="studioQueueFilters" role="group" aria-label="Filter riwayat produksi">
-          {[{key:"all",label:"Semua"},{key:"active",label:"Diproses"},{key:"completed",label:"Selesai"},{key:"failed",label:"Perlu perhatian"}].map(item => <button type="button" key={item.key} aria-pressed={filter === item.key} className={filter === item.key ? "isActive" : ""} onClick={() => {setFilter(item.key);setPage(0);}}>{item.label}</button>)}
+          {[{key:"all",label:"Semua"},{key:"active",label:"Diproses"},{key:"completed",label:"Selesai"},{key:"failed",label:"Gagal / dibatalkan"}].map(item => <button type="button" key={item.key} aria-pressed={filter === item.key} className={filter === item.key ? "isActive" : ""} onClick={() => {setFilter(item.key);setPage(0);}}>{item.label}</button>)}
         </div>
         <label className="studioSearch"><Search size={16} /><input aria-label="Cari riwayat produksi" placeholder="Cari judul atau sumber…" value={query} onChange={event => {setQuery(event.target.value);setPage(0);}} /></label>
       </div>
       <div className="jobList" data-layout="history-four-columns">
         {visibleJobs.map((item) => {
           const recovery = sourceRecoveryForJob(item, jobs);
-          const Icon = recovery ? statusIcon[recovery.status] : statusIcon[item.status];
+          const handling = automaticHandlingView(item.automatic_handling);
+          const handlingStatus = handling?.urgent ? "failed" : handling
+            ? handling.state === "archived" ? "cancelled" : "queued" : item.status;
+          const shownStatus = recovery?.status || (item.status === "running" || item.status === "queued" ? item.status : handlingStatus);
+          const Icon = statusIcon[shownStatus];
           const count = item.clips.length ? `${item.clips.length} klip` : `${item.candidates.length} kandidat`;
           const canSelectForDelete = item.status !== "queued" && item.status !== "running";
           const canStop = item.status === "queued" || item.status === "running";
@@ -335,9 +343,11 @@ export function HistorySection({
                   && Boolean(upload.video_url),
               )
             : null;
-          const youtubeSummary = recordedYoutubeSummary && (recordedYoutubeSummary.state === "idle" || recordedYoutubeSummary.state === "failed")
+          const intakeYoutubeSummary = recordedYoutubeSummary && (recordedYoutubeSummary.state === "idle" || recordedYoutubeSummary.state === "failed")
             ? intakeSummary(item, intake) ?? recordedYoutubeSummary
             : recordedYoutubeSummary;
+          const youtubeSummary: PlatformUploadSummary | null = intakeYoutubeSummary
+            ? automaticUploadSummary(item.automatic_handling, intakeYoutubeSummary.state) ?? intakeYoutubeSummary : null;
           const recordedTiktokSummary = item.status === "completed"
             ? uploadSummary(
                 item,
@@ -348,16 +358,21 @@ export function HistorySection({
             : null;
 
           const tiktokHold = item.clips.find((clip) => clip.tiktok_upload_issue)?.tiktok_upload_issue;
-          const tiktokSummary: PlatformUploadSummary | null = recordedTiktokSummary?.state === "idle" && tiktokHold
+          const holdTiktokSummary: PlatformUploadSummary | null = recordedTiktokSummary?.state === "idle" && tiktokHold
             ? { state: "unverified", label: "Tertahan pemeriksaan", title: tiktokHold }
             : recordedTiktokSummary;
+          const automaticTiktokSummary = holdTiktokSummary
+            ? automaticUploadSummary(item.automatic_handling, holdTiktokSummary.state) : null;
+          const tiktokSummary: PlatformUploadSummary | null = automaticTiktokSummary
+            ? { ...automaticTiktokSummary, title: tiktokHold ? `${automaticTiktokSummary.title} Batas pemeriksaan: ${tiktokHold}` : automaticTiktokSummary.title }
+            : holdTiktokSummary;
 
           const thumbnail = item.clips.find((clip) => clip.thumbnail_url)?.thumbnail_url;
           const score = Math.max(0, ...item.clips.map((clip) => clip.fyp_score ?? 0));
 
           return (
             <article
-              className={`jobRow jobRow--${item.status}${recovery ? " hasSourceRecovery" : ""} ${isSelected ? "selected" : ""}`}
+              className={`jobRow jobRow--${shownStatus}${recovery ? " hasSourceRecovery" : ""} ${isSelected ? "selected" : ""}`}
               key={item.id}
               style={{ "--job-progress": `${item.status === "completed" ? 100 : progressPercent}%` } as CSSProperties}
             >
@@ -379,11 +394,11 @@ export function HistorySection({
                 </div>
                 <div className="jobCardBody">
                 <div className="jobRowTop">
-                  <span className={`jobRow-status status-${recovery?.status || item.status}`}>
+                  <span className={`jobRow-status status-${shownStatus}`}>
                     <span className="jobRow-statusIcon">
-                      <Icon className={(recovery?.status || item.status) === "running" ? "spin" : ""} size={15} />
+                      <Icon className={shownStatus === "running" ? "spin" : ""} size={15} />
                     </span>
-                    <span className="jobRow-statusLabel">{recovery ? recovery.status === "completed" ? "Sumber pulih" : "Sedang dipulihkan" : statusCopy[item.status]}</span>
+                    <span className="jobRow-statusLabel">{recovery ? recovery.status === "completed" ? "Sumber pulih" : "Sedang dipulihkan" : handling?.label || statusCopy[item.status]}</span>
                     {isProcessing ? <span className="jobRow-statusPercent">{progressPercent}%</span> : null}
                   </span>
                   <span className="jobClipCount"><Film size={13} />{count}</span>
@@ -412,6 +427,9 @@ export function HistorySection({
                     {recovery ? <div className="jobSourceRecovery"><strong>{recovery.status === "completed" ? "Percobaan berikutnya sudah menghasilkan video." : "Sumber yang sama sedang diproses kembali."}</strong>
                       <p>{recovery.status === "completed" ? "Buka hasil untuk meninjau kualitas dan status upload." : recovery.progress_detail || "Sistem melanjutkan pemulihan; Anda tidak perlu membuat job baru."}</p>
                       <small>{recovery.status === "completed" ? `${recovery.clips.length} hasil tersedia` : `${Math.round(recovery.progress_percent || 0)}% · ${statusCopy[recovery.status]}`}</small>
+                    </div> : handling ? <div className="jobSourceRecovery jobAutomaticHandling">
+                      <strong>{handling.label}</strong><p>{handling.detail}</p>
+                      {handling.nextCheckAt ? <small>Pemeriksaan berikutnya: {queueDate(handling.nextCheckAt)}</small> : null}
                     </div> : item.error ? <p className="jobCardError" title={item.error}>{item.error}</p> : null}
                     {item.director_recovery?.summary ? (
                       <div className="jobDirectorRecovery">
@@ -467,16 +485,17 @@ export function HistorySection({
                         <span>
                           <small>TikTok</small><strong>{tiktokSummary.label}</strong>
                           {tiktokSummary.queueHint ? <em className="jobPlatformQueue">{tiktokSummary.queueHint}</em> : null}
-                          {recordedTiktokSummary?.state === "idle" && tiktokHold ? <em className="jobPlatformHold">{tiktokHold}</em> : null}
+                          {!handling && recordedTiktokSummary?.state === "idle" && tiktokHold ? <em className="jobPlatformHold">{tiktokHold}</em> : null}
                         </span>
                       </span>
                     </div>
                   ) : null}
                 </div>
-                <span className="jobOpenHint"><span>{recovery ? "Lihat pemulihan sumber" : isProcessing ? "Lihat progres" : item.status === "failed" ? "Lihat detail kegagalan" : "Buka hasil video"}</span><ArrowUpRight size={16} /></span>
+                <span className="jobOpenHint"><span>{recovery ? "Lihat pemulihan sumber" : isProcessing ? "Lihat progres" : handling ? "Lihat catatan penanganan" : item.status === "failed" ? "Lihat detail kegagalan" : "Buka hasil video"}</span><ArrowUpRight size={16} /></span>
                 </div>
               </button>
-              {recovery && item.error ? <details className="jobPreviousFailure"><summary>Rincian percobaan sebelumnya</summary><p>{item.error}</p></details> : null}
+              {(recovery || handling) && item.error ? <details className="jobPreviousFailure"><summary>Rincian percobaan sebelumnya</summary><p>{item.error}</p></details> : null}
+              {handling && tiktokHold ? <details className="jobPreviousFailure"><summary>Dasar pemeriksaan publikasi</summary><p>{tiktokHold}</p></details> : null}
               {canStop ? (
                 <button
                   className="uiButton uiButton--ghostDanger stopJobRowButton"

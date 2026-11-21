@@ -1,0 +1,22 @@
+{
+  "checked_at": "2026-11-20T23:53:50.679604+00:00",
+  "health": {
+    "status": "ok"
+  },
+  "office": {
+    "version": 1,
+    "enabled": true,
+    "worker_running": true,
+    "last_tick_at": "2026-11-20T23:53:31.128033+00:00",
+    "journal_ready": true
+  },
+  "frontend": {
+    "schema": 1,
+    "build_id": "xzrIQVu6kg4Ej1bxxoZQZ",
+    "release_id": "cc39a4967840c8a52e9f7a35e0d25f93477dc56a803a2224329a0c980db5cb16",
+    "ui_verified": true
+  },
+  "jobs": [],
+  "verified_preview_build_id": "UYU1dnuRYFvqoO_Zv7kzj",
+  "verified_preview_release_id": "0f0198835190bfb5258a9af2fba5bf03bd335a3c7478025d95d67e8334bd9b03"
+}

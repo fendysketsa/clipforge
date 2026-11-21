@@ -1,0 +1,15 @@
+{
+  "source_release_id": "87ce0acb4f1e0ef9df479f95235e8de07916c59a9378a9d7299604d039089b10",
+  "backend": {
+    "release_id": "8a72e11e9888d07a26aa5890d13d82ffad72a4f44b6690ac7d2a9bb5d5b67c51",
+    "source_verified": true,
+    "prepared_at": 1795196222.1048758,
+    "matches_current_source": false
+  },
+  "telegram-bot": {
+    "release_id": "8a72e11e9888d07a26aa5890d13d82ffad72a4f44b6690ac7d2a9bb5d5b67c51",
+    "source_verified": true,
+    "prepared_at": 1795196265.153029,
+    "matches_current_source": false
+  }
+}

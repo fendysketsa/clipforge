@@ -74,7 +74,11 @@
     ".next-source-recovery/types/**/*.ts",
     ".next-source-recovery/dev/types/**/*.ts",
     ".next-rejection-cleanup/types/**/*.ts",
-    ".next-rejection-cleanup/dev/types/**/*.ts"
+    ".next-rejection-cleanup/dev/types/**/*.ts",
+    ".next-ai-office/types/**/*.ts",
+    ".next-ai-office/dev/types/**/*.ts",
+    ".next-autonomous-backlog/types/**/*.ts",
+    ".next-autonomous-backlog/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

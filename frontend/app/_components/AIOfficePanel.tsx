@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import { getAIOffice, requestAIOfficeCheck } from "../../lib/apiClient";
 import { officeStateLabel, officeStatus, officeTaskLabel, officeTime, type AIOfficeSnapshot } from "../../lib/aiOffice";
 import { createPollingTask } from "../../lib/pollTask";
+import { OfficeProcessMap } from "./OfficeProcessMap";
 
 export function AIOfficePanel() {
   const [snapshot, setSnapshot] = useState<AIOfficeSnapshot | null>(null);
@@ -49,11 +50,12 @@ export function AIOfficePanel() {
       </button>
     </header>
     <div className="aiOfficeStatus" role="status">
-      <StatusIcon size={20} className={status.state === "starting" ? "spin" : undefined} />
+      <StatusIcon size={20} className={status.state === "starting" && !refreshFailed ? "spin" : undefined} />
       <div><strong>{status.label}</strong><p>{status.detail}</p>
         {snapshot?.last_tick_at ? <small>Pemeriksaan terakhir {officeTime(snapshot.last_tick_at)}{snapshot.next_tick_at && snapshot.enabled && !status.stale ? ` · Berikutnya ${officeTime(snapshot.next_tick_at)}` : ""}</small> : null}
       </div>
     </div>
+    {snapshot?.departments.length ? <OfficeProcessMap snapshot={snapshot} now={now} refreshFailed={refreshFailed} /> : null}
     {snapshot?.departments.length ? <div className="aiOfficeDepartments" aria-label="Pembagian pekerjaan">
       {snapshot.departments.map(department => <article key={department.id} className={`aiOfficeDepartment is-${department.state}`}>
         <div className="aiOfficeDepartmentTitle"><h3>{department.name}</h3><span>{status.stale ? "Status terakhir" : officeStateLabel[department.state]}</span></div>

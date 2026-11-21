@@ -140,6 +140,9 @@ def backend_contract(base: str) -> dict:
             or attention.get('rejected_upload_cleanup_version') != 1
             or attention.get('terminal_claim_action') != 'DROP_SOURCE'
             or attention.get('rejected_upload_archive') is not True
+            or attention.get('autonomous_backlog_version') != 1
+            or any(attention.get(key) is not True for key in ('terminal_attention_archive',
+                'local_reconciliation_during_upload', 'history_auto_disposition'))
             or (attention.get('enabled') and attention.get('worker_running') is not True)):
         raise RuntimeError('Automatic upload attention worker is not ready')
     config = get_json(base + '/api/tiktok/config')

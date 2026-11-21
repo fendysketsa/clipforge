@@ -1,0 +1,90 @@
+{
+  "source": "preview_with_mocked_office_API_and_read_only_live_dashboard_requests",
+  "checks": [
+    {
+      "width": 1440,
+      "theme": "dark",
+      "tracks": 3,
+      "overflow": false,
+      "panelOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "tracks": 3,
+      "overflow": false,
+      "panelOverflow": false
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "tracks": 3,
+      "overflow": false,
+      "panelOverflow": false
+    },
+    {
+      "width": 1280,
+      "theme": "light",
+      "tracks": 3,
+      "overflow": false,
+      "panelOverflow": false
+    },
+    {
+      "width": 900,
+      "theme": "dark",
+      "tracks": 2,
+      "overflow": false,
+      "panelOverflow": false
+    },
+    {
+      "width": 900,
+      "theme": "light",
+      "tracks": 2,
+      "overflow": false,
+      "panelOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "tracks": 1,
+      "overflow": false,
+      "panelOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "tracks": 1,
+      "overflow": false,
+      "panelOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "tracks": 1,
+      "overflow": false,
+      "panelOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "tracks": 1,
+      "overflow": false,
+      "panelOverflow": false
+    }
+  ],
+  "page_errors": [],
+  "non_get_live_requests": [],
+  "manager_request_count": 1,
+  "stale_state": "passed",
+  "operator_pause": "passed",
+  "motion": {
+    "source": "fixture_preview_not_production",
+    "advancing_css_animation_time": true,
+    "only_observed_active_department_moves": true,
+    "manual_pause": "passed",
+    "reduced_motion": "passed",
+    "document_hidden": "passed",
+    "stale_and_disabled": "passed",
+    "video": null
+  }
+}

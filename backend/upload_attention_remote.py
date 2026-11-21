@@ -8,7 +8,7 @@ import re
 import signal
 import time
 
-from upload_attention import caption_hash, text_hash, normalized_text, tiktok_url, youtube_id
+from upload_attention import READER_VERSION, caption_hash, text_hash, normalized_text, tiktok_url, youtube_id
 from browser_page_activity import start_background_page_activity, stop_background_page_activity
 
 
@@ -56,15 +56,28 @@ def read_youtube(page, row: dict, target_channel_id: str) -> dict:
     title_field.wait_for(state='visible', timeout=25000)
     studio.ensure_target_identity(page, row.get('target_channel', ''), '', target_channel_id)
     actual_title = title_field.inner_text(timeout=3000)
-    if normalized_text(actual_title) != normalized_text(row['title']):
-        return {'confirmed': False, 'message': 'Judul pada ID tersimpan berbeda; video dipertahankan dan tidak dikirim ulang.'}
     description = page.locator('#description-textarea #textbox').first
-    if not description.count() or normalized_text(description.inner_text(timeout=3000)) != normalized_text(row.get('description', '')):
-        return {'confirmed': False, 'message': 'Metadata video belum cocok lengkap; sistem mempertahankan posting yang sudah ada.'}
+    actual_description = description.inner_text(timeout=3000) if description.count() else None
+    title_matched = normalized_text(actual_title) == normalized_text(row['title'])
+    description_matched = actual_description is not None and normalized_text(actual_description) == normalized_text(row.get('description', ''))
     # Discovery without an assigned ID also needs the exact original filename.
     filename = page.get_by_text(row['clip_name'], exact=True)
-    if not youtube_id(row.get('video_url')) and not filename.count():
-        return {'confirmed': False, 'message': 'Nama file sumber pada posting belum terbukti cocok; tidak ada upload ulang.'}
+    original_filename = filename.first.inner_text(timeout=3000).strip() if filename.count() else None
+    filename_matched = original_filename == row['clip_name']
+    assigned_id = youtube_id(row.get('video_url'))
+    # An exact assigned ID plus the original rendered filename survives a
+    # legitimate metadata edit. Discovery still requires full exact metadata.
+    from upload_attention import distinctive_filename
+    exact_original = bool(assigned_id and filename_matched and distinctive_filename(row['clip_name']))
+    if not title_matched and not exact_original:
+        return {'confirmed': False, 'observation_complete': True,
+                'message': 'Judul pada ID tersimpan berbeda; video dipertahankan dan tidak dikirim ulang.'}
+    if not description_matched and not exact_original:
+        return {'confirmed': False, 'observation_complete': True,
+                'message': 'Metadata video belum cocok lengkap; sistem mempertahankan posting yang sudah ada.'}
+    if not assigned_id and not filename_matched:
+        return {'confirmed': False, 'observation_complete': True,
+                'message': 'Nama file sumber pada posting belum terbukti cocok; tidak ada upload ulang.'}
     visibility_field = page.locator('ytcp-video-metadata-visibility #visibility-text').first
     visibility_field.wait_for(state='visible', timeout=10000)
     label = normalized_text(visibility_field.inner_text()).casefold()
@@ -73,16 +86,18 @@ def read_youtube(page, row: dict, target_channel_id: str) -> dict:
               'dijadwalkan': 'scheduled', 'terjadwal': 'scheduled'}.get(label, '')
     if not actual:
         return {'confirmed': False, 'message': 'Visibilitas final belum terbaca; pemeriksaan akan dilanjutkan otomatis.'}
-    snapshot = studio.saved_video_edit_snapshot(page, row['title'], actual)
+    snapshot = studio.saved_video_edit_snapshot(page, actual_title, actual)
     if snapshot.get('uploading') != 'False' or snapshot.get('uploadFailed') != 'False':
         return {'confirmed': False, 'message': 'YouTube masih memproses video; menunggu konfirmasi final.'}
     if '/video/' + checkpoint + '/edit' not in page.url:
         return {'confirmed': False, 'message': 'Halaman video berpindah; identitas belum dapat dipastikan.'}
     return {'confirmed': True, 'video_url': f'https://www.youtube.com/watch?v={checkpoint}',
             'target_channel_id': target_channel_id, 'title': actual_title,
-            'description_sha256': text_hash(row.get('description', '')),
+            'description_sha256': text_hash(actual_description) if actual_description is not None else None,
             'visibility': actual, 'original_visibility': row.get('visibility'),
-            'source': 'authenticated_studio_exact_video', 'file_name_matched': bool(filename.count())}
+            'source': 'authenticated_studio_exact_video', 'file_name_matched': filename_matched,
+            'original_filename': original_filename if filename_matched else None,
+            'remote_processing_complete': True, 'reader_version': READER_VERSION}
 
 
 def read_tiktok(page, row: dict, target_handle: str) -> dict:
