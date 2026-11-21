@@ -19768,7 +19768,16 @@ def search_auto_viral_sources(
         min(20, env_int("VIRAL_CC_METADATA_PER_QUERY", 6)),
     )
     default_search_mode = "ytsearchdate" if request.sort_order == "newest" else "ytsearch"
-    search_mode = default_search_mode
+    configured_search_mode = os.environ.get("VIRAL_CC_YTDLP_SEARCH_MODE", "").strip().casefold()
+    if configured_search_mode not in {"ytsearch", "ytsearchdate"}:
+        configured_search_mode = ""
+    # An explicit "newest" request keeps date sorting; otherwise the operator's
+    # configured search mode is honoured. Ignoring this setting made scheduled
+    # discovery repeatedly return the same old lectures when the API quota was
+    # exhausted, so no fresh candidate could ever reach the preflight gate.
+    search_mode = "ytsearchdate" if request.sort_order == "newest" else (
+        configured_search_mode or default_search_mode
+    )
     cron_humor_lane = cron_humor_discovery_active(run_id, request)
     cron_trend_lane = cron_trend_discovery_active(run_id, request)
     if search_mode not in {"ytsearch", "ytsearchdate"}:
@@ -20668,7 +20677,7 @@ def recently_processed_job_source_urls(cooldown_days: int = 7) -> set[str]:
             if not isinstance(event, dict) or not source_usage_event_has_rendered_output(event):
                 continue
             processed_at = parse_utc_datetime(str(event.get("processed_at") or ""), cutoff)
-            if processed_at >= cutoff or (daily_cron_plan_enabled() and event.get("clip_mode") == "short"):
+            if processed_at >= cutoff:
                 excluded.add(normalized)
                 break
 
@@ -23905,6 +23914,7 @@ def discover_auto_viral_campaign_sources(
             0, env_int("VIRAL_CC_FALLBACK_MIN_VIEWS", request.min_views)
         )
         cron_trend_lane = cron_trend_discovery_active(run_id, request)
+        scheduled_discovery = scheduled_auto_viral_discovery_active(run_id)
         fallback_queries = (
             request.queries
             if cron_trend_lane or director_source_discovery_active(run_id, request)
@@ -23913,8 +23923,30 @@ def discover_auto_viral_campaign_sources(
                 default_auto_viral_queries(),
             )
         )
-        if quota_fallback:
+        if scheduled_discovery and request.cron_theme_key:
+            # A dynamic editorial seed can be too narrow (for example one
+            # speaker plus one topic) and only returns old uploads. Keep the
+            # scheduled lane inside the same editorial theme, but put its
+            # broader evergreen queries first so a quota fallback can still
+            # find fresh sources without changing the theme.
+            theme_profile = RYUUNDY_CRON_THEME_PROFILES.get(request.cron_theme_key) or {}
+            theme_queries = theme_profile.get("queries")
+            if isinstance(theme_queries, list):
+                fallback_queries = merge_unique_queries(
+                    [str(query) for query in theme_queries if str(query).strip()],
+                    fallback_queries,
+                )
+        if quota_fallback and not scheduled_discovery:
             fallback_queries = fallback_queries[:2]
+        fallback_metadata_checks = max(
+            3, env_int("VIRAL_CC_QUOTA_FALLBACK_METADATA_CHECKS", 8)
+        )
+        if quota_fallback and scheduled_discovery:
+            # The API-first path cannot contribute candidates while its daily
+            # quota is exhausted. A scheduled run needs a real discovery
+            # window, otherwise eight metadata checks can only find the same
+            # old results and every retry fails without rendering anything.
+            fallback_metadata_checks = max(24, fallback_metadata_checks)
         fallback_request = request.model_copy(
             update={
                 "queries": fallback_queries,
@@ -23929,6 +23961,12 @@ def discover_auto_viral_campaign_sources(
             message=f"Kandidat API {len(sources)}/{source_pool_target}; menjalankan fallback terbatas",
             search_provider="hybrid" if sources else "yt_dlp_fallback",
         )
+        if quota_fallback and scheduled_discovery:
+            append_auto_viral_log(
+                run_id,
+                "Kuota YouTube Data API habis; fallback cron memakai kueri tema "
+                f"yang lebih lebar dan {fallback_metadata_checks} pemeriksaan metadata.",
+            )
         found_urls = {
             normalized
             for source in sources
@@ -23941,7 +23979,7 @@ def discover_auto_viral_campaign_sources(
                 exclude_urls=excluded_sources | found_urls,
                 stop_after=source_pool_target - len(sources),
                 max_metadata_checks=(
-                    max(3, env_int("VIRAL_CC_QUOTA_FALLBACK_METADATA_CHECKS", 8))
+                    fallback_metadata_checks
                     if quota_fallback
                     else max(3, env_int("VIRAL_CC_FAST_MAX_METADATA_CHECKS", 24))
                 ),

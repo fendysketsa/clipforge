@@ -6561,6 +6561,112 @@ def test_scheduler_source_cooldown_allows_weekly_reuse(monkeypatch):
     assert old_url not in excluded
 
 
+def test_daily_plan_does_not_permanently_exclude_old_short_sources(monkeypatch, tmp_path):
+    import api
+
+    url = "https://www.youtube.com/watch?v=oldShortABC12"
+    old = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
+    monkeypatch.setenv("AUTO_VIRAL_DAILY_PLAN_ENABLED", "true")
+    monkeypatch.setattr(api, "jobs", {})
+    monkeypatch.setattr(api, "auto_viral_runs", {})
+    monkeypatch.setattr(api, "processed_source_history", set())
+    monkeypatch.setattr(api, "source_usage_history", {
+        url: {
+            "events": [
+                {
+                    "job_id": "old-short-job",
+                    "clip_mode": "short",
+                    "processed_at": old,
+                    "clip_count": 1,
+                }
+            ]
+        }
+    })
+    monkeypatch.setattr(api, "source_processing_ledger_path", lambda: tmp_path / "ledger.json")
+
+    assert url not in api.recently_processed_job_source_urls(7)
+
+
+def test_ytdlp_search_honours_configured_date_mode(monkeypatch):
+    import api
+
+    calls: list[str] = []
+
+    class FakeYDL:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, query, download=False):
+            calls.append(query)
+            return {"entries": []}
+
+    monkeypatch.setenv("VIRAL_CC_YTDLP_SEARCH_MODE", "ytsearchdate")
+    monkeypatch.setattr(api, "YoutubeDL", FakeYDL)
+    monkeypatch.setattr(api, "cron_humor_discovery_active", lambda *_args: False)
+    monkeypatch.setattr(api, "cron_trend_discovery_active", lambda *_args: False)
+
+    request = AutoViralRequest(
+        queries=["ceramah indonesia nasihat kehidupan"],
+        sort_order="relevance",
+        search_limit_per_query=7,
+    )
+
+    assert api.search_auto_viral_sources(request, "missing-run") == []
+    assert calls
+    assert all(call.startswith("ytsearchdate7:") for call in calls)
+    assert any("ceramah indonesia nasihat kehidupan" in call for call in calls)
+
+
+def test_scheduled_quota_fallback_broadens_theme_queries_and_metadata_budget(monkeypatch):
+    import api
+
+    captured: dict[str, object] = {}
+    theme_queries = api.RYUUNDY_CRON_THEME_PROFILES["lecture_wisdom"]["queries"]
+
+    def fail_api(*_args, **_kwargs):
+        raise RuntimeError("quotaExceeded")
+
+    def capture_fallback(request, _run_id, **kwargs):
+        captured["request"] = request
+        captured["max_metadata_checks"] = kwargs.get("max_metadata_checks")
+        return []
+
+    monkeypatch.setenv("YOUTUBE_DATA_API_KEY", "test-key")
+    monkeypatch.setenv("VIRAL_CC_REQUIRE_YOUTUBE_DATA_API", "true")
+    monkeypatch.setenv("VIRAL_CC_FAST_API_ONLY", "false")
+    monkeypatch.setenv("VIRAL_CC_QUOTA_FALLBACK_ENABLED", "true")
+    monkeypatch.setenv("VIRAL_CC_QUOTA_FALLBACK_METADATA_CHECKS", "8")
+    monkeypatch.setattr(api, "search_youtube_data_api_viral_sources", fail_api)
+    monkeypatch.setattr(api, "search_auto_viral_sources", capture_fallback)
+    monkeypatch.setattr(api, "scheduled_auto_viral_discovery_active", lambda _run_id: True)
+    monkeypatch.setattr(api, "cron_trend_discovery_active", lambda *_args: True)
+    monkeypatch.setattr(api, "director_source_discovery_active", lambda *_args: False)
+    monkeypatch.setattr(api, "update_auto_viral_run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(api, "append_auto_viral_log", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(api, "append_auto_viral_error", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(api, "preflight_scheduled_sources", lambda sources, *_args: sources)
+
+    request = AutoViralRequest(
+        queries=["Buya Yahya sedekah kajian lengkap"],
+        cron_theme_key="lecture_wisdom",
+        video_count=17,
+    )
+
+    api.discover_auto_viral_campaign_sources(request, "missing-run", set(), 51)
+
+    fallback_request = captured["request"]
+    assert fallback_request.queries[0] == theme_queries[0]
+    assert "Buya Yahya sedekah kajian lengkap" in fallback_request.queries
+    assert len(fallback_request.queries) > 1
+    assert captured["max_metadata_checks"] >= 24
+
+
 def test_failed_job_card_is_purged_with_its_artifacts(monkeypatch):
     import api
 
