@@ -1,19 +1,23 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { OFFICE_PEOPLE, officeDestination, officePath, officeStep, type OfficePoint, type OfficeActivity } from "./officeChoreography";
+import { OFFICE_PEOPLE, FLOOR_HEIGHT, officeDestination, officePath, officeStep, type OfficePoint, type OfficeActivity } from "./officeChoreography";
 
 export type OfficeProjection = { id: string; x: number; y: number; activity: OfficeActivity };
 export const OFFICE_AREAS = [
-  { id: "meeting", label: "Ruang rapat", x: -8, z: -5.9 },
-  { id: "creative", label: "Produksi & QC", x: 0, z: -5.9 },
-  { id: "media", label: "Distribusi & pemulihan", x: 8, z: -5.9 },
-  { id: "assets", label: "Studio sosial & aset", x: -7.5, z: 5.8 },
-  { id: "lounge", label: "Lounge", x: .3, z: 5.8 },
-  { id: "pantry", label: "Coffee bar", x: 8, z: 5.8 },
+  { id: "meeting", label: "Ruang rapat", x: -8, z: -5.9, y: 0 },
+  { id: "creative", label: "Produksi & QC", x: 0, z: -5.9, y: 0 },
+  { id: "media", label: "Distribusi & pemulihan", x: 8, z: -5.9, y: 0 },
+  { id: "assets", label: "Studio sosial & aset", x: -7.5, z: 5.8, y: 0 },
+  { id: "lounge", label: "Lounge", x: 0, z: 5.8, y: 0 },
+  { id: "pantry", label: "Coffee bar", x: 7.5, z: 5.8, y: 0 },
+  { id: "game", label: "Lantai 2 · Game room", x: -7.2, z: -5, y: FLOOR_HEIGHT },
+  { id: "toilet", label: "Lantai 2 · Toilet", x: 7.9, z: -5, y: FLOOR_HEIGHT },
 ];
 
 /** Procedural models are bundled with the app: no external models, textures or CDN. */
-export function createOfficeScene(host: HTMLElement, project: (people: OfficeProjection[], areas: OfficeProjection[]) => void) {
+export function createOfficeScene(host: HTMLElement,
+  project: (people: OfficeProjection[], areas: OfficeProjection[]) => void,
+  onZoomChange?: (value: number) => void) {
   const scene = new THREE.Scene();
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
@@ -23,8 +27,16 @@ export function createOfficeScene(host: HTMLElement, project: (people: OfficePro
   renderer.setClearColor(0x000000, 0);
   host.appendChild(renderer.domElement);
   const camera = new THREE.OrthographicCamera(-18, 18, 12, -12, .1, 150);
-  camera.position.set(18, 24, 30);
-  camera.lookAt(0, 0, 0);
+  const BASE_AZIMUTH = Math.atan2(18, 30);
+  const CAMERA_RADIUS = Math.hypot(18, 30, 24);
+  const BASE_ELEVATION = Math.atan2(24, Math.hypot(18, 30));
+  let azimuth = BASE_AZIMUTH, elevation = BASE_ELEVATION;
+  function updateCamera() {
+    const flat = Math.cos(elevation) * CAMERA_RADIUS;
+    camera.position.set(Math.sin(azimuth) * flat, Math.sin(elevation) * CAMERA_RADIUS, Math.cos(azimuth) * flat);
+    camera.lookAt(0, 0, 0); camera.updateMatrixWorld();
+  }
+  updateCamera();
   const ambient = new THREE.HemisphereLight(0xf8fbff, 0xb2a38e, 2.5);
   scene.add(ambient);
   const sun = new THREE.DirectionalLight(0xfff3d9, 3.2);
@@ -34,6 +46,29 @@ export function createOfficeScene(host: HTMLElement, project: (people: OfficePro
   sun.shadow.normalBias = .035; sun.shadow.bias = -.00015;
   scene.add(sun);
   const fill = new THREE.DirectionalLight(0xcbdfff, 1.4); fill.position.set(10, 7, -10); scene.add(fill);
+  // Lamps are created outside the merged static geometry so night mode can
+  // switch each shade and its own warm light on independently.
+  const lamps: { shade: THREE.MeshStandardMaterial; light: THREE.PointLight; pool: THREE.MeshBasicMaterial }[] = [];
+  const lampMaterials: THREE.MeshStandardMaterial[] = [];
+  const poolMaterials: THREE.MeshBasicMaterial[] = [];
+  function pendant(x: number, z: number, level = 0) {
+    const shade = new THREE.MeshStandardMaterial({ color: 0xffe7b4, emissive: 0xffc766, emissiveIntensity: 0.04,
+      roughness: .5, transparent: true, opacity: .92 });
+    lampMaterials.push(shade);
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(.52, .34, 16, 1, true), shade);
+    cone.position.set(x, level + 3.32, z); cone.rotation.x = Math.PI; scene.add(cone);
+    geometries.add(cone.geometry);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(.16, 10, 8), shade);
+    glow.position.set(x, level + 3.16, z); scene.add(glow); geometries.add(glow.geometry);
+    const light = new THREE.PointLight(0xffd49a, 0, 14, 1.5);
+    light.position.set(x, level + 3.05, z); scene.add(light);
+    const pool = new THREE.MeshBasicMaterial({ color: 0xffcf7a, transparent: true, opacity: 0, depthWrite: false });
+    poolMaterials.push(pool);
+    const puddle = new THREE.Mesh(new THREE.CircleGeometry(2.1, 24), pool);
+    puddle.rotation.x = -Math.PI / 2; puddle.position.set(x, level + .035, z + .7); scene.add(puddle);
+    geometries.add(puddle.geometry);
+    lamps.push({ shade, light, pool });
+  }
   const fixed = new THREE.Group(); scene.add(fixed);
   const materials = new Map<string, THREE.MeshStandardMaterial>();
   const geometries = new Set<THREE.BufferGeometry>();
@@ -175,10 +210,39 @@ export function createOfficeScene(host: HTMLElement, project: (people: OfficePro
     }
   }
   [[-10.9, -5.9], [3.5, -5.9], [11, -5.9], [-10.9, 1.6], [11, 2.7]].forEach(([x, z]) => plant(x, z));
-  for (const x of [-8, 0, 8]) {
-    cylinder(x, 3.9, -4, .018, .65, "#596659");
-    cylinder(x, 3.5, -4, .47, .23, "#dfc997", fixed, .2);
+  // Second floor: game room (left), reading nook (centre), toilet (right).
+  const upper = FLOOR_HEIGHT;
+  box(0, upper - .18, -4.5, 24.4, .34, 6.2, "#d9cfb6");
+  box(0, upper - .36, -1.45, 24.4, .14, .18, "#b5a98f");
+  // Stairs climb outside the full-width upper slab and land at the back-left corner.
+  for (let i = 0; i < 11; i++) {
+    const t = (i + 1) / 11;
+    box(-12.9, upper * t - .08, -1.6 - t * 3.4, 1.35, .17, .32, "#c6b594");
+    box(-13.55, upper * t + .4, -1.6 - t * 3.4, .08, .9, .08, "#8b8069");
   }
+  box(-12.2, upper - .12, -5, 1.4, .24, 1.5, "#cfc3a6");
+  box(0, upper + 1.05, -7.55, 24.3, 2.1, .1, "#b9c8bd", fixed, .22);
+  box(-4.3, upper + 1.05, -4.5, .1, 2.1, 6.1, "#b9c8bd", fixed, .22);
+  box(4.3, upper + 1.05, -4.5, .1, 2.1, 6.1, "#b9c8bd", fixed, .22);
+  // Arcade cabinets and two stools in the game room.
+  for (const x of [-8.6, -5.9]) {
+    box(x, upper + .72, -6.1, 1, 1.44, .78, "#3b5a50");
+    box(x, upper + 1.02, -5.69, .76, .58, .03, "#9ad0c2");
+    box(x, upper + .62, -5.68, .56, .07, .14, "#263b35");
+    cylinder(x, upper + .4, -5.15, .22, .08, "#c98f62");
+    cylinder(x, upper + .19, -5.15, .05, .4, "#6d7c6b");
+  }
+  // Toilet stalls with translucent doors and a shared sink.
+  for (const x of [6.6, 9.2]) {
+    box(x - .78, upper + .9, -5.9, .08, 1.8, 1.5, "#d6d0bd");
+    box(x + .78, upper + .9, -5.9, .08, 1.8, 1.5, "#d6d0bd");
+    box(x, upper + .9, -6.65, 1.6, 1.8, .08, "#d6d0bd");
+    box(x, upper + .83, -5.14, 1.5, 1.66, .05, "#c9d8d2", fixed, .45);
+    cylinder(x, upper + .75, -5.02, .12, .16, "#f4f1e6");
+  }
+  box(-1.2, upper + .75, -7, 1.4, 1.5, .34, "#9a7d5c");
+  for (let i = 0; i < 4; i++) box(-1.65 + i * .3, upper + .5 + (i % 2) * .35, -6.8, .22, .5, .28, ["#7d9c8b", "#c69a72", "#7e8fb3", "#b58f76"][i]);
+  for (const x of [-1, 1]) { cylinder(x, upper + .42, -4.5, .42, .12, "#8aa394"); box(x, upper + .6, -4.15, .78, .65, .12, "#8aa394"); }
   // Merge static opaque furniture by material: keep the animation inexpensive.
   fixed.updateMatrixWorld(true);
   const buckets = new Map<THREE.Material, THREE.BufferGeometry[]>();
@@ -194,6 +258,9 @@ export function createOfficeScene(host: HTMLElement, project: (people: OfficePro
     if (!geometry) continue;
     geometries.add(geometry); const object = new THREE.Mesh(geometry, mat); object.castShadow = true; object.receiveShadow = true; scene.add(object);
   }
+  for (const x of [-8, 0, 8]) pendant(x, -4);
+  for (const x of [-5.6, 6.6]) pendant(x, -4.6, FLOOR_HEIGHT);
+  for (const x of [-7.5, 7.5]) pendant(x, 4.2);
   // Six distinct articulated employees, with feet, eyes, hair and a small work badge.
   const people = OFFICE_PEOPLE.map((person, index) => {
     const group = new THREE.Group(); scene.add(group);
@@ -214,8 +281,10 @@ export function createOfficeScene(host: HTMLElement, project: (people: OfficePro
       box(0, -.18, 0, .14, .39, .16, person.color, limb); sphere(0, -.4, 0, .085, skin, limb); return limb;
     });
     const mug = cylinder(.31, .76, .13, .075, .17, "#f7e8d0", body); mug.visible = false;
-    return { group, body, legs, arms, mug, point: { ...person.desk } as OfficePoint,
-      path: [] as OfficePoint[], destination: "", rotation: person.desk.z > 0 ? 0 : Math.PI };
+    const book = box(.1, .98, .3, .34, .05, .25, "#d8c9a6", body); book.visible = false;
+    return { group, body, legs, arms, mug, book, point: { ...person.desk } as OfficePoint,
+      path: [] as OfficePoint[], destination: "", pendingDestination: "", pendingSince: 0,
+      rotation: person.desk.z > 0 ? 0 : Math.PI };
   });
   let width = 1, height = 1, zoom = 1, night = false;
   let lastSeconds = 0, lastStates: Record<string, string> = {};
@@ -237,23 +306,48 @@ export function createOfficeScene(host: HTMLElement, project: (people: OfficePro
     const delta = Math.min(Math.max(seconds - lastSeconds, 0), .12);
     lastSeconds = seconds; lastStates = states;
     camera.updateMatrixWorld();
-    if (night !== isNight) { night = isNight; ambient.intensity = night ? 1.9 : 2.5; sun.intensity = night ? 1.8 : 3.2; }
+    if (night !== isNight) {
+      night = isNight;
+      ambient.intensity = night ? 1.05 : 2.5;
+      sun.intensity = night ? .55 : 3.2;
+      fill.intensity = night ? .45 : 1.4;
+      for (const lamp of lamps) {
+        lamp.shade.emissiveIntensity = night ? 3.2 : .04;
+        lamp.light.intensity = night ? 4.2 : 0;
+        lamp.pool.opacity = night ? .16 : 0;
+      }
+    }
     const projections = people.map((person, index) => {
       const profile = OFFICE_PEOPLE[index];
       const state = states[profile.id] || "unavailable";
       const target = officeDestination(index, state);
-      const destination = `${target.x}:${target.z}`;
-      if (state !== "unavailable" && destination !== person.destination) {
-        person.path = Math.hypot(target.x-person.point.x,target.z-person.point.z) > .01 ? officePath(person.point, target) : [];
-        person.destination = destination;
+      const destination = `${target.x}:${target.z}:${target.y ?? 0}`;
+      if (state === "unavailable") {
+        person.pendingDestination = ""; person.pendingSince = 0;
+      } else if (destination !== person.destination && !person.path.length) {
+        // A status flicker must not send someone back and forth forever.
+        // The new destination has to stay put for a moment before walking.
+        if (destination === person.pendingDestination) {
+          person.pendingSince += delta;
+          if (person.pendingSince >= 1.2) {
+            person.path = Math.hypot(target.x - person.point.x, target.z - person.point.z,
+              (target.y ?? 0) - (person.point.y ?? 0)) > .01 ? officePath(person.point, target) : [];
+            person.destination = destination;
+            person.pendingDestination = ""; person.pendingSince = 0;
+          }
+        } else {
+          person.pendingDestination = destination; person.pendingSince = 0;
+        }
+      } else {
+        person.pendingDestination = ""; person.pendingSince = 0;
       }
       if (state !== "unavailable" && person.path.length && delta > 0) {
         const step = officeStep(person.point, person.path, delta);
-        person.point = { x:step.x,z:step.z }; person.path = step.path; person.rotation = step.rotation;
+        person.point = { x:step.x, z:step.z, y:step.y }; person.path = step.path; person.rotation = step.rotation;
       }
       if (!person.path.length) person.rotation = target.activity === "desk" ? (profile.desk.z > 0 ? 0 : Math.PI) : index % 2 ? -Math.PI / 2 : Math.PI / 2;
       const pose = { ...person.point, rotation: person.rotation, activity: person.path.length && state !== "unavailable" ? "walk" as const : target.activity };
-      person.group.position.set(pose.x, 0, pose.z); person.group.rotation.y = pose.rotation;
+      person.group.position.set(pose.x, pose.y ?? 0, pose.z); person.group.rotation.y = pose.rotation;
       person.body.position.y = pose.activity === "walk" ? Math.abs(Math.sin(seconds * 8)) * .045 : pose.activity === "desk" ? -.12 : 0;
       person.legs.forEach((leg, side) => leg.rotation.x = pose.activity === "walk" ? Math.sin(seconds * 8 + side * Math.PI) * .52 : 0);
       person.arms.forEach((arm, side) => {
@@ -262,18 +356,53 @@ export function createOfficeScene(host: HTMLElement, project: (people: OfficePro
             : pose.activity === "desk" && state === "running" ? -.55 + Math.sin(seconds * 5 + side) * .08 : -.2;
       });
       person.mug.visible = pose.activity === "coffee";
-      return { id: OFFICE_PEOPLE[index].id, ...point(pose.x, 2.15, pose.z), activity: pose.activity };
+      person.book.visible = pose.activity === "reading";
+      if (pose.activity === "game") person.arms.forEach((arm, side) =>
+        arm.rotation.x = -.6 + Math.sin(seconds * 9 + side * 1.7) * .18);
+      if (pose.activity === "coffee") person.arms.forEach((arm, side) =>
+        arm.rotation.x = side ? -.75 + Math.sin(seconds * 1.6) * .12 : -.25);
+      return { id: OFFICE_PEOPLE[index].id, ...point(pose.x, 2.15 + (pose.y ?? 0), pose.z), activity: pose.activity };
     });
     renderer.render(scene, camera);
-    project(projections, OFFICE_AREAS.map(area => ({ id: area.id, ...point(area.x, .25, area.z), activity: "desk" })));
+    project(projections, OFFICE_AREAS.map(area => ({ id: area.id, ...point(area.x, .25 + area.y, area.z), activity: "desk" })));
   }
+  let dragging = false, dragX = 0, dragY = 0;
+  const canvas = renderer.domElement;
+  canvas.style.cursor = "grab";
+  canvas.style.touchAction = "none";
+  canvas.addEventListener("pointerdown", event => {
+    dragging = true; dragX = event.clientX; dragY = event.clientY;
+    canvas.setPointerCapture(event.pointerId); canvas.style.cursor = "grabbing";
+  });
+  canvas.addEventListener("pointermove", event => {
+    if (!dragging) return;
+    azimuth += (event.clientX - dragX) * .007;
+    elevation = Math.min(1.32, Math.max(.12, elevation - (event.clientY - dragY) * .005));
+    dragX = event.clientX; dragY = event.clientY;
+    updateCamera(); render(lastSeconds, night, lastStates);
+  });
+  const endDrag = () => { dragging = false; canvas.style.cursor = "grab"; };
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+  canvas.addEventListener("wheel", event => {
+    event.preventDefault();
+    zoom = Math.min(2.6, Math.max(.6, zoom * (event.deltaY > 0 ? .9 : 1.1)));
+    onZoomChange?.(zoom); resize();
+  }, { passive: false });
   const observer = new ResizeObserver(resize); observer.observe(host); resize();
   return {
     render,
-    zoom(value: number) { zoom = value; resize(); },
+    zoom(value: number) { zoom = value; onZoomChange?.(zoom); resize(); },
+    rotate(delta: number) { azimuth += delta; updateCamera(); render(lastSeconds, night, lastStates); },
+    tilt(delta: number) { elevation = Math.min(1.32, Math.max(.12, elevation + delta));
+      updateCamera(); render(lastSeconds, night, lastStates); },
+    resetView() { azimuth = BASE_AZIMUTH; elevation = BASE_ELEVATION; zoom = 1;
+      onZoomChange?.(zoom); updateCamera(); resize(); },
     dispose() {
       observer.disconnect(); geometries.forEach(geometry => geometry.dispose());
-      materials.forEach(mat => mat.dispose()); signMaterials.forEach(mat => mat.dispose()); textures.forEach(texture => texture.dispose());
+      materials.forEach(mat => mat.dispose()); signMaterials.forEach(mat => mat.dispose());
+      lampMaterials.forEach(mat => mat.dispose()); poolMaterials.forEach(mat => mat.dispose());
+      textures.forEach(texture => texture.dispose());
       renderer.dispose(); renderer.domElement.remove();
     },
   };

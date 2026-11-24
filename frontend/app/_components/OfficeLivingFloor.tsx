@@ -1,13 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, Minus, Plus, Radio, RotateCcw, Sun, Moon, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, MessageCircle, Minus, Plus, Radio, RotateCcw, RotateCw, Sun, Moon, Users } from "lucide-react";
 import { officeActivityStatus, officeAgentWork, officeWorkLabel, officeSpeech, type AIOfficeSnapshot } from "../../lib/aiOffice";
 import { OFFICE_PEOPLE, type OfficeActivity } from "../../lib/officeChoreography";
 import type { createOfficeScene, OfficeProjection } from "../../lib/createOfficeScene";
 
-const areaLabels = ["Ruang rapat", "Produksi & QC", "Distribusi & pemulihan", "Studio sosial & aset", "Lounge", "Coffee bar"];
-const areaIds = ["meeting", "creative", "media", "assets", "lounge", "pantry"];
-const activityLabel: Record<OfficeActivity, string> = { desk: "Di meja kerja", walk: "Berjalan", meeting: "Diskusi tim", coffee: "Di coffee bar", lounge: "Di lounge" };
+const areaLabels = ["Ruang rapat", "Produksi & QC", "Distribusi & pemulihan", "Studio sosial & aset", "Lounge", "Coffee bar", "Game room", "Toilet"];
+const areaIds = ["meeting", "creative", "media", "assets", "lounge", "pantry", "game", "toilet"];
+const activityLabel: Record<OfficeActivity, string> = { desk: "Di meja kerja", walk: "Berjalan", meeting: "Diskusi tim", coffee: "Di coffee bar", lounge: "Di lounge", game: "Bermain di game room", toilet: "Ke toilet", stairs: "Naik tangga", reading: "Membaca" };
 
 export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect, animate }: {
   snapshot: AIOfficeSnapshot; now: number; refreshFailed: boolean; selected: string; onSelect: (value: string) => void; animate: boolean;
@@ -41,7 +41,8 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
         label.style.left = `${person.x}px`; label.style.top = `${person.y}px`;
         const focus = latest.current.selected;
         const talking = latest.current.bubbles && (focus === person.id || focus === "all" && (person.id === lead?.id || person.id === second?.id));
-        label.dataset.bubble = String(talking); label.style.zIndex = talking ? "6" : "3";
+        label.dataset.bubble = String(talking);
+        label.style.zIndex = focus === person.id ? "9" : talking ? "6" : "3";
         const half = element.clientWidth < 640 ? 57.5 : 76.5;
         const shift = Math.max(half + 10 - person.x, Math.min(0, element.clientWidth - half - 10 - person.x));
         label.style.setProperty("--speech-shift", `${shift}px`);
@@ -56,7 +57,7 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
     };
     void import("../../lib/createOfficeScene").then(({ createOfficeScene }) => {
       if (disposed) return;
-      scene.current = createOfficeScene(element, project); setReady(true);
+      scene.current = createOfficeScene(element, project, value => setZoom(value)); setReady(true);
     }).catch(() => { if (!disposed) { element.replaceChildren(); setFailed(true); } });
     const observer = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting), { rootMargin: "80px" });
     observer.observe(element);
@@ -83,7 +84,7 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
   const department = snapshot.departments.find(row => row.id === selected);
   const chosenWork = officeAgentWork(snapshot,selected,now,refreshFailed);
   return <div className={`officeDiorama${night ? " is-night" : ""}`}>
-    <div className="officeDioramaBar"><div><span className="officeDioramaMark"><Users size={14} /></span><strong>RYUUNDY HQ <span>/ LANTAI 01</span></strong></div>
+    <div className="officeDioramaBar"><div><span className="officeDioramaMark"><Users size={14} /></span><strong>RYUUNDY HQ <span>/ LANTAI 01 + 02</span></strong></div>
       <span className={`officeConnection${!status.fresh ? " is-stale" : ""}`}><i />{!status.fresh ? "Data terakhir" : "Antrean langsung"}</span></div>
     <div className="office3dFloor officeDioramaStage" data-ready={ready} data-animated={animate && inView} aria-label="AI Office 3D: ruangan kantor, karyawan berjalan, dan bubble percakapan">
       <div ref={host} className="officeCanvas" aria-hidden="true" />
@@ -102,9 +103,15 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
             <span className="officePersonName"><i />{person.name}<small>{person.role}</small></span>
           </button>;
         })}</div> : null}
-      <div className="officeSceneTools" aria-label="Kontrol tampilan kantor"><button type="button" aria-label="Perkecil kantor" disabled={zoom <= .85} onClick={() => setZoom(value => Math.max(.85, value - .15))}><Minus size={15} /></button>
-        <button type="button" aria-label="Atur ulang pembesaran" onClick={() => setZoom(1)}><RotateCcw size={13} /></button>
-        <button type="button" aria-label="Perbesar kantor" disabled={zoom >= 1.3} onClick={() => setZoom(value => Math.min(1.3, value + .15))}><Plus size={15} /></button>
+      <div className="officeSceneTools" aria-label="Kontrol tampilan kantor"><button type="button" aria-label="Putar sudut pandang ke kiri" onClick={() => scene.current?.rotate(-Math.PI / 8)}><RotateCcw size={14} /></button>
+        <button type="button" aria-label="Putar sudut pandang ke kanan" onClick={() => scene.current?.rotate(Math.PI / 8)}><RotateCw size={14} /></button>
+        <button type="button" aria-label="Kembalikan sudut pandang dan pembesaran" onClick={() => { scene.current?.resetView(); setZoom(1); }}><RotateCcw size={13} /></button>
+        <span />
+        <button type="button" aria-label="Lihat dari atas" onClick={() => scene.current?.tilt(.18)}><ArrowUp size={14} /></button>
+        <button type="button" aria-label="Lihat dari samping" onClick={() => scene.current?.tilt(-.18)}><ArrowDown size={14} /></button>
+        <span />
+        <button type="button" aria-label="Perkecil kantor" disabled={zoom <= .6} onClick={() => setZoom(value => Math.max(.6, value - .2))}><Minus size={15} /></button>
+        <button type="button" aria-label="Perbesar kantor" disabled={zoom >= 2.6} onClick={() => setZoom(value => Math.min(2.6, value + .2))}><Plus size={15} /></button>
         <span /><button type="button" aria-pressed={bubbles} aria-label="Tampilkan bubble percakapan" onClick={() => setBubbles(value => !value)}><MessageCircle size={15} /></button>
         <button type="button" aria-label={lighting === "auto" ? "Pencahayaan otomatis, ubah ke siang" : lighting === "day" ? "Pencahayaan siang, ubah ke malam" : "Pencahayaan malam, ubah ke otomatis"} onClick={() => setLighting(value => value === "auto" ? "day" : value === "day" ? "night" : "auto")}>{night ? <Moon size={15} /> : <Sun size={15} />}</button></div>
     </div>
