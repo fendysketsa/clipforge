@@ -1,16 +1,16 @@
 export type OfficePoint = { x: number; z: number; y?: number };
-export type OfficeActivity = "desk" | "walk" | "meeting" | "briefing" | "observing" | "notice" | "coffee" | "lounge" | "sofa" | "reading" | "write" | "call" | "copy" | "snack" | "cards";
+export type OfficeActivity = "desk" | "walk" | "meeting" | "briefing" | "observing" | "notice" | "chat" | "coffee" | "lounge" | "sofa" | "reading" | "write" | "call" | "copy" | "snack" | "cards";
 
 // One floor only. Every working spot is in the open front area (z > -1.4),
 // so nobody ever has to cross the glass partition or a wall to do their job.
 export const OFFICE_PEOPLE = [
-  { id: "production", name: "Raka", role: "Produksi", color: "#4f9383", desk: { x: -2.5, z: -4 } },
-  { id: "quality", name: "Naya", role: "Quality control", color: "#9880bd", desk: { x: .5, z: -4 } },
+  { id: "production", name: "Raka", role: "Produksi", color: "#4f9383", desk: { x: -9, z: -4 } },
+  { id: "quality", name: "Naya", role: "Quality control", color: "#9880bd", desk: { x: -6.5, z: -4 } },
   { id: "distribution", name: "Dimas", role: "Distribusi", color: "#588db7", desk: { x: 6.5, z: -4 } },
   { id: "recovery", name: "Bima", role: "Pemulihan", color: "#c28d54", desk: { x: 9, z: -4 } },
-  { id: "cleanup", name: "Sari", role: "Pengelola aset", color: "#7c9b5b", desk: { x: -9, z: -4 } },
-  { id: "facebook", name: "Mika", role: "Facebook", color: "#697db8", desk: { x: -6.5, z: -4 } },
-  { id: "director", name: "Pimpinan", role: "Direktur Studio", color: "#c99433", desk: { x: 2.5, z: -4 } },
+  { id: "cleanup", name: "Sari", role: "Pengelola aset", color: "#7c9b5b", desk: { x: -9, z: -1.8 } },
+  { id: "facebook", name: "Mika", role: "Facebook", color: "#697db8", desk: { x: -6.5, z: -1.8 } },
+  { id: "director", name: "Pimpinan", role: "Direktur Studio", color: "#c99433", desk: { x: .5, z: -4 } },
 ] as const;
 
 const SPOTS: Record<'queued' | 'blocked' | 'idle', (OfficePoint & { activity: OfficeActivity })[]> = {
@@ -46,8 +46,14 @@ const TASK_BOARD_SPOTS: OfficePoint[] = [
 ];
 
 const SOFA_SPOTS: OfficePoint[] = [{ x: -1.2, z: 5.55 }, { x: 1.5, z: 5.55 }];
+const CHAT_SPOTS: OfficePoint[] = [
+  { x: -2.2, z: 4.4 }, { x: -.4, z: 4.4 },
+  { x: 1.4, z: 4.4 }, { x: 3.2, z: 4.4 },
+  { x: 5, z: 4.4 }, { x: 6.8, z: 4.4 },
+];
 
 export function officeDestination(index: number, state: string): OfficePoint & { activity: OfficeActivity } {
+  if (state === 'chat') return { ...CHAT_SPOTS[index % CHAT_SPOTS.length], activity: 'chat' };
   if (state === 'sofa') return { ...SOFA_SPOTS[index % SOFA_SPOTS.length], activity: 'sofa' };
   if (state === 'notice') return { ...TASK_BOARD_SPOTS[index % TASK_BOARD_SPOTS.length], activity: 'notice' };
   if (OFFICE_PEOPLE[index].id === 'director') {
@@ -62,31 +68,23 @@ export function officeDestination(index: number, state: string): OfficePoint & {
 // front corridor, then enter the destination room through its door.
 export function officePath(from: OfficePoint, to: OfficePoint): OfficePoint[] {
   const doorFor = (x: number) => x < -4.25 ? -11.2 : x > 4.25 ? 7.8 : 0;
-  const exit = (point: OfficePoint): OfficePoint[] => {
-    if (point.z >= -1.4) return [at(point)];
-    const door = doorFor(point.x);
-    return [at(point), at({ x: point.x, z: -2.4 }), at({ x: door, z: -2.4 }),
-      at({ x: door, z: -1.5 }), at({ x: door, z: -1.35 })];
-  };
-  const enter = (point: OfficePoint): OfficePoint[] => {
-    if (point.z >= -1.4) return [at(point)];
-    const door = doorFor(point.x);
-    return [at({ x: door, z: -1.35 }), at({ x: door, z: -1.5 }),
-      at({ x: door, z: -2.4 }), at({ x: point.x, z: -2.4 }), at(point)];
-  };
-  const route = [...exit(from)];
-  // The meeting table occupies x[-10.5,-5.5], z[.5,3.5]. Walk around its right
-  // edge and along the front instead of cutting through the furniture.
-  const nearMeeting = (point: OfficePoint) => point.z > -1.4 && point.z < 7 && point.x < -4.5 && point.x > -12;
-  if (nearMeeting(from)) {
-    route.push(at({ x: from.x, z: 4.4 }), at({ x: -4.6, z: 4.4 }), at({ x: -4.6, z: -1.35 }));
+  const FRONT = 4.4, INSIDE = -2.4;
+  const points: OfficePoint[] = [at(from)];
+  if (from.z >= -1.4) {
+    points.push(at({ x: from.x, z: FRONT }));
+  } else {
+    const door = doorFor(from.x);
+    points.push(at({ x: from.x, z: INSIDE }), at({ x: door, z: INSIDE }), at({ x: door, z: FRONT }));
   }
-  if (nearMeeting(to)) {
-    const current = route[route.length - 1];
-    route.push(at({ x: -4.6, z: current.z }), at({ x: -4.6, z: 4.4 }), at({ x: to.x, z: 4.4 }));
+  points.push(at({ x: to.x, z: FRONT }));
+  if (to.z >= -1.4) {
+    points.push(at(to));
+  } else {
+    const door = doorFor(to.x);
+    points.push(at({ x: door, z: FRONT }), at({ x: door, z: INSIDE }),
+      at({ x: to.x, z: INSIDE }), at(to));
   }
-  route.push(...enter(to));
-  return route.filter((point, index, array) =>
+  return points.filter((point, index, array) =>
     !index || Math.hypot(point.x - array[index - 1].x, point.z - array[index - 1].z) > .001);
 }
 
