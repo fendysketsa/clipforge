@@ -17,7 +17,7 @@ test('state changes use doorways and end at the destination without a repeating 
    for(let step=0;path.length&&step<1200;step++){
     const previous=point;const next=officeStep(point,path,.04);point={x:next.x,z:next.z,y:next.y};path=next.path;
     assert.ok(Math.hypot(point.x-previous.x,point.z-previous.z)<=.067);
-    if((previous.z+1.4)*(point.z+1.4)<0)assert.ok([-12.9,-6,0,6].some(door=>Math.abs(point.x-door)<.85));
+    if((previous.z+1.4)*(point.z+1.4)<0)assert.ok([-12.9,-6,0,7.8].some(door=>Math.abs(point.x-door)<.85));
     for(const wall of [-4.3,4.3])assert.ok(!((previous.x-wall)*(point.x-wall)<0&&point.z< -1.7&&Math.abs(point.z+4.6)>.6));
    }
    assert.equal(path.length,0);assert.ok(Math.hypot(point.x-target.x,point.z-target.z)<.001);

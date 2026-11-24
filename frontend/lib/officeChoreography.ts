@@ -53,7 +53,7 @@ const at = (point: OfficePoint, y = point.y ?? 0): OfficePoint => ({ x: point.x,
 /** Doorways and one corner staircase connect both floors; traffic can pass both ways. */
 export function officePath(from: OfficePoint, to: OfficePoint): OfficePoint[] {
   const fromY = from.y ?? 0, toY = to.y ?? 0;
-  const doorFor = (x: number) => x < -3 ? -6 : x > 3 ? 6 : 0;
+  const doorFor = (x: number) => x < -3 ? -6 : x > 3 ? 7.8 : 0;
   const lower = (point: OfficePoint): OfficePoint[] => {
     const door = doorFor(point.x);
     if (point.z >= -1.4) return [at(point, 0), at({ x: point.x, z: .2 }, 0)];

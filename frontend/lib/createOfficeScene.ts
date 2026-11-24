@@ -138,10 +138,15 @@ export function createOfficeScene(host: HTMLElement,
   signMaterials.push(board("RYUUNDY / CREATIVE STUDIO", -8, 2.55, -6.86, 6));
   // Glass partitions; corridor-facing walls have a real 1.8m door opening.
   function glassX(x: number, z1: number, z2: number) {
-    box(x, 1.35, (z1 + z2) / 2, .055, 2.7, z2 - z1, "#a1c8c5", fixed, .18);
-    [z1, z2, (z1 + z2) / 2].forEach(z => box(x, 1.35, z, .06, 2.7, .065, "#536b69"));
-    box(x, 2.7, (z1 + z2) / 2, .07, .055, z2 - z1, "#536b69");
-    box(x, .12, (z1 + z2) / 2, .08, .12, z2 - z1, "#536b69");
+    const gap = 1.7, centre = -2.4;
+    for (const [a, b] of [[z1, centre - gap / 2], [centre + gap / 2, z2]]) {
+      if (b - a < .15) continue;
+      box(x, 1.35, (a + b) / 2, .055, 2.7, b - a, "#a1c8c5", fixed, .18);
+      [a, b].forEach(z => box(x, 1.35, z, .06, 2.7, .065, "#536b69"));
+      box(x, 2.7, (a + b) / 2, .07, .055, b - a, "#536b69");
+      box(x, .12, (a + b) / 2, .08, .12, b - a, "#536b69");
+    }
+    box(x, 2.55, centre, .08, .18, gap, "#536b69");
   }
   function glassFront(start: number, end: number, door: number) {
     for (const [a, b] of [[start, door - .9], [door + .9, end]]) {
@@ -313,7 +318,7 @@ export function createOfficeScene(host: HTMLElement,
     const book = box(.1, .98, .3, .34, .05, .25, "#d8c9a6", body); book.visible = false;
     return { group, body, legs, arms, mug, book, point: { ...person.desk } as OfficePoint,
       path: [] as OfficePoint[], destination: "", pendingDestination: "", pendingSince: 0,
-      rotation: person.desk.z > 0 ? 0 : Math.PI };
+      speed: 0, rotation: person.desk.z > 0 ? 0 : Math.PI };
   });
   let width = 1, height = 1, zoom = 1, night = false;
   let lastSeconds = 0, lastStates: Record<string, string> = {};
@@ -370,14 +375,22 @@ export function createOfficeScene(host: HTMLElement,
       } else {
         person.pendingDestination = ""; person.pendingSince = 0;
       }
-      if (state !== "unavailable" && person.path.length && delta > 0) {
-        const step = officeStep(person.point, person.path, delta);
-        person.point = { x:step.x, z:step.z, y:step.y }; person.path = step.path; person.rotation = step.rotation;
+      const walking = state !== "unavailable" && person.path.length > 0;
+      person.speed += ((walking ? 1 : 0) - person.speed) * Math.min(1, delta * 5);
+      if (walking && delta > 0) {
+        const step = officeStep(person.point, person.path, delta * person.speed);
+        person.point = { x: step.x, z: step.z, y: step.y }; person.path = step.path;
+        let turn = step.rotation - person.rotation;
+        turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+        person.rotation += turn * Math.min(1, delta * 8);
       }
       if (!person.path.length) {
-        person.rotation = target.activity === "desk" ? (profile.desk.z > 0 ? 0 : Math.PI)
+        const desired = target.activity === "desk" ? (profile.desk.z > 0 ? 0 : Math.PI)
           : target.activity === "game" || target.activity === "toilet" || target.activity === "reading" ? Math.PI
             : target.activity === "meeting" ? Math.PI / 2 : 0;
+        let turn = desired - person.rotation;
+        turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+        person.rotation += turn * Math.min(1, delta * 5);
       }
       const pose = { ...person.point, rotation: person.rotation, activity: person.path.length && state !== "unavailable" ? "walk" as const : target.activity };
       person.group.position.set(pose.x, pose.y ?? 0, pose.z); person.group.rotation.y = pose.rotation;
