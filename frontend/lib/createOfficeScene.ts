@@ -171,9 +171,10 @@ export function createOfficeScene(host: HTMLElement,
     cylinder(0, .3, 0, .06, .6, "#485451", group);
     box(0, .1, 0, .74, .08, .08, "#485451", group); box(0, .1, 0, .08, .08, .74, "#485451", group);
   }
-  for (const z of [.9, 2.9]) {
+  for (const z of [1, 2.4]) {
     chair(-11.2, z, -Math.PI / 2); chair(-4.8, z, Math.PI / 2);
   }
+  chair(-8, .1, 0); chair(-8, 3.9, Math.PI);
   box(-11.84, 2.1, 1.9, .07, 1.7, 3.1, "#faf9f1");
   for (let i = 0; i < 6; i++) box(-11.79, 1.9 + (i % 2) * .5, .8 + Math.floor(i / 2) * .8, .03, .32, .45, ["#eacb79", "#91b6a2", "#d4a18f"][i % 3]);
   signMaterials.push(board("RUANG RAPAT", -8, 3.15, 1.9, 4.6, "#2d5a4e", "#ffeccb"));
@@ -210,8 +211,8 @@ export function createOfficeScene(host: HTMLElement,
   desk(6.5, -5, "#588db7"); desk(9, -5, "#c28d54");          // Distribusi & pemulihan
   desk(-9, -5, "#7c9b5b", true); desk(-6.5, -5, "#697db8", true); // Sosial & aset
   // Storage and open shelving along the social studio.
-  box(-11.3, .72, 4.7, .8, 1.4, 3.2, "#c5a17b");
-  for (let i = 0; i < 5; i++) box(-10.87, .8, 3.5 + i * .55, .04, .92, .035, "#9e805e");
+  box(-11.3, .72, -4.4, .8, 1.4, 3.2, "#c5a17b");
+  for (let i = 0; i < 5; i++) box(-10.87, .8, -5.6 + i * .55, .04, .92, .035, "#9e805e");
   // Lounge, rug, sofa, coffee table and central tree planter.
   box(.3, .11, 4.5, 5.7, .025, 3.5, "#dfd7c2");
   box(.3, .47, 5.55, 3.8, .74, 1.05, "#6e8b72");
@@ -405,7 +406,7 @@ export function createOfficeScene(host: HTMLElement,
       person.mouse.position.x = .42 + Math.sin(seconds * 1.8 + index) * .08;
       person.screen.visible = pose.activity === 'desk' || pose.activity === 'observing';
       person.screenMat.color.setHex(Math.floor(seconds * 1.2 + index) % 6 === 0 ? 0xeaf6b9 : 0x9fe0d2);
-      const seated = ["desk", "reading", "cards", "write", "snack", "sofa"].includes(pose.activity);
+      const seated = ["desk", "reading", "cards", "write", "snack"].includes(pose.activity);
       person.seat.visible = seated;
       person.seat.position.set(pose.x, pose.y ?? 0, pose.z);
       person.seat.rotation.y = pose.rotation;
