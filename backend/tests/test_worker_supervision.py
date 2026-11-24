@@ -144,7 +144,7 @@ def test_facebook_office_adapter_respects_persisted_settings_and_hides_plans(tmp
     snapshot = adapter.facebook_office_snapshot()
     assert set(snapshot) == {'enabled', 'worker_running', 'active_count', 'state', 'detail',
         'qc_wait_count', 'failed_upload_count', 'unknown_post_count', 'skipped_upload_count',
-        'autonomous_recovery_version'}
+        'autonomous_recovery_version', 'activity_available', 'activity_work'}
     assert snapshot['autonomous_recovery_version'] == 1
     assert all(snapshot[key] == 0 for key in ('qc_wait_count', 'failed_upload_count',
         'unknown_post_count', 'skipped_upload_count'))

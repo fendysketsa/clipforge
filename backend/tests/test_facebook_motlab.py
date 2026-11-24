@@ -31,6 +31,22 @@ def test_native_project_uses_exact_semantic_poses_and_stable_caption_cues(tmp_pa
     assert json.loads(page.with_name('project.json').read_text())['audio']==[]
 
 
+def test_moral_story_renders_a_character_scene_through_the_story_module(tmp_path):
+    import facebook_stories as stories
+    plan=stories.plan('motlab-character-test','reel','anak tersedak saat minum es dingin',style='moral_anak')
+    for i,stage in enumerate(plan['stages']):stage.update(start=i*8.,end=(i+1)*8.)
+    plan['motion_timeline']=stories.timeline(plan)
+    cues=[(0,16,'Lihat apa yang terjadi.'),(16,32,'Minum pelan-pelan.')]
+    page,stamp=renderer.write_project(plan,cues,32,tmp_path,originals.state)
+    film=json.loads(page.with_name('film.json').read_text())
+    assert film['frames'][30]['scene']=='drink_choking'
+    assert film['frames'][30]['stage_starts']==[8.,16.,24.]
+    assert (page.parent/'story-scene.mjs').exists()
+    assert not (page.parent/'education-scene.mjs').exists()
+    assert stamp['story_scene_sha256']
+    renderer.verify_evidence(tmp_path,stamp)
+
+
 def test_authored_text_never_becomes_executable_scene_code(tmp_path):
     plan=measured();plan['title']='</script><script>alert(1)</script>'
     page,stamp=renderer.write_project(plan,[(0,32,plan['title'])],32,tmp_path,originals.state)

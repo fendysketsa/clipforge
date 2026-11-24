@@ -421,7 +421,7 @@ export function createOfficeScene(host: HTMLElement,
       person.group.position.set(pose.x, pose.y ?? 0, pose.z); person.group.rotation.y = pose.rotation;
       const quiet = Math.sin(seconds * 1.4 + index) * .03;
       person.body.position.y = pose.activity === "walk" ? Math.abs(Math.sin(seconds * 8)) * .045
-        : pose.activity === "meeting" ? -.24
+        : pose.activity === "meeting" ? -.16
           : pose.activity === "desk" ? -.12 : pose.activity === "coffee" || pose.activity === "reading" ? quiet : 0;
       person.legs.forEach((leg, side) => leg.rotation.x = pose.activity === "walk"
         ? Math.sin(seconds * 8 + side * Math.PI) * .52

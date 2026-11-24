@@ -17,8 +17,8 @@ export const OFFICE_PEOPLE = [
 
 // Waiting people are spread across real places instead of gathering in one spot.
 const BLOCKED_SPOTS: (OfficePoint & { activity: OfficeActivity })[] = [
-  { x: -10.3, z: .9, activity: "meeting" },
-  { x: -5.7, z: 2.9, activity: "meeting" },
+  { x: -9.9, z: .9, activity: "meeting" },
+  { x: -6.1, z: 2.9, activity: "meeting" },
   { x: -8.6, z: -5, y: FLOOR_HEIGHT, activity: "game" },
   { x: -5.9, z: -5, y: FLOOR_HEIGHT, activity: "game" },
   { x: 6.6, z: -5.75, y: FLOOR_HEIGHT, activity: "toilet" },

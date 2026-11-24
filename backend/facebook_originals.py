@@ -568,8 +568,10 @@ def render(plan,folder: Path,progress=lambda *args:None) -> Path:
         clock=plan['motion_timeline']
         if plan.get('story'):
             scene=lambda t:stories.scene(plan,t)
+            scene_kind=plan['story'].get('scene','cards')
             sidecar['story_motion']=dict(version=stories.VERSION,fps=fps,clock=clock,
-                component='topic_story_cards',labels_upright=True,
+                component='character_led_story' if scene_kind not in ('cards','steps') else 'topic_story_cards',
+                labels_upright=True, scene=scene_kind,
                 style=plan['story']['style'],layout=plan['story']['layout'],
                 initial=scene(plan['stages'][1]['start']+.5),
                 result=scene(min(length-.5,plan['stages'][3]['start']+.4)))
@@ -649,7 +651,8 @@ def audit(media: Path,job_id: str,clip_url: str,*,reviewer=None,repair_attempted
             if plan.get('story'):
                 stamp=sidecar.get('story_motion') or {}
                 if (stamp.get('version')!=stories.VERSION or stamp.get('clock')!=plan.get('motion_timeline')
-                        or stamp.get('layout')!=plan['story']['layout']):
+                        or stamp.get('layout')!=plan['story']['layout']
+                        or stamp.get('scene')!=plan['story'].get('scene','cards')):
                     raise ValueError('Bukti timeline cerita topik belum cocok dengan sumber.')
             else:
                 stamp=sidecar.get('educational_motion') or {}

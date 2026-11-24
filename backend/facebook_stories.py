@@ -101,6 +101,29 @@ STYLE_HINTS = (
 UNSAFE = re.compile(r'\b(?:bokep|porno|judi|slot|narkoba|senjata|bunuh|teroris|pinjol|crypto|investasi|obat terlarang)\b', re.I)
 CLAIMS = re.compile(r'\b(?:dijamin|pasti sembuh|menyembuhkan|100\s*%|menghasilkan uang|password|otp|kode verifikasi|nomor rekening)\b', re.I)
 FRAMING = re.compile(r'\b(?:contoh|cerita|pengalaman|kebiasaan|situasi|bandingkan|banding|langkah)\b', re.I)
+# A moral story is a small scene with people, not a stack of label cards.
+# The hint only selects original vector poses; it never writes new facts.
+SCENE_HINTS = (
+    (('tersedak', 'minum', 'es', 'minuman', 'cepat'), 'drink_choking'),
+    (('berbagi', 'alat tulis', 'pinjam', 'meminjam'), 'sharing'),
+    (('maaf', 'mengakui', 'jatuh', 'buku'), 'apology'),
+    (('menolong', 'tolong', 'tertolong'), 'helping'),
+    (('antre', 'antri', 'kantin'), 'queueing'),
+    (('merapikan', 'meja', 'belajar'), 'tidying'),
+    (('mendengarkan', 'menyela', 'guru'), 'listening'),
+    (('terima kasih', 'dibantu'), 'gratitude'),
+    (('menyapa', 'sopan', 'tetangga'), 'greeting'),
+    (('jujur', 'kembalian', 'uang'), 'honesty'),
+    (('lupa', 'PR', 'pekerjaan rumah'), 'homework'),
+)
+
+
+def infer_scene(topic: str) -> str:
+    folded = topic.casefold()
+    for words, scene in SCENE_HINTS:
+        if any(re.search(r'\b' + re.escape(word.casefold()) + r'\b', folded) for word in words):
+            return scene
+    return 'everyday'
 URL_OR_HANDLE = re.compile(r'(?:https?://|www\.|@\w+|#\w+)', re.I)
 
 # A rotating bank keeps scheduled production varied without an operator edit.
@@ -291,7 +314,8 @@ def plan(seed: str, kind: str = 'reel', topic=None, style=None) -> dict:
     title = _safe_title(spec['title_prefix'], display_topic(topic_text, style))
     story = dict(version=VERSION, style=style, layout=spec['layout'], topic_text=topic_text,
                  concept=spec['concept'], panels=panels, authored=False,
-                 original_storyboard=True, claims='relatable_framing', cast='host')
+                 original_storyboard=True, claims='relatable_framing', cast='host',
+                 scene=infer_scene(topic_text) if style == 'moral_anak' else 'cards')
     result = dict(version=1, seed=seed, kind=kind, topic='story', series=SERIES_KEY,
                   custom_topic=topic_text, title=title,
                   stages=[dict(title=name, text=text) for name, text in
@@ -491,7 +515,9 @@ def scene(plan, t):
                            reveal=round(progress, 4), active=t >= at))
     phase = 0 if t < stages[1]['start'] else 1 if t < stages[2]['start'] else 2 if t < stages[3]['start'] else 3
     return dict(version=VERSION, style=story['style'], layout=story['layout'], phase=phase,
-                topic_text=story['topic_text'], panels=panels, complete=t >= clock['complete'],
+                topic_text=story['topic_text'], scene=story.get('scene', 'cards'),
+                stage_starts=[stages[1]['start'], stages[2]['start'], stages[3]['start']],
+                panels=panels, complete=t >= clock['complete'],
                 clock=clock)
 
 
