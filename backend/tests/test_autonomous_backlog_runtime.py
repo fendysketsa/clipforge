@@ -134,6 +134,22 @@ def test_empty_failed_review_job_archives_and_preserves_long_attempts(runtime):
     assert receipt['manual_hold_released'] is False and receipt['local_disposition'] == 'completed'
 
 
+def test_failed_download_backlog_retires_without_touching_active_production(runtime):
+    job = history_job()
+    job.error = ('Koneksi jalur unduh YouTube terputus saat mengunduh video. '
+                 'Workspace dan seluruh file sementara proses gagal telah dihapus.')
+    job.progress_detail = 'Proses gagal; tidak ada hasil final yang dapat dipertahankan'
+    campaign(job)
+    active = job.model_copy(update=dict(id='active', status='running', error=None))
+    api.jobs[active.id] = active
+    assert api.process_autonomous_history_once() == 1
+    assert job.id not in api.jobs and api.jobs[active.id].status == 'running'
+    receipt = json.loads((api.JOBS_PATH.parent/'autonomous_history/failed.json').read_text())
+    assert receipt['reason'] == 'source_download_failed_empty'
+    assert receipt['original_job']['error'] == job.error
+    assert receipt['remote_action'] == 'none' and receipt['local_disposition'] == 'completed'
+
+
 @pytest.mark.parametrize('guard', ['active', 'recovery', 'live_campaign', 'upload', 'checkpoint_save'])
 def test_history_never_discards_work_still_owned_by_another_worker(runtime, monkeypatch, guard):
     job=history_job(); run=campaign(job)

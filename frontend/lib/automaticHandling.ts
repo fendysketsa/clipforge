@@ -6,7 +6,8 @@ export function automaticHandlingView(handling?: AutomaticHandling | null) {
   const urgent = handling.urgent === true;
   const labels = {
     processing: "Sedang ditangani otomatis",
-    waiting: "Terjadwal otomatis",
+    waiting: "Menunggu pemeriksaan",
+    blocked: "Produksi gagal · tanpa hasil",
     archiving: "Dibersihkan otomatis",
     archived: "Diarsipkan otomatis",
     urgent: "Menunggu sistem",
@@ -17,7 +18,7 @@ export function automaticHandlingView(handling?: AutomaticHandling | null) {
     detail: handling.reason,
     action: handling.action,
     urgent,
-    nextCheckAt: handling.next_check_at,
+    nextCheckAt: handling.action === "retain" ? null : handling.next_check_at,
   };
 }
 

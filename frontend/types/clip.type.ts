@@ -233,7 +233,7 @@ export type JobProgressEvent = {
 };
 
 export type AutomaticHandling = {
-  state: "processing" | "waiting" | "archiving" | "archived" | "urgent";
+  state: "processing" | "waiting" | "archiving" | "archived" | "urgent" | "blocked";
   action: string;
   reason: string;
   next_check_at: string | null;
@@ -280,6 +280,7 @@ export type ClipJob = {
     facebook_niche?: "tech_daily" | "digital_simple";
     facebook_autopilot_key?: string;
     publication_review_required?: boolean;
+    scheduled_original_story?: boolean;
     url: string;
     source_file: string;
     script_text: string;

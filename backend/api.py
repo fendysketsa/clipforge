@@ -80,6 +80,7 @@ import automatic_retry
 import source_download
 import upload_attention
 import autonomous_history
+import cron_life_story
 import automatic_output_cleanup
 import ryuundy_growth_learning
 from cron_drama import (
@@ -513,6 +514,7 @@ class ClipJobRequest(BaseModel):
     facebook_niche: Literal["tech_daily", "digital_simple"] = "tech_daily"
     facebook_source_rights: Literal["", "owned", "permission_no_credit"] = ""
     facebook_autopilot_key: str = ""
+    scheduled_original_story: bool = False
     cron_daily_lane: Literal["", "scheduled_short", "private_short", "long"] = ""
     cron_production_day: str = ""
     paired_short_job_id: str = ""
@@ -2637,6 +2639,7 @@ class AutoViralRequest(BaseModel):
     # marker durable lets an interrupted cron run resume with the same gate.
     cron_trend_lane: bool = False
     cron_humor_lane: bool = False
+    cron_original_story: bool = False
     director_source_recovery: bool = False
     cron_editorial_tone: str = Field(default="", max_length=480)
     cron_short_role: str = Field(default="", max_length=800)
@@ -2817,6 +2820,7 @@ class AutoViralRun(BaseModel):
 
 
 class AutoViralScheduleStatus(BaseModel):
+    cron_life_story: dict[str, Any] = Field(default_factory=dict)
     short_schedule_policy_version: int = 1
     short_schedule_daily_limit: int = Field(default_factory=lambda: youtube_short_schedule_daily_limit())
     short_schedule_timezone: str = "Asia/Jakarta"
@@ -4019,6 +4023,8 @@ def clip_index_from_name(name: str) -> int | None:
 
 
 def is_compilation_clip(job: "ClipJob", clip: ClipFile) -> bool:
+    if job.request.scheduled_original_story and job.request.story_aspect_ratio == '9:16':
+        return False
     return (
         job.request.clip_mode in {"highlight_5m", "long_animate", "original_rebuild"}
         or clip.name.lower().startswith(
@@ -6243,6 +6249,8 @@ def default_youtube_description(job: ClipJob, clip: ClipFile) -> str:
     tags = default_youtube_tags(job, clip)
     description = complete_youtube_description(job, clip, caption, tags)
     description = append_youtube_chapters(description, clip)
+    if job.request.scheduled_original_story:
+        return cron_life_story.disclose(description, 5000)
     return append_youtube_source_attribution(description, job)
 
 
@@ -6480,6 +6488,8 @@ def append_scheduled_source_credit(
 ) -> str:
     """Append a compact source line to scheduler-owned public captions only."""
     clean = normalize_public_channel_handle(value.strip())
+    if job.request.scheduled_original_story:
+        return cron_life_story.disclose(clean, max_length)
     if not scheduled_public_source_credit_required(job):
         return clean[:max_length]
     metadata = metadata_for_job(job)
@@ -7090,6 +7100,10 @@ def youtube_monetization_preflight_issue(job: ClipJob, clip: ClipFile) -> str | 
             "sebelum menandai clip benar dan mengunggah ke playlist News."
         )
     sidecar = clip_sidecar_payload(clip)
+    if job.request.scheduled_original_story:
+        story_issue = cron_life_story.preflight(sidecar, job.request.script_text)
+        if story_issue:
+            return story_issue
     if job.request.scheduled_director_effects:
         accents = sidecar.get("cron_director_effects") or {}
         if not (accents.get("rendered") is True and isinstance(accents.get("cue_count"), int)
@@ -16421,6 +16435,11 @@ def clipper_worker_environment(request: ClipJobRequest) -> dict[str, str]:
     job running beside it.
     """
     environment = os.environ.copy()
+    for key in ('CLIPFORGE_CRON_LIFE_STORY', 'CLIPFORGE_CRON_LIFE_STORY_TITLE'):
+        environment.pop(key, None)
+    if request.scheduled_original_story:
+        environment['CLIPFORGE_CRON_LIFE_STORY'] = 'true'
+        environment['CLIPFORGE_CRON_LIFE_STORY_TITLE'] = str(request.scheduled_editorial_context.get('title') or '')
     environment.pop("CLIPFORGE_FACEBOOK_NICHE", None)
     if request.target_platform == "facebook":
         environment["CLIPFORGE_FACEBOOK_NICHE"] = request.facebook_niche
@@ -16439,6 +16458,8 @@ def clipper_worker_environment(request: ClipJobRequest) -> dict[str, str]:
         ).strip().casefold()
         if storyboard_provider not in {"local_free", "off"}:
             storyboard_provider = "local_free"
+        if request.scheduled_original_story:
+            storyboard_provider = 'off'  # Preserve the generated recurring character, without stock substitution.
         environment["LONG_ANIMATE_VIDEO_PROVIDER"] = storyboard_provider
     for scheduler_flag in (
         "CLIPFORGE_CRON_DIRECTOR_EFFECTS",
@@ -24143,6 +24164,9 @@ def run_auto_viral_campaign(run_id: str) -> None:
             run = auto_viral_runs[run_id]
             run_secret = auto_viral_secrets.get(run_id, "")
         run_request = run.request.model_copy(update={"ai_api_key": run_secret})
+        if run.trigger == 'schedule' and run_request.cron_original_story:
+            cron_life_story.run(sys.modules[__name__], run_id, run_request)
+            return
         deferred_background_upload = bool(
             run.trigger == "schedule"
             and (
@@ -24928,6 +24952,8 @@ def create_and_start_auto_viral_campaign(
     trigger: Literal["manual", "schedule"] = "manual",
 ) -> AutoViralRun:
     global auto_viral_active_run_id
+    if trigger != 'schedule':
+        request = request.model_copy(update={'cron_original_story': False})
     if request.max_duration <= request.min_duration:
         raise HTTPException(status_code=400, detail="max_duration must be greater than min_duration")
     if request.min_duration >= SHORT_GROWTH_MAX_SECONDS:
@@ -25419,12 +25445,53 @@ def get_cron_editorial_policy() -> dict[str, Any]:
     return report
 
 
+def cron_life_story_status() -> dict[str, Any]:
+    enabled = env_bool('AUTO_VIRAL_CRON_LIFE_STORY_ENABLED', False)
+    proof = os.environ.get('AUTO_VIRAL_CRON_LIFE_STORY_PROVIDER_RIGHTS_EVIDENCE', '').strip()
+    try:
+        state = cron_life_story.read(JOBS_PATH.parent / 'cron_life_stories.json')
+        error = None
+    except (OSError, ValueError, TypeError):
+        state, error = {'episodes': {}}, 'ledger_unavailable'
+    return dict(version=1, scope='cron_only', enabled=enabled,
+        series=cron_life_story.SERIES, provider_rights_ready=len(proof.split()) >= 3,
+        state='disabled' if not enabled else error or ('ready' if len(proof.split()) >= 3 else 'waiting_for_provider_rights'),
+        daily_attempt_limit=max(0, min(2, env_int('AUTO_VIRAL_CRON_LIFE_STORY_DAILY_LIMIT', 2))),
+        attempts_today=sum(r.get('day') == cron_life_story.today() for r in state['episodes'].values()),
+        quota_lane='scheduled_short', manual_requests_modified=False,
+        restart_duplicate_guard=True, upload_quality_gates_preserved=True)
+
+
+@app.get('/api/automation/viral-cc/life-stories')
+def get_cron_life_stories() -> dict[str, Any]:
+    return cron_life_story_status()
+
+
+def scheduled_cron_life_story_request() -> AutoViralRequest | None:
+    status = cron_life_story_status()
+    if status['state'] != 'ready' or not daily_cron_plan_enabled() or youtube_channel_recovery_mode():
+        return None
+    plan = daily_cron_plan_status()
+    state = cron_life_story.read(JOBS_PATH.parent / 'cron_life_stories.json')
+    if not cron_life_story.due(state, plan, status['daily_attempt_limit']):
+        return None
+    return AutoViralRequest(cron_original_story=True, cron_theme_key=cron_life_story.THEME,
+        cron_daily_lane='scheduled_short', cron_production_day=plan['day'],
+        theme_focus=cron_life_story.SERIES, video_count=1, clips_per_video=1, top=1,
+        min_duration=60, max_duration=120, create_paired_long_video=False,
+        auto_upload_youtube=env_bool('AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE', False),
+        auto_upload_tiktok=env_bool('AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_TIKTOK', False))
+
+
 def scheduled_auto_viral_request() -> AutoViralRequest:
     if scheduled_news_hot_due():
         request = scheduled_news_hot_request()
         if daily_cron_plan_enabled():
             request = request.model_copy(update={"cron_daily_lane": "scheduled_short", "cron_production_day": datetime.now(ZoneInfo("Asia/Jakarta")).date().isoformat()})
         return request
+    story_request = scheduled_cron_life_story_request()
+    if story_request is not None:
+        return story_request
     youtube_upload_requested = env_bool(
         "AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", False
     )
@@ -26216,6 +26283,7 @@ def auto_viral_schedule_status() -> AutoViralScheduleStatus:
         run=active_run.model_dump(include={"status", "trigger", "message", "progress_stage", "progress_percent", "updated_at", "processed"}) if active_run else None,
         jobs=active_jobs, uploads=active_uploads, runtime=scheduler_health)
     return AutoViralScheduleStatus(
+        cron_life_story=cron_life_story_status(),
         daily_plan=daily_plan,
         activity=activity,
         scheduler_health=scheduler_health,
@@ -28705,6 +28773,7 @@ def create_job(request: ClipJobRequest) -> ClipJob:
             "scheduled_reaction_avatar_layout": False,
             "scheduled_subscribe_pulse": False,
             "facebook_autopilot_key": "",
+            "scheduled_original_story": False,
         }
     )
     if request.clip_mode not in ACTIVE_CLIP_MODES:

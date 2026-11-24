@@ -13,6 +13,7 @@ import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from tiktok_dialogs import is_cancel_upload_confirmation
+from automatic_retry import TIKTOK_TRANSIENT_NETWORK_ERRORS
 from browser_page_activity import start_background_page_activity, stop_background_page_activity
 
 
@@ -232,11 +233,25 @@ def first_visible(page, selectors: Sequence[str], timeout_ms: int = 1500):
 
 
 def goto(page, url: str, timeout_ms: int = 45_000) -> None:
-    try:
-        page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
-    except Exception as exc:
-        if not page.url or "tiktok.com" not in page.url:
-            raise UploadError(f"TikTok tidak dapat dibuka: {exc}") from exc
+    # Retry navigation only, never the file picker or Post. A transport error
+    # can leave page.url pointing at the old TikTok page; that is not success.
+    deadline = time.monotonic() + timeout_ms / 1000
+    for attempt in range(3):
+        try:
+            remaining_ms = max(1, int((deadline - time.monotonic()) * 1000))
+            page.goto(url, wait_until="domcontentloaded", timeout=remaining_ms)
+            return
+        except Exception as exc:
+            message = str(exc)
+            transient = any(f'net::{code}' in message for code in TIKTOK_TRANSIENT_NETWORK_ERRORS)
+            delay = (1, 3)[min(attempt, 1)]
+            if transient and attempt < 2 and time.monotonic() + delay < deadline:
+                log(f'TIKTOK_NAVIGATION_RETRY:{attempt + 1}/2 koneksi terputus; membuka ulang halaman yang sama.')
+                page.wait_for_timeout(delay * 1000)
+                continue
+            if 'net::ERR_' in message or not page.url or "tiktok.com" not in page.url:
+                raise UploadError(f"TikTok tidak dapat dibuka: {exc}") from exc
+            return
 
 
 def current_profile_handle(page) -> str:

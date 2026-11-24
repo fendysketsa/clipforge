@@ -1,0 +1,32 @@
+{
+  "checked_on": "2026-11-24",
+  "repository": "clipforge",
+  "requested_reference": "https://www.instagram.com/reel/DgC1Etrz4j8/",
+  "reference_access": "anonymous_access_redirected_to_login_or_rate_limited",
+  "reference_content_verified": false,
+  "requested_skill_identified": false,
+  "installation_status": "waiting_for_skill_name_or_repository_url",
+  "new_skills_installed": [],
+  "existing_skill_validation": {
+    "validator": "skill-creator/scripts/quick_validate.py",
+    "cinematic-thumbnail-ideator": "passed",
+    "hypit": "passed",
+    "short-video-editor": "passed",
+    "viral-clip-selector": "passed",
+    "youtube-short-analyzer": "passed"
+  },
+  "compatibility": {
+    "standard_skill_md": "portable_in_principle_subject_to_content_and_dependency_review",
+    "claude_specific_frontmatter_hooks_subagents_and_dynamic_commands": "require_codex_specific_review_or_adaptation",
+    "repository_local_codex_discovery_documented_path": ".agents/skills",
+    "existing_session_skill_paths": ".codex/skills",
+    "existing_skill_paths_migrated": false,
+    "backend_cron_changed": false,
+    "deployment_changed": false
+  },
+  "sources": [
+    "https://learn.chatgpt.com/docs/build-skills",
+    "https://code.claude.com/docs/en/skills",
+    "https://agentskills.io/specification"
+  ]
+}

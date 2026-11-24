@@ -6670,12 +6670,19 @@ def render_long_animate(
                 "orang dan objek di dalam gambar tidak dianimasikan."
             )
         narrative_roles = [scene.narrative_role for scene in storyboard.scenes]
+        # Owner-approved cron recipe deliberately uses illustrated scenes and
+        # camera movement. Keep this separate from the manual cinema product's
+        # subject-motion requirement, and never claim that people are animated.
+        from cron_life_story import illustrated_recipe_allowed
+        cron_illustrated_story = illustrated_recipe_allowed(
+            os.environ.get('CLIPFORGE_CRON_LIFE_STORY') == 'true',
+            output_aspect, duration, storyboard.scenes, camera_only_shot_count)
         animate_quality_gate_passed = bool(
             len(storyboard.scenes) >= (1 if direct_text_video else 3)
             and score >= 84
             and final_qc.get("passed")
             and real_image_provider_passed
-            and has_subject_motion
+            and (has_subject_motion or cron_illustrated_story)
             and narrative_roles
             and (
                 narrative_roles == ["cold_open_payoff"]

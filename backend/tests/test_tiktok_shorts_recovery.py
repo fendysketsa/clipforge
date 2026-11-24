@@ -61,6 +61,20 @@ PROFILE_FAILURE = ('TikTok tidak dapat dibuka: Page.goto: net::ERR_HTTP_RESPONSE
                    'https://www.tiktok.com/@titikbalikislami')
 
 
+def test_profile_network_failure_is_swept_without_a_previous_account_marker(restarted_short):
+    _, upload, started = restarted_short
+    upload.error = PROFILE_FAILURE.replace('ERR_HTTP_RESPONSE_CODE_FAILURE', 'ERR_ADDRESS_UNREACHABLE')
+    upload.logs = ['Preflight hak sumber dan transformasi editorial lolos.']
+    before = (upload.id, upload.caption, upload.visibility, upload.clip_sha256, upload.target_handle)
+    assert api.queue_retryable_tiktok_uploads_once() == 1
+    recovered = api.tiktok_uploads[upload.id]
+    assert (recovered.id, recovered.caption, recovered.visibility, recovered.clip_sha256, recovered.target_handle) == before
+    assert recovered.auto_retry_reason == 'profile_network_before_file'
+    assert recovered.auto_retry_count == upload.auto_retry_count + 1
+    assert len(started) == 1
+    assert api.queue_retryable_tiktok_uploads_once() == 0
+
+
 def test_profile_navigation_recovery_keeps_original_short_id_and_retry_budget(restarted_short):
     _, upload, _ = restarted_short
     upload.error = PROFILE_FAILURE

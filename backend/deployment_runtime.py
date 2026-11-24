@@ -147,6 +147,14 @@ def backend_contract(base: str) -> dict:
         raise RuntimeError('Automatic upload attention worker is not ready')
     config = get_json(base + '/api/tiktok/config')
     schedule = get_json(base + '/api/automation/viral-cc/schedule')
+    if os.environ.get('AUTO_VIRAL_CRON_LIFE_STORY_ENABLED', '').lower() == 'true':
+        story = schedule.get('cron_life_story') or {}
+        if (story.get('version') != 1 or story.get('scope') != 'cron_only'
+                or story.get('manual_requests_modified') is not False
+                or story.get('quota_lane') != 'scheduled_short'
+                or story.get('restart_duplicate_guard') is not True
+                or story.get('upload_quality_gates_preserved') is not True):
+            raise RuntimeError('Cron original life-story policy is stale')
     if schedule.get('activity_version') != 1 or not schedule.get('activity', {}).get('state'):
         raise RuntimeError('Cron activity reporting is stale')
     if schedule.get('daily_plan_version') != 1:

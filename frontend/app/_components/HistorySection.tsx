@@ -22,6 +22,9 @@ function jobFormat(job: ClipJob) {
     return { aspect: "16:9", kind: "long", label: "LONG", title: "Long Highlight" } as const;
   }
   if (job.request.clip_mode === "long_animate") {
+    if (job.request.scheduled_original_story) {
+      return { aspect: "9:16", kind: "short", label: "CERITA SHORT", title: "Cerita Kehidupan" } as const;
+    }
     if (isArticlePresenterPrompt(job.request.script_text || "")) {
       return { aspect: "9:16", kind: "story", label: "PRESENTASI", title: "Presenter Animasi" } as const;
     }
@@ -323,7 +326,8 @@ export function HistorySection({
           const recovery = sourceRecoveryForJob(item, jobs);
           const handling = automaticHandlingView(item.automatic_handling);
           const handlingStatus = handling?.urgent ? "failed" : handling
-            ? handling.state === "archived" ? "cancelled" : "queued" : item.status;
+            ? handling.state === "archived" ? "cancelled"
+              : handling.action === "retain" ? item.status : "queued" : item.status;
           const deliveryStatus = uploadActivity.jobIds.has(item.id)
             ? uploadActivity.runningJobIds.has(item.id) ? "running" : "queued" : null;
           const shownStatus = recovery?.status || (item.status === "running" || item.status === "queued" ? item.status : deliveryStatus || handlingStatus);

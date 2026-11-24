@@ -5,6 +5,23 @@ from tiktok_dialogs import is_cancel_upload_confirmation
 
 MAX_RETRIES = 3
 BACKOFF_SECONDS = (60, 180, 600)
+TIKTOK_TRANSIENT_NETWORK_ERRORS = (
+    'ERR_ADDRESS_UNREACHABLE', 'ERR_INTERNET_DISCONNECTED', 'ERR_NETWORK_CHANGED',
+    'ERR_CONNECTION_RESET', 'ERR_CONNECTION_CLOSED', 'ERR_CONNECTION_TIMED_OUT',
+    'ERR_TIMED_OUT', 'ERR_NAME_NOT_RESOLVED',
+)
+
+
+def tiktok_profile_network_failure(error, logs):
+    """The initial account check navigates here before any file selection."""
+    match = re.fullmatch(
+        r'TikTok tidak dapat dibuka: Page\.goto: net::(' +
+        '|'.join(TIKTOK_TRANSIENT_NETWORK_ERRORS) +
+        r') at https://www\.tiktok\.com/@[A-Za-z0-9_.]+', str(error or ''))
+    file_markers = ('Video dipilih:', 'DRAFT_FILE_RECOVERED:', 'CDP_FILE_TRANSFER_',
+                    'DRAFT_RESUME_ONLY:')
+    return bool(match and not any(str(line).startswith(file_markers) for line in logs))
+
 TIKTOK_BROWSER_UNAVAILABLE = (
     'Chrome TikTok belum tersedia. Sesi login tersimpan dipertahankan; '
     'menunggu koneksi browser pulih. File belum dipilih dan Post belum dikirim.'
@@ -29,6 +46,8 @@ def tiktok_retry_reason(error, logs, *, started=False, accepted=False):
             'copyright','hak cipta','content id','community guideline','pelanggaran','batas harian',
             'daily limit','login ulang','belum login','session tidak valid')):
         return ''
+    if tiktok_profile_network_failure(error, logs):
+        return 'profile_network_before_file'
     if 'kolom caption tiktok' in message and 'belum diposting' in message:
         return 'caption_not_ready'
     if 'kolom caption tiktok tidak ditemukan setelah video dipilih' in message:

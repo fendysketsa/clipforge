@@ -21327,6 +21327,11 @@ def render_animated_script(
             ),
             progress=emit_progress,
         )
+    cron_story = os.environ.get('CLIPFORGE_CRON_LIFE_STORY') == 'true'
+    if cron_story:
+        from cron_life_story import mark_render
+        output_path = mark_render(output_path, sidecar, script,
+            os.environ.get('CLIPFORGE_CRON_LIFE_STORY_TITLE', ''))
     if args.slow_motion_no_voice:
         emit_progress(96, "render", "Menerapkan slow motion 0,65x tanpa suara")
         slowed_duration = apply_slow_motion_no_voice(
@@ -21358,7 +21363,7 @@ def render_animated_script(
         boundary_quality=str(sidecar.get("boundary_quality") or "payoff_tuntas"),
         retention_score=int(sidecar.get("retention_score") or 0),
     )
-    output_format = (
+    output_format = 'vertical_short' if cron_story else (
         "portrait_short"
         if str(sidecar.get("aspect_ratio") or "") == "9:16"
         else "landscape_compilation"
@@ -21378,6 +21383,11 @@ def render_animated_script(
     )
     sidecar["one_k_long_form_readiness"] = animate_readiness
     sidecar["growth_readiness"] = animate_readiness
+    if cron_story:
+        short_readiness = five_k_experiment_readiness(candidate, 'vertical_short')
+        short_readiness['quality_gate_passed'] = bool(
+            short_readiness.get('quality_gate_passed') and (animate_gate or {}).get('quality_gate_passed'))
+        sidecar['growth_readiness'] = short_readiness
     sidecar["subscriber_conversion"] = {
         "version": 1,
         "enabled": True,
@@ -21485,6 +21495,8 @@ def render_animated_script(
             "content_id_checks_still_required": True,
         },
     ]
+    if cron_story:
+        ledger_entries[0]['origin'] = 'owner_directed_cron_ai_story'
     if rebuild_audit is not None:
         ledger_entries.insert(
             0,
@@ -21546,6 +21558,8 @@ def render_animated_script(
         "channel_wide_ypp_review_still_applies": True,
         "guarantee": False,
     }
+    if cron_story:
+        sidecar['channel_authenticity_contract']['input_type'] = 'owner_approved_series_direction_ai_episode_draft'
     save_json(output_path.with_suffix(".json"), sidecar)
     embed_fendy_provenance_metadata(output_path, candidate.title, auditor)
     rebuild_source = rebuild_audit.get("source") if isinstance(rebuild_audit, dict) else None

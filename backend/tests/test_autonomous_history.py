@@ -171,7 +171,46 @@ def test_write_failure_does_not_replace_prior_receipt_or_leave_temporary_files(t
 def test_planning_snapshot_distinguishes_processing_waiting_and_archiving():
     assert policy.planning_snapshot(decide(job()))['state'] == 'archiving'
     assert policy.planning_snapshot(decide(job(status='running')))['state'] == 'processing'
-    assert policy.planning_snapshot(decide(job(error='timeout')))['state'] == 'waiting'
+    assert policy.planning_snapshot(decide(job(error='timeout')))['state'] == 'blocked'
     assert policy.planning_snapshot(decide(job()), archived=True)['state'] == 'archived'
     metadata = policy.planning_snapshot(dict(action='retain', reason='remote_or_submission_evidence', urgent=True))
     assert metadata['state'] == 'urgent' and metadata['urgent'] is True
+
+
+def empty_download_failure():
+    return job(error='Koneksi jalur unduh YouTube terputus saat mengunduh video. '
+        'Workspace dan seluruh file sementara proses gagal telah dihapus.',
+        progress_detail='Proses gagal; tidak ada hasil final yang dapat dipertahankan')
+
+
+def test_finished_download_failure_archives_only_the_empty_attempt():
+    row = empty_download_failure()
+    plan = decide(row)
+    assert plan['action'] == 'archive_empty_failure'
+    assert plan['reason'] == 'source_download_failed_empty'
+    assert plan['upload_allowed'] is False
+    assert row['request']['publication_review_required'] is True
+
+
+@pytest.mark.parametrize('risk', ['workspace', 'clip', 'candidate', 'active', 'checkpoint',
+    'child', 'upload', 'manual', 'review_only', 'cleanup_unproven', 'progress_unproven'])
+def test_download_failure_archival_preserves_all_live_consumers_and_evidence(risk):
+    row = empty_download_failure(); evidence = {}
+    if risk == 'workspace': evidence['workspace_exists'] = True
+    if risk == 'clip': row['clips'] = [clip()]
+    if risk == 'candidate': row['candidates'] = [{}]
+    if risk == 'active': evidence['process_active'] = True
+    if risk == 'checkpoint': evidence['checkpoint_busy'] = True
+    if risk == 'child': evidence['jobs'] = [dict(id='child', status='running', source_recovery_parent_job_id='job')]
+    if risk == 'upload': evidence['youtube'] = [dict(id='upload', source_job_id='job', status='failed')]
+    if risk == 'manual': row['request']['scheduled_public_source_credit'] = False
+    if risk == 'review_only': row['request']['review_only'] = True
+    if risk == 'cleanup_unproven': row['error'] = 'Koneksi jalur unduh YouTube terputus saat mengunduh video.'
+    if risk == 'progress_unproven': row.pop('progress_detail')
+    assert policy.decision(row, **{'workspace_exists': False, **evidence})['action'] == 'retain'
+
+
+def test_retained_failed_job_has_no_fictitious_scheduled_check():
+    view = policy.planning_snapshot(decide(job(error='timeout')), next_check_at='2026-11-24T00:00:00Z')
+    assert view['state'] == 'blocked' and view['next_check_at'] is None
+    assert 'Belum ada file' in view['reason']

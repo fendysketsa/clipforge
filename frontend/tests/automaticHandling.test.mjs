@@ -7,11 +7,18 @@ const handling = (changes={}) => ({state:'waiting', action:'verify_upload',
 
 test('routine failures expose scheduled automatic work without requesting user action',()=>{
   const view=automaticHandlingView(handling());
-  assert.equal(view.label,'Terjadwal otomatis');
+  assert.equal(view.label,'Menunggu pemeriksaan');
   assert.equal(view.urgent,false);
   assert.equal(view.detail,'Bukti sedang dicocokkan oleh server.');
   assert.equal(view.nextCheckAt,'2026-11-21T01:00:00Z');
   assert.equal(automaticHandlingView(undefined),null);
+});
+
+test('retained failures do not claim a scheduled retry or upload',()=>{
+  const view=automaticHandlingView(handling({state:'blocked',action:'retain'}));
+  assert.equal(view.label,'Produksi gagal · tanpa hasil');
+  assert.equal(view.nextCheckAt,null);
+  assert.equal(automaticHandlingView(handling({action:'retain'})).nextCheckAt,null);
 });
 
 test('only an explicit urgent signal requests human action',()=>{

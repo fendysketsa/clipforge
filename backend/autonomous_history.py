@@ -19,6 +19,7 @@ _REASONS = {
     'selection_recovery_exhausted': 'Seleksi dan pemulihan sumber sudah habis; kartu kosong diarsipkan otomatis.',
     'long_material_rejected': 'Bahan Long tidak memenuhi syarat; percobaan gagal kosong diarsipkan otomatis.',
     'long_anchor_context_rejected': 'Konteks dan batas kalimat Long tidak aman; percobaan gagal kosong diarsipkan otomatis.',
+    'source_download_failed_empty': 'Unduhan sumber gagal dan tidak menghasilkan video; percobaan kosong diarsipkan, bukti kegagalan tetap disimpan.',
     'news_mandatory_review_unresolved': 'Bukti review fakta, konteks, dan hak berita belum lengkap; hasil ditolak dan dibersihkan otomatis.',
     'active_production': 'Worker sedang menjalankan atau mengantrekan produksi.',
     'active_upload': 'Upload yang sudah diantrekan sedang diselesaikan oleh worker platform.',
@@ -27,7 +28,7 @@ _REASONS = {
     'remote_or_submission_evidence': 'Status posting dicocokkan otomatis; identitas remote tetap dilindungi.',
     'upload_record_requires_own_recovery': 'Catatan upload ditangani oleh worker pemulihan platform.',
     'failed_job_has_artifacts': 'Bukti hasil masih tersedia; worker memeriksa pemulihan sebelum cleanup.',
-    'failure_needs_recovery_evidence': 'Penyebab kegagalan diperiksa sebelum memilih pemulihan atau cleanup.',
+    'failure_needs_recovery_evidence': 'Produksi gagal tanpa hasil video. Belum ada file untuk diupload; penyebab tersedia pada rincian kegagalan.',
     'owned_by_platform_worker': 'Pekerjaan dikelola oleh worker platform asal.',
     'manual_or_review_only': 'Setelan sumber dan review yang tersimpan tetap dipertahankan.',
     'evidence_incomplete': 'Bukti proses belum lengkap; pemeriksaan berikutnya mempertahankan hasil yang ada.',
@@ -63,6 +64,17 @@ def terminal_failure_reason(job: dict) -> str | None:
     if ('long story dibatalkan karena momen short wajib tidak dapat dipertahankan' in text
             and 'batas kalimat yang aman' in text):
         return 'long_anchor_context_rejected'
+    # The production worker has finished cleanup, not merely logged a
+    # transient downloader error. The caller still proves no artifacts,
+    # active consumer, recovery child, or upload identity before archiving.
+    if (job.get('progress_detail') == 'Proses gagal; tidak ada hasil final yang dapat dipertahankan'
+            and error.endswith('Workspace dan seluruh file sementara proses gagal telah dihapus.')
+            and error.startswith((
+                'YouTube meminta login atau verifikasi dan sesi YouTube tersimpan belum diterima.',
+                'Koneksi jalur unduh YouTube terputus saat ',
+                'Gagal mengambil video dari YouTube saat ',
+                'Semua jalur download menghasilkan video yang rusak atau tidak lengkap.'))):
+        return 'source_download_failed_empty'
     return None
 
 
@@ -139,9 +151,11 @@ def planning_snapshot(plan: dict, *, next_check_at: str | None = None, archived:
     state = ('archived' if archived else 'urgent' if urgent else 'archiving'
              if plan.get('action') in {'archive_empty_failure', 'drop_source'} else 'processing'
              if reason in {'active_production', 'active_upload', 'active_recovery_child'} else 'waiting')
+    if reason == 'failure_needs_recovery_evidence' and not archived and not urgent:
+        state = 'blocked'
     return dict(state=state, action=str(plan.get('action') or 'retain'),
                 reason=_REASONS.get(reason, 'Keputusan berikutnya mengikuti bukti dan setelan yang tersimpan.'),
-                next_check_at=next_check_at, urgent=urgent)
+                next_check_at=next_check_at if state in {'processing', 'archiving'} else None, urgent=urgent)
 
 
 def _safe(value, depth=0):
