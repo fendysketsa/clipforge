@@ -21,7 +21,7 @@ def project(tmp_path):
     (root/'remotion/src').mkdir(parents=True)
     (root/'remotion/src/index.jsx').write_text('export const value=1;')
     (root/'motlab').mkdir()
-    for name in ('package.json', 'package-lock.json', 'render.mjs', 'scene.mjs', 'facebook-scene.mjs', 'education-scene.mjs'):
+    for name in ('package.json', 'package-lock.json', 'render.mjs', 'scene.mjs', 'facebook-scene.mjs', 'education-scene.mjs', 'story-scene.mjs'):
         (root/'motlab'/name).write_text('{}')
     deploy.build_manifest(root)
     return root
@@ -31,7 +31,7 @@ def test_image_manifest_covers_bot_backend_and_renderer(project):
     result=deploy.verify_manifest(project)
     assert {'api.py','telegram_bot.py','cron_long_strategy.py','ryuundy_editorial_themes.py',
             'ryuundy_reference_catalog.py','cron_editorial.py','remotion/src/index.jsx','motlab/scene.mjs',
-            'motlab/package-lock.json','motlab/facebook-scene.mjs'} <= result['files'].keys()
+            'motlab/package-lock.json','motlab/facebook-scene.mjs','motlab/story-scene.mjs'} <= result['files'].keys()
 
 
 @pytest.mark.parametrize('change',['edit','add','delete'])
@@ -141,6 +141,11 @@ def test_backend_contract_does_not_resume_disabled_cron(monkeypatch):
           'compilation_fallback_policy_version':1,'compilation_fallback_enabled':True,'fallback_preserves_long_qc':True,'themes':[
           {'key':key,'manual_review_required':key=='domestic_politics'} for key in
           ('mystery_story','legend_folklore','domestic_politics','food_healthy_review','food_taste_review','moral_animation_story','nostalgia_indonesia')]}}
+    payloads['/api/ai-office']['control_version'] = 2
+    payloads['/api/ai-office']['capabilities'].update(incident_ownership=True, observed_resolution=True, safe_delegate_only=True,
+        autonomous_recovery=True,configured_qc_fallback=True)
+    payloads['/api/facebook/config']['autonomous_recovery_version']=1
+    payloads['/api/facebook/config']['terminal_cleanup_version']=1
     monkeypatch.setattr(deploy,'get_json',lambda url:payloads[url.removeprefix('http://local')])
     assert deploy.backend_contract('http://local')['cron_enabled'] is False
     assert deploy.backend_contract('http://local')['long_strategy_version'] == 2
@@ -195,7 +200,7 @@ for(const name of ['package.json','package-lock.json','next.config.ts','tsconfig
 for(const dir of ['app','public','.next/static'])fs.mkdirSync(dir,{recursive:true});
 fs.writeFileSync('app/page.tsx','original source');
 fs.writeFileSync('.next/BUILD_ID','build-a');
-const js='jobDirectorRecovery history-four-columns jobPlatformQueue /reconcile dijadwalkan ulang otomatis pengaturan privasi tertunda jobAutomaticHandling Percepat pemeriksaan Terjadwal otomatis cronActivityHeading Detail pemeriksaan cronDailyLanes studioSidebar studioQueueRow connectionCard studioThemeToggle fbWorkspace facebook/uploads Facebook Reels fbControlGrid fbAutopilot facebook/autopilot facebook/storage/cleanup fbStorage Antrean produksi & upload Buat Reel baru Tonton preview fbSeriesPicker Tema animasi Gunakan tema untuk jadwal overviewMetrics overviewRecentRow Semua produksi, satu tempat. Buka navigasi Penanganan otomatis aktif /api/uploads/attention Sedang dipulihkan Rincian percobaan sebelumnya Klip yang ditolak dibersihkan otomatis Arahan & pekerjaan /api/ai-office aiOfficeDepartments aiOfficeProcessMap';
+const js='jobDirectorRecovery history-four-columns jobPlatformQueue /reconcile dijadwalkan ulang otomatis pengaturan privasi tertunda jobAutomaticHandling Percepat pemeriksaan Terjadwal otomatis cronActivityHeading Detail pemeriksaan cronDailyLanes studioSidebar studioQueueRow connectionCard studioThemeToggle fbWorkspace facebook/uploads Facebook Reels fbControlGrid fbAutopilot facebook/autopilot facebook/storage/cleanup fbStorage Antrean produksi & upload Buat Reel baru Tonton preview fbSeriesPicker Tema animasi Gunakan tema untuk jadwal overviewMetrics overviewRecentRow Semua produksi, satu tempat. Buka navigasi Penanganan otomatis aktif /api/uploads/attention Sedang dipulihkan Rincian percobaan sebelumnya Klip yang ditolak dibersihkan otomatis officeHQ /api/ai-office officeFloorRooms officeIncidentBoard officeJournal aiOfficeProcessMap';
 const css='.outputWorkspacePane .jobList{grid-template-columns:repeat(4,minmax(0,1fr))}.clipGrid{grid-template-columns:repeat(3,minmax(0,1fr))}:root[data-theme=light]{color-scheme:light}';
 const shell='studioSidebar overviewMetrics Buka navigasi';
 fs.writeFileSync('.next/static/app.js',shell);fs.writeFileSync('.next/static/panels.js',js);fs.writeFileSync('.next/static/app.css',css);

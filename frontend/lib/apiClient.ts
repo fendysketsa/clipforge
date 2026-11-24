@@ -31,6 +31,13 @@ export const getAIOffice = async (): Promise<AIOfficeSnapshot> => {
   if (result.version !== 1 || !Array.isArray(result.departments) || !Array.isArray(result.tasks)) {
     throw new Error("Status Kantor AI belum kompatibel dengan tampilan ini");
   }
+  if (result.control_version === 2 && (!Array.isArray(result.incidents)
+    || !Array.isArray(result.resolved_incidents) || typeof result.incident_observation_available !== "boolean"
+    || !result.director || !result.incidents.every(row => row && typeof row.id === "string"
+      && typeof row.title === "string" && typeof row.reason === "string"
+      && ["history", "settings", "facebook"].includes(row.destination)))) {
+    throw new Error("Data pusat kendala Kantor AI belum lengkap");
+  }
   return result;
 };
 

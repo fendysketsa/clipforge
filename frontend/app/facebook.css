@@ -20,6 +20,16 @@
 .fbSeriesPicker p { margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.7; }
 .fbSeriesPicker p span { color: var(--text-muted); }
 .fbSeriesPicker > button { justify-self: start; }
+.fbTopicComposer { display: grid; gap: 12px; margin: 0 26px 18px; padding: 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-soft); }
+.fbTopicComposer header { display: flex; gap: 11px; align-items: center; }
+.fbTopicComposer strong { display: block; font-size: 13px; font-weight: 550; }
+.fbTopicComposer small { display: block; margin-top: 3px; color: var(--text-muted); font-size: 11px; line-height: 1.6; }
+.fbTopicIcon { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; border-radius: 9px; color: var(--info); background: var(--info-soft); }
+.fbTopicComposer textarea { min-height: 64px; }
+.fbTopicComposer .fbFormPair { grid-template-columns: minmax(0,1fr) auto; align-items: end; }
+.fbTopicChips { display: flex; flex-wrap: wrap; gap: 7px; }
+.fbTopicChips button { max-width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-secondary); background: var(--panel); font-size: 10.5px; line-height: 1.4; text-align: left; cursor: pointer; }
+.fbTopicChips button:hover { border-color: var(--primary); color: var(--text-primary); }
 .fbAutoOverview { padding: 0 26px 24px; }
 .fbAutoWork { padding: 20px; background: var(--bg-soft); border-radius: 12px; }
 .fbAutoWork.hasWarning { background: color-mix(in srgb,var(--warning-soft) 65%,var(--panel)); }
@@ -127,6 +137,8 @@
   .fbAutoControls { padding: 0 18px 20px; }
   .fbSeriesPicker { padding: 0 18px 20px; }
   .fbSeriesPicker .fbFormPair { grid-template-columns: minmax(0,1fr); }
+  .fbTopicComposer { margin: 0 18px 16px; padding: 15px; }
+  .fbTopicComposer .fbFormPair { grid-template-columns: minmax(0,1fr); }
   .fbAutoOverview { padding: 0 18px 18px; }
   .fbAutoWork { padding: 16px; }
   .fbAutoStages { gap: 5px; }

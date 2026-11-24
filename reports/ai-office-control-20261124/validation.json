@@ -1,0 +1,44 @@
+{
+  "scope": "Kantor AI single workspace page and existing-worker supervisor",
+  "backend_focused_tests": {
+    "passed": 118
+  },
+  "frontend": {
+    "build": "passed",
+    "build_id": "Y4byJAcTERw4kJQO5okpl",
+    "deployment_manifest": "verified",
+    "served_preview_assets": "verified",
+    "node_tests": "passed"
+  },
+  "browser": {
+    "fixture_only": true,
+    "widths": [
+      1440,
+      1280,
+      390,
+      320
+    ],
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "page_errors": 0,
+    "horizontal_overflow": false,
+    "incident_filters": "passed",
+    "coordination_button": "passed",
+    "stale_state": "passed",
+    "legacy_backend_state": "passed"
+  },
+  "extended_facebook_suite": "interrupted_without_completion; targeted Facebook observer test passed",
+  "production": {
+    "backend_health": "ok",
+    "office_control_version": null,
+    "deployment": "blocked_sudo_password_required",
+    "new_control_active": false
+  },
+  "limits": [
+    "Existing owners preserve publication holds, retry budgets and remote identity",
+    "A completed coordination task is an accepted instruction, not a confirmed upload",
+    "Login, provider-license evidence and unresolved review remain explicit blockers"
+  ]
+}

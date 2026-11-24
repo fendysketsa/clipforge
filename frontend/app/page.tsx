@@ -1642,7 +1642,7 @@ export default function HomePage() {
         onToggleCron={handleToggleCron}
       />
 
-      {studioView !== "facebook" ? <header className="studioPageHeading">
+      {studioView !== "facebook" && studioView !== "automation" ? <header className="studioPageHeading">
         <div><span>RUANG PRODUKSI ANDA</span><h1>{STUDIO_VIEWS[studioView].title}</h1><p>{STUDIO_VIEWS[studioView].description}</p></div>
         {studioView !== "create" ? <a className="studioNewVideo" href="/#quick-start-title"><Clapperboard size={16} /> Buat video <ArrowRight size={15} /></a> : null}
       </header> : null}
@@ -1654,8 +1654,10 @@ export default function HomePage() {
 
       {studioView === "automation" ? <div className="studioAutomation">
         <AIOfficePanel />
+        <details className="officeSystemDetails"><summary>Jadwal produksi & antrean platform</summary>
         <CronActivity schedule={cronSchedule} receivedAt={cronReceivedAt} refreshFailed={cronRefreshFailed} />
         <UploadQueuePanel youtube={youtubeUploads} tiktok={tiktokUploads} />
+        </details>
       </div> : null}
 
       {studioView === "facebook" ? <FacebookWorkspace /> : null}

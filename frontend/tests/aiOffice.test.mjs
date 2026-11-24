@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { officeMotion, officeStatus, officeTime } from '../lib/aiOffice.ts';
+import { officeIncidents, officeMotion, officeStatus, officeTime } from '../lib/aiOffice.ts';
 
 const now = Date.parse('2026-11-21T01:00:00Z');
 const snapshot = overrides => ({version:1, enabled:true, worker_running:true, state:'working',
@@ -70,4 +70,17 @@ test('a hidden or manually paused view stops motion while retaining observed wor
   assert.equal(motion.canAnimate,false);
   assert.equal(motion.monitoring,false);
   assert.deepEqual(motion.activeDepartments,['production']);
+});
+
+test('incident views keep automatic, operator and department ownership distinct',()=>{
+  const value=snapshot({incidents:[
+    {id:'a',department:'recovery',state:'waiting',automatic:true},
+    {id:'b',department:'quality',state:'needs_operator',automatic:false},
+    {id:'c',department:'recovery',state:'resolved',automatic:true},
+  ]});
+  assert.deepEqual(officeIncidents(value).map(row=>row.id),['a','b']);
+  assert.deepEqual(officeIncidents(value,'automatic').map(row=>row.id),['a']);
+  assert.deepEqual(officeIncidents(value,'operator').map(row=>row.id),['b']);
+  assert.deepEqual(officeIncidents(value,'all','quality').map(row=>row.id),['b']);
+  assert.deepEqual(officeIncidents(null),[]);
 });

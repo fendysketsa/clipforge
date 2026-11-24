@@ -204,14 +204,16 @@ def test_requested_original_respects_shared_production_capacity(runner):
 
 def test_original_endpoint_validates_identity_and_uses_owned_worker(monkeypatch):
     calls=[]
-    monkeypatch.setattr(Runner,'request_original',lambda self,request,topic,series=None:
-        calls.append((request,topic)) or {'key':'requested:'+request,'status':'reserved'})
+    monkeypatch.setattr(Runner,'request_original',lambda self,request,topic,series=None,custom_topic=None,style=None:
+        calls.append((request,topic,series,custom_topic,style)) or {'key':'requested:'+request,'status':'reserved'})
     import facebook_api
     monkeypatch.setattr(facebook_api,'start_background',lambda *args:None)
     client=TestClient(api.app)
     assert client.post('/api/facebook/originals',json={'request_id':'../invalid'}).status_code==422
     result=client.post('/api/facebook/originals',json={'request_id':'a'*32,'topic':'group'})
-    assert result.status_code==200 and calls==[('a'*32,'group')]
+    assert result.status_code==200 and calls==[('a'*32,'group',None,None,None)]
+    result=client.post('/api/facebook/originals',json={'request_id':'b'*32,'custom_topic':'Kebun','style':'story'})
+    assert result.status_code==200 and calls[-1]==('b'*32,None,None,'Kebun','story')
 
 
 def test_facebook_model_override_keeps_shared_credentials_and_long_model(monkeypatch,tmp_path):

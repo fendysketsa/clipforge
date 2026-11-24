@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from 'react';
-import { Check, CirclePause, Clock3, Loader2, Play, Radio, Sparkles } from 'lucide-react';
+import { Check, CirclePause, Clock3, Loader2, PenLine, Play, Radio, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { facebookRequest, type FacebookAutopilot } from '../../lib/facebook';
 
@@ -17,6 +17,8 @@ export function FacebookAutopilotPanel() {
   const [busy,setBusy]=useState(false);
   const [series,setSeries]=useState('');
   const [topic,setTopic]=useState('');
+  const [customTopic,setCustomTopic]=useState('');
+  const [storyStyle,setStoryStyle]=useState('');
   const load=useCallback(async()=>{
     try {setData(await facebookRequest<FacebookAutopilot>('facebook/autopilot'));setError('');}
     catch(reason){setError(reason instanceof Error?reason.message:'Progres otomatis belum tersedia.');}
@@ -38,6 +40,19 @@ export function FacebookAutopilotPanel() {
     } catch(reason){toast.error(reason instanceof Error?reason.message:'Produksi belum dimulai.');}
     finally{setBusy(false);}
   };
+  const createFromTopic=async()=>{
+    const text=customTopic.trim();
+    if(text.length<4){toast.error('Tulis topik minimal empat karakter.');return;}
+    setBusy(true);
+    try {
+      await facebookRequest('facebook/originals',{request_id:crypto.randomUUID().replaceAll('-',''),
+        series:'topik',custom_topic:text,style:storyStyle||null});
+      toast.success('Video topik baru dimulai. QC tetap wajib sebelum tayang.');
+      setCustomTopic('');
+      await load();
+    } catch(reason){toast.error(reason instanceof Error?reason.message:'Produksi belum dimulai.');}
+    finally{setBusy(false);}
+  };
   const saveSeries=async()=>{
     if(!data)return;setBusy(true);
     try{
@@ -50,6 +65,8 @@ export function FacebookAutopilotPanel() {
   const selectedSeries=series||data?.config.series||'digital';
   const catalogue=data?.series_catalog||[];
   const selected=catalogue.find(item=>item.key===selectedSeries);
+  const bank=data?.topic_bank||[];
+  const storyStyles=data?.story_styles||[];
   const active=data?.active;
   const enabled=data?.config.enabled;
   const running=!!(enabled&&data?.scheduler_running);
@@ -67,6 +84,23 @@ export function FacebookAutopilotPanel() {
         <label>Topik video<select aria-label="Topik video" value={topic} disabled={busy||!selected} onChange={event=>setTopic(event.target.value)}><option value="">Pilih otomatis</option>{selected?.topics.map(item=><option value={item.key} key={item.key}>{item.title}</option>)}</select></label></div>
       {selected?<p>{selected.description} <span>{selected.audience}.</span></p>:null}
       <button type="button" className="uiButton" disabled={busy||!data||!selected||selectedSeries===(data.config.series||'digital')} onClick={()=>void saveSeries()}>Gunakan tema untuk jadwal</button>
+    </div>
+    <div className="fbTopicComposer">
+      <header><span className="fbTopicIcon"><PenLine size={16}/></span><div><strong>Topik bebas</strong><small>Ketik topik apa saja. Gaya cerita dipilih otomatis supaya hasil tidak monoton.</small></div></header>
+      <textarea aria-label="Topik video bebas" value={customTopic} maxLength={140} rows={2}
+        placeholder="Contoh: beda zaman cara guru menangani murid lupa PR"
+        onChange={event=>setCustomTopic(event.target.value)}/>
+      <div className="fbFormPair">
+        <label>Gaya cerita<select aria-label="Gaya cerita" value={storyStyle} disabled={busy} onChange={event=>setStoryStyle(event.target.value)}>
+          <option value="">Pilih otomatis</option>
+          {storyStyles.map(item=><option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
+        <button type="button" className="uiButton uiButton--primary" disabled={!running||busy||!!active||customTopic.trim().length<4} onClick={()=>void createFromTopic()}>
+          {busy?<Loader2 size={15} className="spin"/>:<PenLine size={15}/>} Buat video sekarang
+        </button>
+      </div>
+      {bank.length?<div className="fbTopicChips" aria-label="Ide topik otomatis">
+        {bank.slice(0,8).map(item=><button type="button" key={item.text} disabled={busy} onClick={()=>{setCustomTopic(item.text);setStoryStyle(item.style);}}>{item.text}</button>)}
+      </div>:null}
     </div>
     <div className="fbAutoControls">
       <button type="button" className="uiButton uiButton--primary" disabled={!running||busy||!!active||!selected} onClick={()=>void createOriginal()}><Sparkles size={16}/> Buat Reel baru</button>

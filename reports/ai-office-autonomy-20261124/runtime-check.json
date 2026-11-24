@@ -1,0 +1,26 @@
+{
+  "health": {
+    "status": "ok"
+  },
+  "office": {
+    "version": 1,
+    "control_version": 2,
+    "worker_running": true,
+    "capabilities": {
+      "supervised_workers": true,
+      "persisted_decisions": true,
+      "operator_settings_preserved": true,
+      "publication_gates_preserved": true,
+      "no_parallel_production_owner": true,
+      "incident_ownership": true,
+      "observed_resolution": true,
+      "safe_delegate_only": true
+    }
+  },
+  "facebook": {
+    "autonomous_recovery_version": null,
+    "autopilot_version": 1
+  },
+  "activation_verified": false,
+  "deployment_blocker": "sudo requires password"
+}

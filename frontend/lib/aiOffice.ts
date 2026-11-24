@@ -1,7 +1,21 @@
 export type OfficeState = "starting" | "working" | "waiting" | "disabled" | "degraded";
 
+export type OfficeIncident = {
+  id: string; department: string; title: string; reason: string; action: string;
+  automatic: boolean; state: "waiting" | "needs_operator" | "resolved";
+  severity: "critical" | "warning" | "info"; destination: "settings" | "history" | "facebook";
+  job_id?: string | null; upload_id?: string | null;
+  first_seen_at?: string | null; last_seen_at?: string | null; resolved_at?: string | null;
+};
+
 export type AIOfficeSnapshot = {
   version: 1;
+  control_version?: number;
+  incident_observation_available?: boolean;
+  incidents?: OfficeIncident[];
+  resolved_incidents?: OfficeIncident[];
+  director?: { name: string; role: string; active_jobs: number; active_uploads: number;
+    open_incidents: number; needs_operator: number };
   enabled: boolean;
   worker_running: boolean;
   state: OfficeState;
@@ -25,7 +39,7 @@ export function officeStatus(snapshot: AIOfficeSnapshot | null, now: number, ref
     detail: refreshFailed ? "Status Kantor AI belum dapat dibaca. Aktivitas produksi tetap dapat dilihat di bawah." : "Mengambil status dan keputusan terakhir dari server.", stale: false };
   if (!snapshot.enabled) return { state: "disabled", label: snapshot.label || "Koordinator dijeda", detail: snapshot.detail, stale: false };
   const checkedAt = Date.parse(snapshot.last_tick_at || "");
-  const stale = refreshFailed || (!Number.isFinite(checkedAt) ? snapshot.state !== "starting" : now - checkedAt > 120_000);
+  const stale = refreshFailed || (!Number.isFinite(checkedAt) ? snapshot.state !== "starting" : now - checkedAt > 120_000 || checkedAt - now > 30_000);
   if (!snapshot.worker_running || stale) return { state: "degraded", label: "Status koordinator perlu diperiksa",
     detail: !snapshot.worker_running ? "Worker koordinator belum berjalan. Status produksi terakhir tetap ditampilkan."
       : "Pembaruan koordinator belum diterima. Aktivitas terakhir ditampilkan sambil menunggu pemeriksaan berikutnya.", stale: true };
@@ -50,8 +64,14 @@ export const officeStateLabel: Record<OfficeState, string> = {
 };
 
 export const officeTaskLabel = {
-  running: "Dikerjakan", completed: "Selesai", deferred: "Menunggu giliran", failed: "Belum selesai",
+  running: "Dikerjakan", completed: "Arahan diterima", deferred: "Menunggu giliran", failed: "Belum selesai",
 } as const;
+
+export function officeIncidents(snapshot: AIOfficeSnapshot | null, filter = "all", department = "all") {
+  return (snapshot?.incidents ?? []).filter(row => row.state !== "resolved"
+    && (department === "all" || row.department === department)
+    && (filter === "all" || (filter === "operator" ? row.state === "needs_operator" : row.automatic)));
+}
 
 export function officeTime(value: string | null) {
   if (!value) return "Belum tersedia";

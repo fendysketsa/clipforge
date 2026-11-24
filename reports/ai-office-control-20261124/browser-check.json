@@ -1,0 +1,67 @@
+{
+  "checks": [
+    {
+      "theme": "light",
+      "width": 1440,
+      "scroll": 1440,
+      "rooms": "230.781px 230.781px 230.781px",
+      "main": "760.344px 353.656px"
+    },
+    {
+      "theme": "dark",
+      "width": 1440,
+      "scroll": 1440,
+      "rooms": "230.781px 230.781px 230.781px",
+      "main": "760.344px 353.656px"
+    },
+    {
+      "theme": "light",
+      "width": 1280,
+      "scroll": 1280,
+      "rooms": "194.375px 194.375px 194.375px",
+      "main": "651.141px 302.859px"
+    },
+    {
+      "theme": "dark",
+      "width": 1280,
+      "scroll": 1280,
+      "rooms": "194.375px 194.375px 194.375px",
+      "main": "651.141px 302.859px"
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "scroll": 390,
+      "rooms": "155.5px 155.5px",
+      "main": "354px"
+    },
+    {
+      "theme": "dark",
+      "width": 390,
+      "scroll": 390,
+      "rooms": "155.5px 155.5px",
+      "main": "354px"
+    },
+    {
+      "theme": "light",
+      "width": 320,
+      "scroll": 320,
+      "rooms": "125.5px 125.5px",
+      "main": "294px"
+    },
+    {
+      "theme": "dark",
+      "width": 320,
+      "scroll": 320,
+      "rooms": "125.5px 125.5px",
+      "main": "294px"
+    }
+  ],
+  "errors": [],
+  "fixture_only": true,
+  "coordination_requests": 1,
+  "filters": true,
+  "motion_pause": true,
+  "stale": true,
+  "old_backend": true
+}

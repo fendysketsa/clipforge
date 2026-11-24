@@ -1,0 +1,32 @@
+{
+  "verified_at": "2026-11-24T14:08:00+07:00",
+  "command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+  "executed_by": "operator",
+  "checks": {
+    "backend_health": "ok",
+    "backend_contract": "passed",
+    "ai_office": {
+      "version": 1,
+      "control_version": 2,
+      "worker_running": true
+    },
+    "facebook": {
+      "version": 1,
+      "autopilot_version": 1,
+      "autonomous_recovery_version": 1,
+      "terminal_cleanup_version": 1,
+      "educational_motion_version": 1,
+      "story_catalogue_version": 1,
+      "max_seconds": 55
+    },
+    "frontend": {
+      "serving": true,
+      "ui_verified": true,
+      "build_id": "AGaku53eYUos3gbBA-4cx"
+    },
+    "container_started_at": "2026-11-24T14:06:07+07:00",
+    "last_source_change_at": "2026-11-24T14:01:48+07:00",
+    "image_includes_audit_fixes": true
+  },
+  "mutation_during_audit": "none"
+}

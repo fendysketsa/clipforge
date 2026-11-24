@@ -20,6 +20,7 @@ import facebook_strategy as strategy
 import facebook_monetization as monetization
 import facebook_activity as activity
 import facebook_originals as originals
+import facebook_stories as stories
 import facebook_runner
 import facebook_autopilot
 import facebook_creative as creative
@@ -53,8 +54,10 @@ class FacebookAutopilotInput(BaseModel):
 
 class FacebookOriginalInput(BaseModel):
     request_id: str = Field(pattern=r'^[a-f0-9]{32}$')
-    topic: str | None = Field(default=None,max_length=30)
+    topic: str | None = Field(default=None,max_length=140)
     series: str | None = Field(default=None,max_length=32)
+    custom_topic: str | None = Field(default=None,max_length=140)
+    style: str | None = Field(default=None,max_length=32)
 
 
 class FacebookVerifyInput(BaseModel):
@@ -68,6 +71,8 @@ def now() -> str:
 def retry_block_reason(row):
     if row.get('submission_started') or row.get('upload_confirmed') or row.get('video_url'):
         return 'Post mungkin sudah dikirim. Cocokkan remote; upload ulang diblokir.'
+    if row.get('recovery_status')=='skipped':
+        return 'Story lama dilewati otomatis sebelum pernah dikirim. Catatan dan file tetap dipertahankan.'
     if row.get('status') != 'failed':
         return 'Retry hanya tersedia untuk upload yang gagal sebelum Post.'
     if row.get('attempts', 1) >= 3:
@@ -242,11 +247,17 @@ def install(app, api):
                 'bonus_priority_version': 1,
                 'creative_policy_version': creative.VERSION, 'creative_strategy': creative.brief(),
                 'local_cleanup_version': facebook_cleanup.VERSION,
+                'terminal_cleanup_version': facebook_cleanup.TERMINAL_VERSION,
                 'educational_motion_version': motion.VERSION,
                 'originals_request_version': 1,
                 'original_renderer': originals.motlab.capabilities(),
                 'upload_retry_policy_version': 1,
+                'autonomous_recovery_version': 1,
                 'education_catalogue_version': originals.education.VERSION,
+                'story_catalogue_version': stories.VERSION,
+                'story_styles': [dict(key=key,label=value['label'],description=value['concept'])
+                                 for key,value in stories.STYLES.items()],
+                'topic_bank': [dict(row) for row in stories.DEFAULT_TOPICS],
                 'target_email': browser.TARGET_EMAIL,
                 'target_seconds': 30, 'max_seconds': 55,
                 'shared_browser': api.social_browser_is_shared(),
@@ -472,12 +483,20 @@ def install(app, api):
                           if row.get('status') in {'queued','running'})
             detail=data.data.get('autopilot_message') or 'Menunggu jadwal atau hasil pemeriksaan Facebook.'
             qc_wait=[row for row in data.data.get('autopilot_runs',{}).values() if row.get('status')=='qc_wait']
+            failed_uploads=[row for row in data.data.get('uploads',{}).values()
+                            if row.get('status') in {'failed','needs_review'} and not row.get('upload_confirmed')
+                            and row.get('recovery_status')!='skipped']
+            skipped_uploads=sum(row.get('recovery_status')=='skipped' for row in data.data.get('uploads',{}).values())
+            unknown_posts=sum(bool(row.get('status')=='needs_review' or row.get('submission_started')
+                or row.get('video_url') or row.get('remote_story_url')) for row in failed_uploads)
             if qc_wait and not active:
                 latest=max(qc_wait,key=lambda row:str(row.get('updated_at') or row.get('created_at') or ''))
                 detail=f"Menunggu QC independen untuk {len(qc_wait)} video. " + str(latest.get('message') or 'Bukti pemeriksaan belum lengkap.')
         detail=redact_diagnostic(originals.qc.safe_error_detail(RuntimeError(str(detail))))[:400]
         running=bool(runner.thread and runner.thread.is_alive())
         return dict(enabled=enabled,worker_running=running,active_count=len(active),
+            qc_wait_count=len(qc_wait), failed_upload_count=len(failed_uploads), unknown_post_count=unknown_posts,
+            skipped_upload_count=skipped_uploads, autonomous_recovery_version=1,
             state='disabled' if not enabled else 'degraded' if not running else 'working' if active else 'waiting',
             detail=detail if enabled else 'Otomasi Facebook dijeda oleh pengaturan operator.')
 
@@ -491,6 +510,12 @@ def install(app, api):
 
     api.facebook_office_snapshot=office_snapshot
     api.ensure_facebook_office_worker=ensure_office_worker
+    def request_facebook_recovery():
+        if not runner.enabled():return False
+        runner.start()
+        runner.wakeup.set()
+        return True
+    api.request_facebook_recovery=request_facebook_recovery
 
     @app.post('/api/facebook/storage/cleanup')
     def cleanup_storage():
@@ -502,7 +527,9 @@ def install(app, api):
 
     @app.post('/api/facebook/originals')
     def original(request: FacebookOriginalInput):
-        try:row=runner.request_original(request.request_id,request.topic,request.series)
+        try:
+            row=runner.request_original(request.request_id,request.topic,request.series,
+                request.custom_topic,request.style)
         except ValueError as exc:raise HTTPException(409,str(exc)) from exc
         start_background(runner.process_requested,row['key'])
         return row

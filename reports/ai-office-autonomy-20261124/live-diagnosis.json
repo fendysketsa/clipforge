@@ -1,0 +1,30 @@
+{
+  "mode": "read_only_no_remote_mutation",
+  "decisions": [
+    {
+      "id": "598034c5e9704041bc65c2af52c5249a",
+      "status": "failed",
+      "attempts": 3,
+      "submission_started": false,
+      "decision": "skip_expired_story",
+      "created_at": "2026-11-17T12:03:38.874498+00:00"
+    },
+    {
+      "id": "0ac30bc5d7b243c3ab2f81f23b51d775",
+      "status": "failed",
+      "attempts": 3,
+      "submission_started": false,
+      "decision": "skip_expired_story",
+      "created_at": "2026-11-16T14:50:41.918267+00:00"
+    },
+    {
+      "id": "089a077fdae9484eab04689ad4476cf4",
+      "status": "failed",
+      "attempts": 3,
+      "submission_started": false,
+      "decision": "skip_expired_story",
+      "created_at": "2026-11-15T10:00:18.831504+00:00"
+    }
+  ],
+  "source_code_active": false
+}

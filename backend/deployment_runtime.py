@@ -26,7 +26,7 @@ def source_files(root: Path) -> list[Path]:
         files.append(remotion / name)
     files.extend((remotion / 'src').rglob('*'))
     files.extend((root / 'assets' / 'branding').rglob('*'))
-    for name in ('package.json', 'package-lock.json', 'render.mjs', 'scene.mjs', 'facebook-scene.mjs', 'education-scene.mjs'):
+    for name in ('package.json', 'package-lock.json', 'render.mjs', 'scene.mjs', 'facebook-scene.mjs', 'education-scene.mjs', 'story-scene.mjs'):
         files.append(root / 'motlab' / name)
     return sorted(path for path in files if path.is_file())
 
@@ -103,6 +103,8 @@ def verify_dependencies() -> None:
                    check=True, stdout=subprocess.DEVNULL, timeout=15)
     subprocess.run(['node', '--check', str(ROOT / 'motlab/education-scene.mjs')],
                    check=True, stdout=subprocess.DEVNULL, timeout=15)
+    subprocess.run(['node', '--check', str(ROOT / 'motlab/story-scene.mjs')],
+                   check=True, stdout=subprocess.DEVNULL, timeout=15)
 
 
 def get_json(url: str) -> dict:
@@ -118,9 +120,10 @@ def backend_contract(base: str) -> dict:
         office_age = time.time() - datetime.fromisoformat(office.get('last_tick_at') or '').timestamp()
     except (ValueError, TypeError):
         office_age = float('inf')
-    if (office.get('version') != 1 or any(office.get('capabilities', {}).get(key) is not True for key in (
+    if (office.get('version') != 1 or office.get('control_version') != 2 or any(office.get('capabilities', {}).get(key) is not True for key in (
             'supervised_workers', 'persisted_decisions', 'operator_settings_preserved',
-            'publication_gates_preserved', 'no_parallel_production_owner'))
+            'publication_gates_preserved', 'no_parallel_production_owner',
+            'incident_ownership', 'observed_resolution', 'safe_delegate_only', 'autonomous_recovery', 'configured_qc_fallback'))
             or (office.get('enabled') and (office.get('worker_running') is not True
                                            or office.get('journal_ready') is not True
                                            or not -30 <= office_age <= 180))):
@@ -193,11 +196,13 @@ def backend_contract(base: str) -> dict:
             or facebook.get('bonus_priority_version') != 1
             or facebook.get('creative_policy_version') != 2
             or facebook.get('local_cleanup_version') != 1
+            or facebook.get('terminal_cleanup_version') != 1
             or facebook.get('educational_motion_version') != 1
             or facebook.get('originals_request_version') != 1
             or (facebook.get('original_renderer') or {}).get('engine') != 'motlab'
             or (facebook.get('original_renderer') or {}).get('version') != 1
             or facebook.get('upload_retry_policy_version') != 1
+            or facebook.get('autonomous_recovery_version') != 1
             or facebook.get('education_catalogue_version') != 1
             or facebook.get('max_seconds') != 55
             or facebook.get('target_email') != 'fendysketsa@gmail.com'):

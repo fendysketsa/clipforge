@@ -40,7 +40,7 @@ assert.equal(state([row,{...previous,target_handle:'someone_else'}],clip.url).un
 assert.equal(state([row,{...previous,dry_run:true}],clip.url).uncertain,false);
 assert.equal(state([row,{...previous,submission_accepted:false,logs:['POST_SUBMIT_INTENT: issued']}],clip.url).uncertain,true);
 assert.equal(state([],clip.url).latest,undefined);
-const props={clips:[clip],selectedClipUrls:[],youtubeEnabled:true,youtubeStatusMessage:'',youtubeAutoUploadCount:1,
+const props={clips:[clip],jobs:[],selectedClipUrls:[],youtubeEnabled:true,youtubeStatusMessage:'',youtubeAutoUploadCount:1,
   youtubeUploadAllAboveTarget:false,youtubeUploads:[],tiktokEnabled:true,tiktokStatusMessage:'',tiktokTargetHandle:'owner',
   tiktokAutoUploadCount:1,isTikTokLoginActive:false,isYouTubeLoginActive:false};
 const html=render(React.createElement(ResultsSection,{...props,tiktokUploads:[row,previous]}));
@@ -58,7 +58,7 @@ assert.match(prepost,/Job meminta Only you/);
 const historyProps={jobs:[{id:'source',status:'completed',request:{url:'https://youtu.be/example',clip_mode:'short'},
   created_at:'2026-11-11T05:00:00Z',clips:[clip],logs:[]}],youtubeUploads:[],selectedJobIds:[]};
 const history=render(React.createElement(HistorySection,{...historyProps,tiktokUploads:[row,previous]}));
-assert.match(history,/Periksa hasil Post/);
+assert.match(history,/Menunggu verifikasi Post/);
 const historySuccess=render(React.createElement(HistorySection,{...historyProps,tiktokUploads:[row,confirmed]}));
 assert.match(historySuccess,/Terupload &amp; terverifikasi/);
 console.log('TikTok cards: unknown Post held, confirmed hash reused, privacy truthful.');

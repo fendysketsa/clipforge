@@ -83,6 +83,7 @@ RUN cd /app/motlab \
     && node --check scene.mjs \
     && node --check facebook-scene.mjs \
     && node --check education-scene.mjs \
+    && node --check story-scene.mjs \
     && npm cache clean --force
 
 RUN chmod 0755 /app/docker-entrypoint.sh \

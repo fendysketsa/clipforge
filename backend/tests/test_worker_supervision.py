@@ -142,7 +142,12 @@ def test_facebook_office_adapter_respects_persisted_settings_and_hides_plans(tmp
     calls = []
     monkeypatch.setattr(Runner, 'start', lambda self: calls.append(True) or True)
     snapshot = adapter.facebook_office_snapshot()
-    assert set(snapshot) == {'enabled', 'worker_running', 'active_count', 'state', 'detail'}
+    assert set(snapshot) == {'enabled', 'worker_running', 'active_count', 'state', 'detail',
+        'qc_wait_count', 'failed_upload_count', 'unknown_post_count', 'skipped_upload_count',
+        'autonomous_recovery_version'}
+    assert snapshot['autonomous_recovery_version'] == 1
+    assert all(snapshot[key] == 0 for key in ('qc_wait_count', 'failed_upload_count',
+        'unknown_post_count', 'skipped_upload_count'))
     assert snapshot['enabled'] is enabled and snapshot['active_count'] == 1
     assert snapshot['state'] == ('degraded' if enabled else 'disabled')
     assert adapter.ensure_facebook_office_worker() is enabled

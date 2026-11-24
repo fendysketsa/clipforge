@@ -1,4 +1,4 @@
-"""Delete confirmed Facebook artifacts while keeping the remote/dedup ledger.
+"""Delete published or proven undispatched terminal artifacts, keeping receipts.
 
 No remote delete, no source-input cleanup, and no cleanup of ambiguous uploads.
 The persisted deletion checkpoint makes interruptions safe to resume at startup.
@@ -12,6 +12,7 @@ import threading
 import facebook_browser as browser
 
 VERSION = 1
+TERMINAL_VERSION = 1
 _lock = threading.Lock()
 
 
@@ -33,6 +34,38 @@ def confirmed(row):
     return bool(browser.reel_url(url) == url)
 
 
+def terminal(row):
+    """A skipped badge alone never authorizes deleting an unconfirmed file."""
+    if (row.get('status')!='failed' or row.get('kind')!='story'
+            or row.get('recovery_status')!='skipped' or row.get('recovery_action')!='skip_expired_story'
+            or row.get('recovery_version')!=1
+            or row.get('submission_started') is not False or row.get('upload_confirmed') is not False
+            or row.get('submission_accepted') or row.get('video_url') or row.get('remote_story_url')
+            or row.get('candidate_video_urls')
+            or row.get('target_email')!=browser.TARGET_EMAIL
+            or not re.fullmatch(r'\d+',str(row.get('profile_id','')))
+            or not re.fullmatch(r'[a-f0-9]{64}',str(row.get('sha256','')))):
+        return False
+    try:
+        created=datetime.fromisoformat(row['created_at'])
+        receipt=datetime.fromisoformat(row['recovery_at'])
+        current=datetime.now(timezone.utc)
+        return (current-created).total_seconds()>=86400 and created<=receipt<=current
+    except (ValueError,TypeError,KeyError):return False
+
+
+def retire_terminal_clip(api,job,clip_url):
+    """Persist removal of a terminal card; roll back memory if persistence fails."""
+    remaining=[clip for clip in job.clips if clip.url!=clip_url]
+    if remaining:
+        api.jobs[job.id]=job.model_copy(update=dict(clips=remaining,updated_at=now()))
+    else:api.jobs.pop(job.id,None)
+    try:api.save_jobs_unlocked()
+    except Exception:
+        api.jobs[job.id]=job
+        raise
+
+
 def cleanup_once(api, store):
     result = dict(cleaned_uploads=0, removed_files=0, freed_bytes=0, deferred=0, errors=[])
     # Match upload-admission order. Nonblocking acquisition also prevents a
@@ -50,15 +83,17 @@ def cleanup_once(api, store):
         root = api.OUTPUTS_DIR.resolve()
         for row in uploads.values():
             prior = row.get('local_cleanup') or {}
-            if not confirmed(row) or prior.get('state') in {'deleted', 'missing'}:
+            discard=terminal(row)
+            if not (confirmed(row) or discard) or prior.get('state') in {'deleted', 'missing'}:
                 continue
+            disposition='discarded' if discard else 'published'
             job = api.jobs.get(row.get('job_id'))
             media = api.output_path_from_url(row['clip_url'])
             if not job and media is not None and not media.exists():
                 # Older operator cleanup can remove a local job while the
                 # durable upload ledger remains. No file deletion is inferred.
                 row['local_cleanup'] = dict(state='missing',completed_at=now(),freed_bytes=0,
-                                            removed_files=0,remote_url=row['video_url'])
+                    removed_files=0,remote_url=row.get('video_url'),disposition=disposition)
                 store.save()
                 continue
             if (not job or job.request.target_platform != 'facebook' or job.status != 'completed'
@@ -90,8 +125,9 @@ def cleanup_once(api, store):
                     result['deferred'] += 1
                     continue
                 if not media.exists() and prior.get('state') not in {'deleting', 'error'}:
+                    if discard:retire_terminal_clip(api,job,row['clip_url'])
                     row['local_cleanup'] = dict(state='missing', completed_at=now(), freed_bytes=0,
-                                                removed_files=0, remote_url=row['video_url'])
+                        removed_files=0, remote_url=row.get('video_url'),disposition=disposition)
                     store.save()
                     continue
                 paths = set(api.clip_artifact_paths(clip))
@@ -134,7 +170,8 @@ def cleanup_once(api, store):
                     continue
                 existing = sorted((p for p in paths if p.is_file()), key=str)
                 checkpoint = dict(state='deleting', started_at=prior.get('started_at') or now(),
-                    remote_url=row['video_url'], sha256=row['sha256'],
+                    remote_url=row.get('video_url'), sha256=row['sha256'],disposition=disposition,
+                    reason=row.get('recovery_action') if discard else 'remote_confirmed',
                     removed_files=prior.get('removed_files', 0), freed_bytes=prior.get('freed_bytes', 0))
                 row['local_cleanup'] = checkpoint
                 row.setdefault('title',clip.title or job.source_title or clip.name)
@@ -151,6 +188,7 @@ def cleanup_once(api, store):
                                          key=lambda p: len(p.parts), reverse=True):
                         folder.rmdir()
                     owned.rmdir()
+                if discard:retire_terminal_clip(api,job,row['clip_url'])
                 checkpoint.update(state='deleted', completed_at=now())
                 store.save()
                 result['cleaned_uploads'] += 1

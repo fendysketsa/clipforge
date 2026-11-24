@@ -5,7 +5,7 @@ const crypto = require('node:crypto');
 const root = path.resolve(__dirname, '..');
 const digest = data => crypto.createHash('sha256').update(data).digest('hex');
 const requiredJS = ['jobDirectorRecovery', 'history-four-columns', 'jobPlatformQueue', '/reconcile',
-  'Arahan & pekerjaan', '/api/ai-office', 'aiOfficeDepartments', 'aiOfficeProcessMap',
+  'officeHQ', '/api/ai-office', 'officeFloorRooms', 'officeIncidentBoard', 'officeJournal', 'aiOfficeProcessMap',
   'dijadwalkan ulang otomatis', 'pengaturan privasi tertunda', 'jobAutomaticHandling', 'Percepat pemeriksaan', 'Terjadwal otomatis',
   'cronActivityHeading', 'Detail pemeriksaan', 'cronDailyLanes',
   'studioSidebar', 'studioQueueRow', 'connectionCard', 'studioThemeToggle',

@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "control_version": 2,
+  "enabled": true,
+  "worker_running": true,
+  "state": "working",
+  "label": "Kantor AI sedang bekerja",
+  "detail": "Koordinator memantau pekerjaan studio.",
+  "last_tick_at": "2026-11-24T05:26:12.311354+00:00",
+  "next_tick_at": "2026-11-24T05:26:12.311354+00:00",
+  "journal_ready": true,
+  "departments": [
+    {
+      "id": "production",
+      "name": "Produksi & riset",
+      "role": "Memilih sumber dan memproduksi Short serta Long.",
+      "state": "working",
+      "active_count": 2,
+      "detail": "Dua video sedang diproduksi."
+    },
+    {
+      "id": "quality",
+      "name": "QC & perbaikan",
+      "role": "Memeriksa hasil sebelum distribusi.",
+      "state": "working",
+      "active_count": 1,
+      "detail": "Satu audit kualitas berjalan."
+    },
+    {
+      "id": "distribution",
+      "name": "Distribusi",
+      "role": "Mengirim dan memverifikasi posting.",
+      "state": "working",
+      "active_count": 1,
+      "detail": "Satu antrean upload aktif."
+    },
+    {
+      "id": "recovery",
+      "name": "Pemulihan",
+      "role": "Mencocokkan bukti percobaan yang sama.",
+      "state": "waiting",
+      "active_count": 0,
+      "detail": "Menunggu hasil verifikasi."
+    },
+    {
+      "id": "cleanup",
+      "name": "Kebersihan",
+      "role": "Menjaga aset dan mengarsipkan penolakan.",
+      "state": "waiting",
+      "active_count": 0,
+      "detail": "Hasil aktif tetap dilindungi."
+    },
+    {
+      "id": "facebook",
+      "name": "Facebook Studio",
+      "role": "Mengelola produksi dan pengiriman Facebook.",
+      "state": "disabled",
+      "active_count": 0,
+      "detail": "Dijeda sesuai pengaturan operator."
+    }
+  ],
+  "incidents": [
+    {
+      "id": "job:source",
+      "department": "production",
+      "title": "Sumber unduhan memerlukan pemulihan sesi sebelum produksi dilanjutkan",
+      "reason": "Akses sumber perlu dipulihkan. File yang telah dihasilkan dan identitas percobaan tetap disimpan.",
+      "action": "restore_access",
+      "automatic": false,
+      "state": "needs_operator",
+      "severity": "warning",
+      "destination": "settings"
+    },
+    {
+      "id": "tiktok:post",
+      "department": "recovery",
+      "title": "TikTok · Ustadz menjelaskan satu pertanyaan keluarga dengan konteks utuh dan judul yang cukup panjang untuk menguji pemenggalan pada mobile",
+      "reason": "Posting mungkin sudah dikirim. Worker mencocokkan identitas remote sebelum memutuskan langkah berikutnya.",
+      "action": "verify_upload",
+      "automatic": true,
+      "state": "waiting",
+      "severity": "warning",
+      "destination": "history"
+    },
+    {
+      "id": "policy:story-rights",
+      "department": "quality",
+      "title": "Bukti izin provider cerita belum tersedia",
+      "reason": "Seri cerita orisinal menunggu referensi izin provider gambar dan suara. Cron sumber lain tetap berjalan.",
+      "action": "supply_provider_evidence",
+      "automatic": false,
+      "state": "needs_operator",
+      "severity": "warning",
+      "destination": "history"
+    }
+  ],
+  "incident_observation_available": true,
+  "resolved_incidents": [],
+  "director": {
+    "name": "Direktur Studio",
+    "role": "Koordinator operasi RYUUNDY",
+    "active_jobs": 2,
+    "active_uploads": 1,
+    "open_incidents": 3,
+    "needs_operator": 2
+  },
+  "tasks": [
+    {
+      "id": "1",
+      "department": "recovery",
+      "action": "Meminta verifikasi posting TikTok",
+      "status": "completed",
+      "started_at": "2026-11-24T05:26:12.311354+00:00",
+      "finished_at": "2026-11-24T05:26:12.311354+00:00",
+      "next_retry_at": null,
+      "summary": "Worker pemilik menerima arahan. Status upload tetap menunggu bukti platform."
+    },
+    {
+      "id": "2",
+      "department": "production",
+      "action": "Memulihkan worker produksi",
+      "status": "completed",
+      "started_at": "2026-11-24T05:26:12.311354+00:00",
+      "finished_at": "2026-11-24T05:26:12.311354+00:00",
+      "next_retry_at": null,
+      "summary": "Worker produksi kembali berjalan; hasil video mengikuti pemeriksaan."
+    },
+    {
+      "id": "3",
+      "department": "quality",
+      "action": "Menunggu bukti izin provider",
+      "status": "deferred",
+      "started_at": "2026-11-24T05:26:12.311354+00:00",
+      "finished_at": "2026-11-24T05:26:12.311354+00:00",
+      "next_retry_at": null,
+      "summary": "Konfirmasi hak penggunaan belum tersedia; seri cerita tetap ditahan."
+    }
+  ]
+}

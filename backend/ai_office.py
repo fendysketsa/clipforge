@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import uuid
+import ai_office_incidents
 
 VERSION = 1
 INTERVAL = 30
@@ -39,6 +40,7 @@ class OfficeService:
         self.loaded = False
         self.tasks = []
         self.assignments = {}
+        self.incidents = {}
         self.last_tick_at = None
         self.next_tick_at = None
         self.error = None
@@ -75,6 +77,11 @@ class OfficeService:
                     raise ValueError('Invalid office retry state')
             self.tasks = data['tasks'][-HISTORY_LIMIT:]
             self.assignments = data['assignments']
+            incidents = data.get('incidents', {})
+            if (not isinstance(incidents, dict) or any(not isinstance(row, dict) or not isinstance(row.get('id'), str)
+                    or row.get('state') not in {'waiting', 'needs_operator', 'resolved'} for row in incidents.values())):
+                raise ValueError('Invalid office incident journal')
+            self.incidents = incidents
             for task in self.tasks:
                 if task['status'] == 'running':
                     task.update(status='deferred', finished_at=stamp(),
@@ -87,8 +94,9 @@ class OfficeService:
         descriptor, temporary = tempfile.mkstemp(prefix='.ai-office-', dir=self.path.parent)
         try:
             with os.fdopen(descriptor, 'w') as stream:
+                os.fchmod(stream.fileno(), 0o600)
                 json.dump(dict(version=VERSION, tasks=self.tasks[-HISTORY_LIMIT:],
-                               assignments=self.assignments), stream, ensure_ascii=False)
+                               assignments=self.assignments, incidents=self.incidents), stream, ensure_ascii=False)
             os.replace(temporary, self.path)
             self.dirty = False
         finally:
@@ -123,7 +131,7 @@ class OfficeService:
             except Exception as error:
                 facebook.update(state='degraded',
                     detail=f'Status Facebook mengalami {type(error).__name__}; departemen lain tetap dipantau.')
-        return dict(cron_enabled=a.auto_viral_schedule_enabled(),
+        context = dict(cron_enabled=a.auto_viral_schedule_enabled(),
             generic_enabled=a.env_bool('AUTO_UPLOAD_COMPLETED_JOBS', False),
             retry_enabled=a.env_bool('TIKTOK_AUTOMATIC_RETRY_ENABLED', True),
             attention_enabled=a.upload_attention_service.enabled(),
@@ -136,6 +144,58 @@ class OfficeService:
             generic_alive=alive(a.completed_job_upload_sweeper_thread),
             retry_alive=alive(a.tiktok_retry_sweeper_thread),
             attention_alive=alive(a.upload_attention_service.thread), facebook=facebook)
+        context['incidents'] = ai_office_incidents.detect(a, context)
+        return context
+
+    def _sync_incidents(self, rows):
+        """A blocker closes only after it disappears from a successful observation."""
+        now = stamp()
+        with self.lock:
+            current = {row['id'] for row in rows}
+            for row in rows[:ai_office_incidents.LIMIT]:
+                previous = self.incidents.get(row['id'], {})
+                self.incidents[row['id']] = {**row, 'first_seen_at': previous.get('first_seen_at', now),
+                    'last_seen_at': now, 'resolved_at': None}
+            for identity, row in self.incidents.items():
+                if identity not in current and row['state'] != 'resolved':
+                    row.update(state='resolved', resolved_at=now)
+            # Keep current blockers plus bounded, most recent resolved receipts.
+            active = {r['id']:self.incidents[r['id']] for r in rows[:ai_office_incidents.LIMIT]}
+            resolved = sorted((r for r in self.incidents.values() if r['state'] == 'resolved'),
+                              key=lambda r:r.get('resolved_at') or '', reverse=True)
+            self.incidents = {**{r['id']:r for r in resolved[:30]}, **active}
+            incident_keys = sorted((k for k in self.assignments if k.startswith('incident:')),
+                key=lambda k:self.assignments[k].get('last_dispatch', 0), reverse=True)
+            for key in incident_keys[200:]:
+                self.assignments.pop(key, None)
+            self.dirty = True
+            self._save()
+
+    def _dispatch_incident(self, incident):
+        a = self.api
+        action = incident['action']
+        if action == 'cleanup_history' and a.env_bool('AUTO_UPLOAD_TERMINAL_CLEANUP_ENABLED', True):
+            callback = getattr(a, 'process_autonomous_history_once', None)
+        elif action == 'recover_scheduled_uploads' and a.auto_viral_schedule_enabled():
+            callback = getattr(a, 'queue_missing_scheduled_uploads_once', None)
+        elif action == 'verify_upload' and a.upload_attention_service.enabled():
+            callback = a.upload_attention_service.wakeup.set
+        elif action == 'retry_tiktok' and a.env_bool('TIKTOK_AUTOMATIC_RETRY_ENABLED', True):
+            callback = a.tiktok_retry_sweeper_wakeup.set
+        elif action == 'recover_facebook':
+            callback = getattr(a, 'request_facebook_recovery', None)
+        elif action == 'use_supported_cron' and a.auto_viral_schedule_enabled():
+            callback = a.auto_viral_scheduler_wakeup.set
+        else:
+            return False
+        if not callable(callback):
+            return False
+        # These owners inspect their full backlog. One signal covers all
+        # matching incidents and keeps retries bounded across source changes.
+        key = 'incident:' + action
+        if time.time() - self.assignments.get(key, {}).get('last_dispatch', 0) < 300:
+            return False
+        return self._assign(key, incident['department'], 'Koordinasi: ' + incident['title'], callback)
 
     def _assign(self, key, department, action, callback, *, force=False):
         """Persist intent before dispatch; failures back off across manager restarts."""
@@ -272,6 +332,14 @@ class OfficeService:
                         return True
                     if key != 'facebook':
                         changed += self._assign('wake_' + key, department, 'Meminta pemeriksaan ' + key, wake)
+            dispatched_actions = set()
+            for incident in state['incidents']:
+                if incident['automatic'] and incident['action'] not in dispatched_actions:
+                    dispatched_actions.add(incident['action'])
+                    changed += self._dispatch_incident(incident)
+            observed = [row for row in self.context()['incidents'] if row['action'] != 'worker_supervision']
+            if observed or self.incidents:
+                self._sync_incidents(observed)
             with self.lock:
                 self.error = None
         except Exception as error:
@@ -294,6 +362,7 @@ class OfficeService:
             context = None
         with self.lock:
             tasks = [dict(task) for task in self.tasks]
+            saved_incidents = {k:dict(v) for k,v in self.incidents.items()}
             failed_departments = {row.get('department') for row in self.assignments.values()
                                   if row.get('status') == 'failed' and row.get('next_retry', 0) > time.time()}
             last, next_tick, error = self.last_tick_at, self.next_tick_at, self.error
@@ -342,15 +411,26 @@ class OfficeService:
                  'degraded' if degraded else 'working' if any(row['state'] == 'working' for row in departments) else 'waiting')
         labels = dict(disabled='Koordinator dijeda', starting='Menyiapkan Kantor AI', degraded='Koordinator perlu pemulihan',
                       working='Kantor AI sedang bekerja', waiting='Kantor AI memantau')
-        return dict(version=VERSION, enabled=enabled, worker_running=worker_running, state=state, label=labels[state],
+        live_incidents = context['incidents'] if context is not None else []
+        incident_rows = [{**row, 'first_seen_at': saved_incidents.get(row['id'], {}).get('first_seen_at'),
+                         'last_seen_at': saved_incidents.get(row['id'], {}).get('last_seen_at')} for row in live_incidents[:ai_office_incidents.LIMIT]]
+        return dict(version=VERSION, control_version=2, enabled=enabled, worker_running=worker_running, state=state, label=labels[state],
                     detail=('Koordinator dijeda; worker mengikuti jadwal dan setelan masing-masing.' if not enabled else
                             f'Pemeriksaan koordinator mengalami {error}; state dan pengaman tetap dipertahankan.' if error else
                             'Koordinator membagi arahan ke worker yang ada. QC, jadwal, dan konfirmasi platform tetap menentukan hasil.'),
                     last_tick_at=last, next_tick_at=next_tick if enabled else None,
                     departments=departments, tasks=tasks,
+                    incidents=incident_rows, incident_observation_available=context is not None,
+                    resolved_incidents=[r for r in saved_incidents.values() if r['state'] == 'resolved'][-12:],
+                    director=dict(name='Direktur Studio', role='Koordinator operasi RYUUNDY',
+                        model='supervised_existing_workers', active_jobs=(context or {}).get('jobs', 0),
+                        active_uploads=(context or {}).get('uploads', 0),
+                        open_incidents=len(live_incidents), needs_operator=sum(r['state'] == 'needs_operator' for r in live_incidents)),
                     journal_ready=self.loaded and error is None,
                     capabilities=dict(supervised_workers=True, persisted_decisions=True, operator_settings_preserved=True,
-                                      publication_gates_preserved=True, no_parallel_production_owner=True))
+                                      publication_gates_preserved=True, no_parallel_production_owner=True,
+                                      incident_ownership=True, observed_resolution=True, safe_delegate_only=True,
+                                      autonomous_recovery=True, configured_qc_fallback=True))
 
     def request_check(self):
         if not self.enabled():

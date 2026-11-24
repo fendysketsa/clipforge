@@ -1,0 +1,19 @@
+{
+  "command": "backend/.venv/bin/python -m pytest tests -q",
+  "working_directory": "backend",
+  "result": "passed",
+  "passed": 3392,
+  "failed": 0,
+  "warnings": 37,
+  "duration_seconds": 496.51,
+  "previous_run": {
+    "passed": 3376,
+    "failed": 13,
+    "note": "13 stale fixtures; 3 regressions from prior task API changes and 2 already present at HEAD"
+  },
+  "regression_tests_added": [
+    "test_choose_topic_takes_ordered_recent_styles",
+    "test_topic_series_request_accepts_recent_styles_without_type_error",
+    "test_skipped_expired_story_does_not_block_future_story_slot"
+  ]
+}

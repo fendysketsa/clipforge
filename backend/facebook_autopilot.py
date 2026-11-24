@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from facebook_education import SERIES
+import facebook_stories as stories
 import hashlib
 import re
 
@@ -21,7 +22,7 @@ def config(saved=None):
     if not isinstance(saved,dict) or type(saved.get('enabled',True)) is not bool:
         raise ValueError('Pengaturan otomasi Facebook tidak valid; publikasi ditahan.')
     series=saved.get('series','digital')
-    if not isinstance(series,str) or series not in SERIES:
+    if not isinstance(series,str) or series not in set(SERIES)|{stories.SERIES_KEY}:
         raise ValueError('Seri otomasi Facebook tidak valid; publikasi ditahan.')
     return {**DEFAULTS, 'enabled':saved.get('enabled',True), 'series':series, 'version':VERSION}
 
@@ -97,7 +98,7 @@ def slots(current=None, settings=None, *, bonus_priority=False):
     return sorted(rows,key=lambda row:row['due_at'])
 
 
-def eligible(current, settings, runs, uploads, monetization=None):
+def eligible(current, settings, runs, uploads, monetization=None, *, blocked_kinds=()):
     settings = config(settings)
     if not settings['enabled']:
         return None
@@ -109,10 +110,11 @@ def eligible(current, settings, runs, uploads, monetization=None):
             age = (current-datetime.fromisoformat(value)).total_seconds()
             if 0<=age<3*3600:
                 return None
-    if any(row.get('status') in ACTIVE for row in runs.values()):
+    if any(row.get('status') in ACTIVE-{'qc_wait'} for row in runs.values()):
         return None
+    held_kinds=set(blocked_kinds)|{row.get('kind','reel') for row in runs.values() if row.get('status')=='qc_wait'}
     for slot in slots(current,settings,bonus_priority=bonus_plan(monetization,uploads,current)['priority']):
-        if slot['due'] and slot['key'] not in runs:
+        if slot['due'] and slot['key'] not in runs and slot['kind'] not in held_kinds:
             return slot
     return None
 

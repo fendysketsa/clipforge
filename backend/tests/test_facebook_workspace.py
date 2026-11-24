@@ -262,6 +262,7 @@ def test_retry_never_reposts_an_ambiguous_submission(client):
     ({'attempts':1},True),({'attempts':2},True),({'attempts':3},False),
     ({'submission_started':True},False),({'upload_confirmed':True},False),
     ({'video_url':'https://www.facebook.com/reel/123/'},False),({'status':'running'},False),
+    ({'recovery_status':'skipped'},False),
 ])
 def test_upload_list_exposes_the_same_retry_policy_as_the_endpoint(client,change,allowed):
     row={'id':'u','job_id':'job','status':'failed','attempts':1,'submission_started':False,

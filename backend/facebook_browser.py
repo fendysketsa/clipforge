@@ -337,8 +337,8 @@ def verify_story(context,url: str,caption: str,profile_id: str) -> bool:
 def story_public_audience(page) -> bool:
     """Inspect the selected radio paired with Public; never change Story privacy."""
     settings=page.get_by_role('button',name=re.compile(r'^(Pengaturan privasi cerita|Story privacy settings)$',re.I))
-    settings.press('Enter',timeout=15000)
-    dialog=page.get_by_role('dialog').last
+    settings.click(timeout=15000)
+    dialog=page.get_by_role('dialog',name=re.compile(r'^(Privasi cerita|Story privacy)$',re.I))
     dialog.wait_for(state='visible',timeout=15000)
     public=dialog.get_by_text('Publik',exact=True).filter(visible=True)
     if not public.count():public=dialog.get_by_text('Public',exact=True).filter(visible=True)
@@ -356,10 +356,21 @@ def story_public_audience(page) -> bool:
           }
           return false;
         }''') is True
-    # Cancel leaves all account-wide choices untouched.
-    dialog.get_by_role('button',name=re.compile(r'^(Batal|Cancel)$',re.I)).press('Enter')
+    # Close the named privacy dialog. Cancel can open a second confirmation
+    # while the original dialog stays visible; no choice was changed here.
+    dialog.get_by_role('button',name=re.compile(r'^(Tutup|Close)$',re.I)).click(timeout=10000)
     dialog.wait_for(state='hidden',timeout=10000)
     return verified
+
+
+def probe_story_audience(profile_id):
+    with connection() as context:
+        if active_user(context)!=profile_id:return False
+        page=context.new_page()
+        try:
+            page.goto('https://www.facebook.com/stories/create/',wait_until='domcontentloaded',timeout=45000)
+            return story_public_audience(page) and active_user(context)==profile_id
+        finally:page.close()
 
 
 def upload_story(path: Path,caption: str,profile_id: str,checkpoint) -> dict:

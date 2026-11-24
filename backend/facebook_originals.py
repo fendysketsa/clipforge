@@ -26,6 +26,7 @@ import facebook_creative as creative
 import facebook_motion as motion
 import facebook_motlab as motlab
 import facebook_education as education
+import facebook_stories as stories
 from audio_mix import normalize_narration
 import long_video_qc as qc
 from llm import AIConfig,chat_completion,extract_json
@@ -59,8 +60,28 @@ def provider_config():
     return config
 
 
-def audit_fingerprint(media,context):
-    return qc.fingerprint(media,context,provider=provider_config())
+def recovery_providers():
+    """Only the two already configured models, on the same authorized endpoint."""
+    primary=provider_config()
+    shared=qc.provider_config()
+    providers=[primary]
+    if (shared.get('model') and shared['model']!=primary.get('model')
+            and shared.get('base_url')==primary.get('base_url')):
+        providers.append({**primary,'model':shared['model']})
+    return providers
+
+
+def review_with_recovery(evidence,frames):
+    providers=recovery_providers()
+    for index,config in enumerate(providers):
+        try:return qc.vision_review(evidence,frames,config=config),config
+        except HTTPError as error:
+            # Refusals, authorization failures and bad requests never switch models.
+            if error.code not in {429,502,503,504} or index+1==len(providers):raise
+
+
+def audit_fingerprint(media,context,*,provider=None):
+    return qc.fingerprint(media,context,provider=provider or provider_config())
 
 # These illustrate stable file operations in an explicitly authored simulator.
 # Version-dependent phone menus and unverified security/health claims are excluded.
@@ -109,14 +130,22 @@ TOPICS = (
 
 
 def topic_keys(series='digital'):
+    if series==stories.SERIES_KEY:
+        return [row['text'] for row in stories.DEFAULT_TOPICS]
     return [row[0] for row in TOPICS] if series=='digital' else education.topic_keys(series)
 
 
 def series_catalogue():
-    return education.catalogue([dict(key=key,title=title) for key,title,*_ in TOPICS])
+    rows=education.catalogue([dict(key=key,title=title) for key,title,*_ in TOPICS])
+    rows.append(dict(key=stories.SERIES_KEY,label='Topik bebas & cerita',
+        description='Ketik topik apa saja; gaya dulu vs sekarang, mitos vs fakta, atau tiga langkah dipilih otomatis.',
+        audience='Semua',topics=[]))
+    return rows
 
 
-def plan(seed: str, kind='reel', *, topic=None, series='digital') -> dict:
+def plan(seed: str, kind='reel', *, topic=None, series='digital', custom_topic=None, style=None) -> dict:
+    if series==stories.SERIES_KEY or custom_topic is not None:
+        return stories.plan(seed,kind,custom_topic if custom_topic is not None else topic,style=style)
     if series!='digital':return education.plan(seed,kind,topic,series)
     digest = hashlib.sha256(seed.encode()).hexdigest()
     selected=topic or creative.choose_topic(seed,[row[0] for row in TOPICS])
@@ -171,6 +200,8 @@ def author(source_plan,previous=()):
     Missing author access may use an unused reviewed baseline, never replay it.
     """
     previous=set(previous)
+    if source_plan.get('story'):
+        return stories.author(source_plan,previous,provider_config())
     if source_plan.get('education'):
         education.verify_plan(source_plan)
         result=json.loads(json.dumps(source_plan))
@@ -429,6 +460,8 @@ def legacy_frame(plan,t,cues):
 
 
 def frame(plan,t,cues):
+    if plan.get('story'):
+        return stories.frame(plan,t,cues)
     if plan.get('motion_version')==motion.VERSION:
         return motion.draw(plan,t,cues,state)
     return legacy_frame(plan,t,cues)
@@ -449,7 +482,12 @@ def render(plan,folder: Path,progress=lambda *args:None) -> Path:
             voice_name=plan['narration_voice'],rate='-5%')
     else:narration,segments,length=voice(plan['stages'],folder,progress)
     if plan.get('motion_version')==motion.VERSION:
-        plan['motion_timeline']=education.timeline(plan,segments) if plan.get('education') else motion.timeline(plan,segments)
+        if plan.get('story'):
+            plan['motion_timeline']=stories.timeline(plan,segments)
+        elif plan.get('education'):
+            plan['motion_timeline']=education.timeline(plan,segments)
+        else:
+            plan['motion_timeline']=motion.timeline(plan,segments)
     fps=motion.FPS if plan.get('motion_version')==motion.VERSION else FPS
     audio_design=None;sounds=None
     if (plan.get('creative_policy') or {}).get('version')==creative.VERSION:
@@ -515,7 +553,9 @@ def render(plan,folder: Path,progress=lambda *args:None) -> Path:
                            'frame_timestamps_seconds':[s['start']+.5 for s in plan['stages']]},
         render_source_sha256=qc.sha256(folder/'source-plan.json'),media_sha256=qc.sha256(media),
         output_duration_seconds=float(probe['format']['duration']),
-        source_provenance={'kind':'authored_educational_animation' if plan.get('education') else 'authored_original_simulation','original_script_and_visuals':True,
+        source_provenance={'kind':'authored_topic_story' if plan.get('story') else
+                                   'authored_educational_animation' if plan.get('education') else
+                                   'authored_original_simulation','original_script_and_visuals':True,
                            'third_party_video':False,'music':False,'neural_narration':True,
                            'original_sound_effects':audio_design is not None},
         growth_readiness={'measured_retention':None,'predicted_score':None,'not_a_monetization_approval':True})
@@ -526,11 +566,19 @@ def render(plan,folder: Path,progress=lambda *args:None) -> Path:
             *[cue['start']+.1 for cue in audio_design['events']]})
     if plan.get('motion_version')==motion.VERSION:
         clock=plan['motion_timeline']
-        scene=lambda t:education.scene(plan,t) if plan.get('education') else motion.scene(plan,t,state)
-        sidecar['educational_motion']=dict(version=motion.VERSION,fps=fps,clock=clock,
-            component='character_led_education' if plan.get('education') else 'persistent_objects_2d',labels_upright=True,
-            initial=scene(plan['stages'][1]['start']+.5),
-            result=scene(min(length-.5,plan['stages'][3]['start']+.4)))
+        if plan.get('story'):
+            scene=lambda t:stories.scene(plan,t)
+            sidecar['story_motion']=dict(version=stories.VERSION,fps=fps,clock=clock,
+                component='topic_story_cards',labels_upright=True,
+                style=plan['story']['style'],layout=plan['story']['layout'],
+                initial=scene(plan['stages'][1]['start']+.5),
+                result=scene(min(length-.5,plan['stages'][3]['start']+.4)))
+        else:
+            scene=lambda t:education.scene(plan,t) if plan.get('education') else motion.scene(plan,t,state)
+            sidecar['educational_motion']=dict(version=motion.VERSION,fps=fps,clock=clock,
+                component='character_led_education' if plan.get('education') else 'persistent_objects_2d',labels_upright=True,
+                initial=scene(plan['stages'][1]['start']+.5),
+                result=scene(min(length-.5,plan['stages'][3]['start']+.4)))
         sidecar['render_quality_qc']['frame_timestamps_seconds']=sorted({
             *sidecar['render_quality_qc']['frame_timestamps_seconds'],.5,1.1,clock['select'],
             *[clock['departure']+(clock['arrival']-clock['departure'])*q for q in (.11,.22,.5,.78,.9)],
@@ -587,14 +635,26 @@ def audit(media: Path,job_id: str,clip_url: str,*,reviewer=None,repair_attempted
         if strategy.media_issues(probe):raise ValueError('Format atau durasi FB tidak valid.')
         subprocess.run(['ffmpeg','-v','error','-xerror','-threads','1','-i',str(media),'-f','null','-'],capture_output=True,check=True,timeout=180)
         gates['media_integrity']=True
-        if plan.get('education'):education.verify_plan(plan)
-        gates['meaning_preserved']=plan['topic'] in topic_keys(plan.get('series','digital'))
+        if plan.get('story'):
+            stories.verify_plan(plan)
+            gates['meaning_preserved']=True
+        elif plan.get('education'):
+            education.verify_plan(plan)
+            gates['meaning_preserved']=plan['topic'] in topic_keys(plan.get('series','digital'))
+        else:
+            gates['meaning_preserved']=plan['topic'] in topic_keys(plan.get('series','digital'))
         gates['context_safe']=True
         if not all(gates.values()):raise ValueError('Gerbang bukti sumber gagal.')
         if plan.get('motion_version')==motion.VERSION:
-            stamp=sidecar.get('educational_motion') or {}
-            if stamp.get('version')!=motion.VERSION or stamp.get('clock')!=plan.get('motion_timeline'):
-                raise ValueError('Bukti timeline animasi objek belum cocok dengan sumber.')
+            if plan.get('story'):
+                stamp=sidecar.get('story_motion') or {}
+                if (stamp.get('version')!=stories.VERSION or stamp.get('clock')!=plan.get('motion_timeline')
+                        or stamp.get('layout')!=plan['story']['layout']):
+                    raise ValueError('Bukti timeline cerita topik belum cocok dengan sumber.')
+            else:
+                stamp=sidecar.get('educational_motion') or {}
+                if stamp.get('version')!=motion.VERSION or stamp.get('clock')!=plan.get('motion_timeline'):
+                    raise ValueError('Bukti timeline animasi objek belum cocok dengan sumber.')
         length=float(probe['format']['duration'])
         design=sidecar.get('sound_design')
         if (plan.get('creative_policy') or {}).get('version')==creative.VERSION:
@@ -627,18 +687,22 @@ def audit(media: Path,job_id: str,clip_url: str,*,reviewer=None,repair_attempted
             media={'duration_seconds':length},output_subtitles=subtitles,audio_samples=samples,
             sound_design=design,
             education=plan.get('education'),
-            originality_scope='Original educational cartoon, vector characters and synthetic narration.' if plan.get('education') else
+            story=plan.get('story'),
+            originality_scope='Original topic story cards, vector icons and synthetic narration.' if plan.get('story') else
+                'Original educational cartoon, vector characters and synthetic narration.' if plan.get('education') else
                 'Original script and animated demonstration; labelled simulation with synthetic narration.')
         phase='provider'
         config=provider_config()
         if config['audio_review_mode']=='local_whisper' and reviewer is None:
             evidence['local_audio_review']=local_audio_review_cached(media,samples,subtitles)
             evidence['audio_samples']=[]
-        result=reviewer(evidence,frames) if reviewer else qc.vision_review(evidence,frames,config=config)
+        if reviewer:result=reviewer(evidence,frames)
+        else:result,config=review_with_recovery(evidence,frames)
         decision=qc.validate_ai_result(result,context,gates,['Full media decode and generated source identity verified.'])
         if decision['decision']=='PASS_UPLOAD' and decision['confidence']<AUTO_CONFIDENCE_MIN:
             return dict(status='pending',message='Keyakinan QC belum mencapai ambang FB Pro 0.90.',audit=None)
-        return dict(status='reviewed',fingerprint=audit_fingerprint(media,context),media_sha256=qc.sha256(media),
+        return dict(status='reviewed',fingerprint=audit_fingerprint(media,context,provider=config),
+                    provider_model=config['model'],media_sha256=qc.sha256(media),
                     frame_timestamps_seconds=sorted(timestamps),audit=decision)
     except HTTPError as exc:
         detail=exc.read(1500).decode('utf-8',errors='replace')
@@ -648,7 +712,8 @@ def audit(media: Path,job_id: str,clip_url: str,*,reviewer=None,repair_attempted
             metadata=(error.get('metadata') or {}) if isinstance(error,dict) else {}
             if metadata.get('raw'):summary+=' '+str(metadata['raw'])[:600]
         except (ValueError,TypeError,AttributeError):summary=detail
-        diagnostics=dict(provider_http_status=exc.code,
+        from facebook_recovery import retry_after_seconds
+        diagnostics=dict(provider_http_status=exc.code,retry_after_seconds=retry_after_seconds(exc.headers),
                          provider_error=qc.safe_error_detail(RuntimeError(summary)))
         if exc.code==422 and 'content safety screening' in detail.casefold():
             gates['context_safe']=False
@@ -675,11 +740,14 @@ def automatic_pass(media: Path,job_id: str,clip_url: str) -> bool:
     try:
         saved=json.loads(path.read_text())
         audit=saved.get('audit') or {}
+        model=saved.get('provider_model')
+        provider=next((p for p in recovery_providers() if p['model']==model),None) if model else provider_config()
+        if provider is None:return False
         context=dict(source_job_id=job_id,source_clip_url=clip_url,repair_attempted=audit.get('repair_attempted') is True,score_floor_met=True)
         sidecar=json.loads(media.with_suffix('.json').read_text())
         if (sidecar.get('original_demo') or {}).get('render_engine')==motlab.ENGINE:
             motlab.verify_evidence(media.parent,sidecar.get('renderer'))
-        return bool(saved.get('fingerprint')==audit_fingerprint(media,context)
+        return bool(saved.get('fingerprint')==audit_fingerprint(media,context,provider=provider)
             and saved.get('media_sha256')==qc.sha256(media) and audit.get('source_job_id')==job_id
             and sidecar.get('render_source_sha256')==qc.sha256(media.parent/'source-plan.json')
             and audit.get('source_clip_url')==clip_url and audit.get('decision')=='PASS_UPLOAD'

@@ -31,7 +31,7 @@ def test_shared_gap_uses_durable_finish_and_longer_failure_delay(monkeypatch):
 
 def test_two_platform_workers_never_run_browser_uploads_concurrently(monkeypatch):
     api.youtube_uploads['yt']=row('yt',status='queued')
-    api.tiktok_uploads['tt']=NS(id='tt',status='queued',logs=[])
+    api.tiktok_uploads['tt']=NS(id='tt',status='queued',logs=[],attention_archived_at=None)
     entered=threading.Event();release=threading.Event();second=threading.Event()
     monkeypatch.setattr(api,'social_upload_cooldown_remaining',lambda:0)
     def first(_):

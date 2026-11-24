@@ -25459,6 +25459,8 @@ def cron_life_story_status() -> dict[str, Any]:
         daily_attempt_limit=max(0, min(2, env_int('AUTO_VIRAL_CRON_LIFE_STORY_DAILY_LIMIT', 2))),
         attempts_today=sum(r.get('day') == cron_life_story.today() for r in state['episodes'].values()),
         quota_lane='scheduled_short', manual_requests_modified=False,
+        automatic_fallback='standard_cron' if enabled and len(proof.split())<3 else None,
+        fallback_active=bool(enabled and len(proof.split())<3 and auto_viral_schedule_enabled()),
         restart_duplicate_guard=True, upload_quality_gates_preserved=True)
 
 

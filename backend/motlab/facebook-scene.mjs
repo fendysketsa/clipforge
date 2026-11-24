@@ -4,6 +4,7 @@ const canvas = document.querySelector('#c');
 const ctx = canvas.getContext('2d');
 const data = await (await fetch('./film.json')).json();
 const educationRenderer = data.education ? (await import('./education-scene.mjs')).createEducationRenderer(ctx,data) : null;
+const storyRenderer = data.story ? (await import('./story-scene.mjs')).createStoryRenderer(ctx,data) : null;
 const INK='#173B45', MUTED='#54767B', TEAL='#168F85', GOLD='#F8C262', CORAL='#E9947D';
 window.TOTAL=data.durationSeconds;
 window.ready=document.fonts.ready;
@@ -98,6 +99,7 @@ window.renderAt=async(t)=>{
   await window.ready;
   const index=Math.min(data.frames.length-1,Math.max(0,Math.round(t*data.fps)));
   if(educationRenderer){educationRenderer(t,index);return;}
+  if(storyRenderer){storyRenderer(t,index);return;}
   const model=data.frames[index];
   ctx.globalAlpha=1;background();
   text('RYUUNDY  /  DIGITAL SEHARI-HARI',85,95,820,23,TEAL,true,1);

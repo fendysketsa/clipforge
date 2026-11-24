@@ -1,0 +1,39 @@
+{
+  "started_at": "2026-11-24T06:24:35.569923+00:00",
+  "scope": "expired undispatched Facebook Stories only",
+  "items": [
+    {
+      "upload_id": "0ac30bc5d7b243c3ab2f81f23b51d775",
+      "job_id": "ea38928df7084765bc722090684cb994",
+      "sha256": "0dfffab49526dbc91925afc4505fc05a5b16a6df518821d89aafbb1431e33f60",
+      "status": "deleted_verified",
+      "bytes_before": 12078516,
+      "remote_submission": false,
+      "freed_bytes": 12078516,
+      "ledger_preserved": true,
+      "api_result": {
+        "job": null,
+        "removed_job": true,
+        "removed_clips": 1
+      }
+    },
+    {
+      "upload_id": "598034c5e9704041bc65c2af52c5249a",
+      "job_id": "44a35eb5552a46528c3b8a78d259e89d",
+      "sha256": "a7fd021a012689afa25957976ea057cdf388887462b16d2e0cfd0b99a2ac3006",
+      "status": "deleted_verified",
+      "bytes_before": 12898188,
+      "remote_submission": false,
+      "freed_bytes": 12898188,
+      "ledger_preserved": true,
+      "api_result": {
+        "job": null,
+        "removed_job": true,
+        "removed_clips": 1
+      }
+    }
+  ],
+  "remaining_terminal_cards": [],
+  "freed_bytes": 24976704,
+  "finished_at": "2026-11-24T06:24:36.043407+00:00"
+}

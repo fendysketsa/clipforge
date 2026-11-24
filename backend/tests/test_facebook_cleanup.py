@@ -1,4 +1,5 @@
 from contextlib import nullcontext
+from datetime import datetime,timedelta,timezone
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -169,3 +170,78 @@ def test_story_requires_exact_stored_owner_and_created_remote_identity(uploaded)
     assert cleanup.cleanup_once(api,store)['removed_files']==0 and media.exists()
     row['remote_story_url']=row['video_url']
     assert cleanup.cleanup_once(api,store)['cleaned_uploads']==1
+
+
+@pytest.fixture
+def skipped(uploaded):
+    store,row,job,media=uploaded
+    row.update(kind='story',status='failed',submission_started=False,upload_confirmed=False,video_url=None,
+        recovery_status='skipped',recovery_action='skip_expired_story',recovery_version=1,
+        created_at=(datetime.now(timezone.utc)-timedelta(days=3)).isoformat(),recovery_at=api.now_iso())
+    store.save()
+    return store,row,job,media
+
+
+def test_terminal_story_deletes_files_and_card_without_fabricating_publication(skipped):
+    store,row,job,media=skipped
+    before=dict(row);expected=sum(p.stat().st_size for p in media.parent.iterdir())
+    result=cleanup.cleanup_once(api,store)
+    assert result['cleaned_uploads']==1 and result['freed_bytes']==expected
+    assert not media.parent.exists() and job.id not in api.jobs
+    assert all(row[key]==value for key,value in before.items())
+    assert row['local_cleanup']['disposition']=='discarded'
+    assert row['local_cleanup']['reason']=='skip_expired_story'
+    assert row['status']=='failed' and row['upload_confirmed'] is False
+    assert json.loads(api.JOBS_PATH.read_text())==[]
+    assert TestClient(api.app).get('/api/facebook/jobs').json()==[]
+    assert cleanup.cleanup_once(api,store)['removed_files']==0
+
+
+@pytest.mark.parametrize('changes',[
+    {'submission_started':True},{'submission_started':None},{'submission_accepted':True},
+    {'upload_confirmed':True},{'remote_story_url':'https://www.facebook.com/stories/1234/5678/'},
+    {'video_url':'https://www.facebook.com/stories/1234/5678/'},{'candidate_video_urls':['possible-post']},
+    {'status':'needs_review'},{'status':'running'},{'kind':'reel'},{'recovery_status':None},
+    {'recovery_action':'unknown'},{'recovery_version':None},{'created_at':'broken'},
+    {'recovery_at':'broken'},{'created_at':datetime.now(timezone.utc).isoformat()},
+    {'recovery_at':'2099-01-01T00:00:00+00:00'},{'profile_id':''},{'sha256':'unknown'},
+])
+def test_terminal_label_never_overrides_missing_or_remote_evidence(skipped,changes):
+    store,row,job,media=skipped;row.update(changes)
+    assert cleanup.cleanup_once(api,store)['removed_files']==0
+    assert media.is_file() and api.jobs[job.id] is job
+
+
+@pytest.mark.parametrize('guard',['held','active','repair','qc','shared','foreign','changed'])
+def test_terminal_disposal_preserves_active_held_and_shared_dependencies(skipped,guard):
+    store,row,job,media=skipped
+    if guard=='held':job.request.publication_review_required=True
+    if guard=='active':api.job_processes[job.id]=object()
+    if guard=='repair':api.jobs['repair']=job.model_copy(update=dict(id='repair',status='running',clips=[],repair_source_job_id=job.id))
+    if guard=='qc':api.long_qc_active.add(job.id+'\n'+row['clip_url'])
+    if guard=='shared':api.jobs['shared']=job.model_copy(update=dict(id='shared'))
+    if guard=='foreign':api.youtube_uploads['keep']=SimpleNamespace(clip_url=row['clip_url'])
+    if guard=='changed':media.write_bytes(b'changed after failure')
+    assert cleanup.cleanup_once(api,store)['removed_files']==0
+    assert media.exists() and job.id in api.jobs
+
+
+def test_terminal_job_save_failure_preserves_memory_and_resumes_checkpoint(skipped,monkeypatch):
+    store,row,job,media=skipped
+    save=api.save_jobs_unlocked
+    def unavailable():raise OSError('disk temporarily unavailable')
+    monkeypatch.setattr(api,'save_jobs_unlocked',unavailable)
+    assert cleanup.cleanup_once(api,store)['errors']
+    assert api.jobs[job.id] is job and row['local_cleanup']['state']=='error'
+    assert not media.exists() and row['submission_started'] is False
+    monkeypatch.setattr(api,'save_jobs_unlocked',save)
+    assert cleanup.cleanup_once(api,store)['cleaned_uploads']==1
+    assert job.id not in api.jobs and row['local_cleanup']['state']=='deleted'
+
+
+def test_terminal_orphan_without_media_gets_receipt_without_deleting_another_job(skipped):
+    store,row,job,media=skipped
+    media.unlink();api.jobs.pop(job.id)
+    cleanup.cleanup_once(api,store)
+    assert row['local_cleanup']['state']=='missing' and row['local_cleanup']['disposition']=='discarded'
+    assert not row['upload_confirmed'] and row['video_url'] is None

@@ -10,6 +10,7 @@ export type FacebookConfig = {
   version: number; target_email: string; target_seconds: number; max_seconds: number;
   shared_browser: boolean; session: FacebookSession; login_note: string;
   niches: {key: string; label: string; brief: string; queries: string[]}[];
+  story_styles?: FacebookStoryStyle[]; topic_bank?: FacebookTopicBankRow[];
 };
 export type FacebookProduction = {job: ClipJob; results: {clip_url: string; caption: string}[]};
 export type FacebookUpload = {
@@ -19,6 +20,7 @@ export type FacebookUpload = {
   message: string; upload_confirmed: boolean; video_url?: string | null;
   submission_started: boolean; caption: string;
   can_retry?: boolean; retry_block_reason?: string | null;
+  recovery_status?: 'skipped'; recovery_action?: string; recovery_at?: string;
   title?: string; created_at?: string;
   local_cleanup?: {state: 'deleting' | 'deleted' | 'missing' | 'error'; freed_bytes: number;
     removed_files: number; completed_at?: string; error?: string};
@@ -33,10 +35,14 @@ export type FacebookActivity = {
 export type FacebookAutoRun = {
   key: string; kind: 'reel' | 'story'; title: string; status: string; job_id: string;
   progress_percent: number; message?: string; created_at: string; video_url?: string | null;
+  custom_topic?: string | null; style?: string | null;
 };
+export type FacebookStoryStyle = {key: string; label: string; description: string};
+export type FacebookTopicBankRow = {text: string; style: string};
 export type FacebookAutopilot = {
   version: number; config: {enabled: boolean; weekly_posts: number; weekly_stories: number; timezone: string; series?:string};
   series_catalog?: {key:string; label:string; description:string; audience:string; topics:{key:string;title:string}[]}[];
+  topic_bank?: FacebookTopicBankRow[]; story_styles?: FacebookStoryStyle[];
   week_start: string; week_end: string; runtime_state: string; scheduler_running: boolean;
   confirmed_posts: number; confirmed_stories: number; produced: number; active: FacebookAutoRun | null;
   next_slot: {due_at: string; kind: string} | null; runs: FacebookAutoRun[];
