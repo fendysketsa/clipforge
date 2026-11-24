@@ -1,10 +1,10 @@
 {
   "command": "backend/.venv/bin/python -m pytest tests -q",
   "result": "passed",
-  "passed": 3419,
+  "passed": 3431,
   "failed": 0,
   "warnings": 37,
-  "duration_seconds": 546.51,
+  "duration_seconds": 543.23,
   "focused": {
     "digital_director": 13,
     "moral_stories": 14,
