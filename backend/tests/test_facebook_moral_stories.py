@@ -39,6 +39,23 @@ def test_each_moral_topic_plans_and_verifies(topic):
     assert authored['third_party_footage'] is False and authored['third_party_music'] is False
 
 
+def test_every_story_style_renders_a_character_scene():
+    topics = [row['text'] for row in stories.DEFAULT_TOPICS]
+    for topic in topics:
+        plan = stories.plan('all-scenes:' + topic[:8], 'reel', topic)
+        assert plan['story']['scene'] not in ('cards', 'steps')
+        assert {'then_now', 'myth_fact', 'wrong_right', 'problem_solution',
+                'three_steps', 'choice_ab'} >= {plan['story']['scene']} or \
+               stories.infer_scene(topic) == plan['story']['scene']
+        for i, stage in enumerate(plan['stages']):
+            stage['start'], stage['end'] = i * 8.0, (i + 1) * 8.0
+        plan['motion_timeline'] = stories.timeline(plan)
+        frame = stories.scene(plan, 10)
+        assert frame['scene'] == plan['story']['scene']
+        assert len(frame['stage_starts']) == 3
+        stories.verify_plan(plan)
+
+
 def test_moral_prompt_guides_a_child_safe_single_lesson(monkeypatch):
     prompts = []
     monkeypatch.setattr(stories, 'chat_completion', lambda *args, **kwargs: prompts.append(args) or '{}')

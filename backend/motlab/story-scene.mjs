@@ -20,7 +20,10 @@ export function createStoryRenderer(ctx, data) {
     ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();
     if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=line;ctx.stroke();}
   }
-  function ellipse(x,y,rx,ry,color){ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();}
+  function ellipse(x,y,rx,ry,color,stroke=null,line=2){
+    ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();
+    if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=line;ctx.stroke();}
+  }
   function path(points,color,width=6){
     ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));
     ctx.strokeStyle=color;ctx.lineWidth=width;ctx.lineCap='round';ctx.lineJoin='round';ctx.stroke();
@@ -135,28 +138,68 @@ export function createStoryRenderer(ctx, data) {
     path([[-28,-62],[28,-62]],'#8fd4e8',5);
     ctx.restore();
   }
+  function bubble(x,y,mark,color){
+    ellipse(x,y,42,42,'#fff',color,4);
+    polygon([[x-14,y+30],[x+14,y+30],[x,y+54]],'#fff');
+    if(mark==='?')text('?',x-11,y-25,40,44,color,true,1);
+    else path([[x-16,y],[x-4,y+13],[x+18,y-15]],color,6);
+  }
+  function object(x,y,kind,color){
+    if(kind==='book'){rect(x-40,y-30,80,60,8,color);path([[x,y-30],[x,y+30]],'#fff',4);}
+    else if(kind==='box'){rect(x-45,y-35,90,70,8,color);rect(x-45,y-35,90,16,5,'#fff');}
+    else if(kind==='phone'){rect(x-25,y-48,50,96,10,color);rect(x-18,y-36,36,66,6,'#eaf5f0');}
+    else ellipse(x,y,40,40,color);
+  }
   function personScene(model,t,pal){
-    const stage=model.stage_starts||[0,4,8];
-    const inCough=model.phase>=2&&model.phase<3&&t>stage[1]+(stage[2]-stage[1])*.45;
-    const mainMood=model.phase===0?'curious':model.phase===1?'hold':inCough?'cough':model.phase===3?'calm':'drink';
+    const stage=model.stage_starts||[0,4,8], phase=model.phase, scene=model.scene;
+    const inCough=scene==='drink_choking'&&phase>=2&&phase<3&&t>stage[1]+(stage[2]-stage[1])*.45;
     ctx.fillStyle='#f8f3e6';ctx.fillRect(0,0,1080,1920);
     ellipse(160,620,330,280,pal.soft);ellipse(1000,760,340,320,pal.warm);
     rect(110,930,860,26,12,'#c9b79a');rect(120,956,22,360,8,'#b5a184');rect(940,956,22,360,8,'#b5a184');
-    person(360,1180,t,mainMood,SHIRT_A,1.15);
-    const glassY=mainMood==='drink'?1090:mainMood==='hold'?1040:960;
-    if(inCough)glass(600,1015,0);
-    else if(model.phase<3)glass(mainMood==='drink'?408:360,glassY,mainMood==='drink'?-.55:0);
-    if(model.phase>=2||model.complete){
-      person(780,1180,t,model.phase===3?'help':'curious',SHIRT_B,1.05);
-      if(model.phase===3){ellipse(560,1030,26,26,pal.accent);path([[548,1030],[558,1042],[576,1014]],'#fff',6);}
+    if(scene==='drink_choking'){
+      const mood=phase===0?'curious':phase===1?'hold':inCough?'cough':phase===3?'calm':'drink';
+      person(360,1180,t,mood,SHIRT_A,1.15);
+      const glassY=mood==='drink'?1090:mood==='hold'?1040:960;
+      if(inCough)glass(600,1015,0);
+      else if(phase<3)glass(mood==='drink'?408:360,glassY,mood==='drink'?-.55:0);
+      if(phase>=2||model.complete){
+        person(780,1180,t,phase===3?'help':'curious',SHIRT_B,1.05);
+        if(phase===3)bubble(560,1010,'check',pal.accent);
+      }
+    }else if(scene==='then_now'||scene==='choice_ab'){
+      person(320,1180,t,phase<2?'curious':'calm',SHIRT_A,1.08);
+      person(800,1180,t,phase<2?'hold':'help',SHIRT_B,1.08);
+      object(320,1010,scene==='then_now'?'book':'phone',pal.accent);
+      object(800,1010,phase<2?'phone':'book',pal.warm);
+      if(phase>=2)bubble(560,820,'check',pal.accent);
+    }else if(scene==='myth_fact'||scene==='wrong_right'){
+      person(340,1180,t,phase<2?'curious':phase===2?'hold':'calm',SHIRT_A,1.1);
+      person(780,1180,t,phase<2?'hold':phase===2?'cough':'help',SHIRT_B,1.1);
+      bubble(340,880,phase<2?'?':'check',phase<2?'#d08a65':pal.accent);
+      object(780,1010,'box',pal.warm);
+    }else if(scene==='problem_solution'||scene==='three_steps'){
+      const spots=[260,540,820],moods=['curious','hold',model.complete?'calm':'help'];
+      spots.forEach((x,i)=>{
+        person(x,1180,t,moods[i],i===1?SHIRT_B:SHIRT_A,.82);
+        ellipse(x,880,30,30,pal.accent);
+        text(String(i+1),x-7,860,30,34,'#fff',true,1);
+      });
+      object(540,1010,'box',pal.warm);
+    }else{
+      person(360,1180,t,phase===0?'curious':phase===3?'calm':'help',SHIRT_A,1.12);
+      person(790,1180,t,phase<2?'hold':'help',SHIRT_B,1.05);
+      object(360,1010,'book',pal.accent);
+      if(phase>=2)bubble(600,830,'check',pal.accent);
     }
-    const scene=model.scene;
     const notes={drink_choking:'Minum pelan-pelan, sisipkan jeda.',sharing:'Berbagi membuat semua dapat kesempatan.',
       apology:'Mengakui kesalahan membuka jalan perbaikan.',helping:'Menolong dimulai dari satu tangan.',
       queueing:'Antre memberi giliran untuk semua.',tidying:'Merapikan membuat ruang nyaman.',
       listening:'Mendengarkan membuat jawaban lebih jelas.',gratitude:'Terima kasih membuat usaha terlihat.',
       greeting:'Sapa sederhana membuat orang merasa dikenal.',honesty:'Kejujuran menjaga kepercayaan.',
-      homework:'Satu langkah kecil menyelesaikan tugas.',everyday:'Satu kebiasaan baik cukup untuk hari ini.'};
+      homework:'Satu langkah kecil menyelesaikan tugas.',then_now:'Konteks berubah, tujuan tetap jelas.',
+      myth_fact:'Cerita yang diulang belum tentu fakta.',wrong_right:'Urutan yang tepat membuat hasil lebih aman.',
+      problem_solution:'Satu langkah kecil memulai perubahan.',three_steps:'Satu langkah demi langkah, tanpa terburu-buru.',
+      choice_ab:'Pilih sesuai kebutuhan, bukan tekanan.',everyday:'Satu kebiasaan baik cukup untuk hari ini.'};
     text(notes[scene]||notes.everyday,150,640,780,36,pal.ink,true,2);
     if(model.complete)text('Cerita selesai. Tidak ada janji hasil untuk semua orang.',150,700,780,23,MUTED,false,1);
   }

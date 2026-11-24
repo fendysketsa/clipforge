@@ -118,12 +118,22 @@ SCENE_HINTS = (
 )
 
 
-def infer_scene(topic: str) -> str:
+STYLE_SCENES = {
+    'dulu_sekarang': 'then_now',
+    'mitos_fakta': 'myth_fact',
+    'salah_benar': 'wrong_right',
+    'masalah_solusi': 'problem_solution',
+    'tiga_langkah': 'three_steps',
+    'pilihan_a_b': 'choice_ab',
+}
+
+
+def infer_scene(topic: str, style: str = '') -> str:
     folded = topic.casefold()
     for words, scene in SCENE_HINTS:
         if any(re.search(r'\b' + re.escape(word.casefold()) + r'\b', folded) for word in words):
             return scene
-    return 'everyday'
+    return STYLE_SCENES.get(style, 'everyday')
 URL_OR_HANDLE = re.compile(r'(?:https?://|www\.|@\w+|#\w+)', re.I)
 
 # A rotating bank keeps scheduled production varied without an operator edit.
@@ -315,7 +325,7 @@ def plan(seed: str, kind: str = 'reel', topic=None, style=None) -> dict:
     story = dict(version=VERSION, style=style, layout=spec['layout'], topic_text=topic_text,
                  concept=spec['concept'], panels=panels, authored=False,
                  original_storyboard=True, claims='relatable_framing', cast='host',
-                 scene=infer_scene(topic_text) if style == 'moral_anak' else 'cards')
+                 scene=infer_scene(topic_text, style))
     result = dict(version=1, seed=seed, kind=kind, topic='story', series=SERIES_KEY,
                   custom_topic=topic_text, title=title,
                   stages=[dict(title=name, text=text) for name, text in

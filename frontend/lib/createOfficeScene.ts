@@ -341,7 +341,13 @@ export function createOfficeScene(host: HTMLElement,
     });
     const mug = cylinder(.31, .76, .13, .075, .17, "#f7e8d0", body); mug.visible = false;
     const book = box(.1, .98, .3, .34, .05, .25, "#d8c9a6", body); book.visible = false;
-    return { group, body, legs, arms, mug, book, point: { ...person.desk } as OfficePoint,
+    // A personal chair follows anyone who sits down, so nobody floats mid-air.
+    const seat = new THREE.Group(); scene.add(seat);
+    box(0, .62, 0, .78, .18, .74, "#4f655f", seat);
+    box(0, 1.06, .34, .8, .68, .14, "#4f655f", seat);
+    cylinder(0, .3, 0, .06, .6, "#485451", seat);
+    for (const dx of [-.28, .28]) for (const dz of [-.26, .26]) box(dx, .06, dz, .07, .1, .07, "#485451", seat);
+    return { group, body, legs, arms, mug, book, seat, point: { ...person.desk } as OfficePoint,
       path: [] as OfficePoint[], destination: "", pendingDestination: "", pendingSince: 0,
       speed: 0, rotation: person.desk.z > 0 ? 0 : Math.PI };
   });
@@ -419,6 +425,11 @@ export function createOfficeScene(host: HTMLElement,
       }
       const pose = { ...person.point, rotation: person.rotation, activity: person.path.length && state !== "unavailable" ? "walk" as const : target.activity };
       person.group.position.set(pose.x, pose.y ?? 0, pose.z); person.group.rotation.y = pose.rotation;
+      const seated = pose.activity === "desk" || pose.activity === "meeting"
+        || pose.activity === "coffee" || pose.activity === "reading";
+      person.seat.visible = seated;
+      person.seat.position.set(pose.x, pose.y ?? 0, pose.z);
+      person.seat.rotation.y = pose.rotation;
       const quiet = Math.sin(seconds * 1.4 + index) * .03;
       person.body.position.y = pose.activity === "walk" ? Math.abs(Math.sin(seconds * 8)) * .045
         : pose.activity === "meeting" ? -.16
