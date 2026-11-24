@@ -359,7 +359,14 @@ export function createOfficeScene(host: HTMLElement,
     box(0, 1.74, 1.28, 1.02, .6, .02, "#b6d3cc", station);
     box(0, 1.12, .86, .72, .03, .25, "#596e67", station);
     cylinder(.86, 1.16, .86, .1, .22, "#f6f0de", station);
-    return { group, body, legs, arms, mug, book, seat, station, point: { ...person.desk } as OfficePoint,
+    const prop = new THREE.Group(); scene.add(prop);
+    const notebook = box(.62, 1.12, 1.12, .62, .05, .46, "#d8c9a6", prop);
+    const phone = box(.52, 1.42, 1, .24, .46, .06, "#354c48", prop);
+    const copier = box(-1.1, 1.05, 1.15, 1.4, .95, 1, "#9aa9a2", prop);
+    const cup = cylinder(.55, 1.16, 1.02, .11, .24, "#f7e8d0", prop);
+    const cards = box(.62, 1.02, 1.16, .5, .04, .36, "#f6f0de", prop);
+    return { group, body, legs, arms, mug, book, seat, station, prop,
+      notebook, phone, copier, cup, cards, point: { ...person.desk } as OfficePoint,
       path: [] as OfficePoint[], destination: "", pendingDestination: "", pendingSince: 0,
       speed: 0, rotation: person.desk.z > 0 ? 0 : Math.PI };
   });
@@ -437,20 +444,28 @@ export function createOfficeScene(host: HTMLElement,
       }
       const pose = { ...person.point, rotation: person.rotation, activity: person.path.length && state !== "unavailable" ? "walk" as const : target.activity };
       person.group.position.set(pose.x, pose.y ?? 0, pose.z); person.group.rotation.y = pose.rotation;
-      const seated = pose.activity === "desk" || pose.activity === "meeting"
-        || pose.activity === "coffee" || pose.activity === "reading";
+      const seated = ["desk", "meeting", "reading", "game", "cards", "write", "snack"].includes(pose.activity);
       person.seat.visible = seated;
       person.seat.position.set(pose.x, pose.y ?? 0, pose.z);
       person.seat.rotation.y = pose.rotation;
-      const workstation = pose.activity === "desk" || pose.activity === "meeting"
-        || pose.activity === "reading";
+      const workstation = pose.activity === "meeting" || pose.activity === "reading";
       person.station.visible = workstation;
       person.station.position.set(pose.x, pose.y ?? 0, pose.z);
       person.station.rotation.y = pose.rotation;
+      const propKind = pose.activity;
+      person.prop.visible = ["write", "cards", "copy", "call", "snack"].includes(propKind);
+      person.prop.position.set(pose.x, pose.y ?? 0, pose.z);
+      person.prop.rotation.y = pose.rotation;
+      person.notebook.visible = propKind === "write" || propKind === "cards";
+      person.cards.visible = propKind === "cards";
+      person.phone.visible = propKind === "call";
+      person.copier.visible = propKind === "copy";
+      person.cup.visible = propKind === "snack";
       const quiet = Math.sin(seconds * 1.4 + index) * .03;
       person.body.position.y = pose.activity === "walk" ? Math.abs(Math.sin(seconds * 8)) * .045
-        : pose.activity === "meeting" ? -.16
-          : pose.activity === "desk" ? -.12 : pose.activity === "coffee" || pose.activity === "reading" ? quiet : 0;
+        : pose.activity === "sofa" ? -.3
+          : pose.activity === "meeting" ? -.16
+            : pose.activity === "desk" ? -.12 : pose.activity === "coffee" || pose.activity === "reading" ? quiet : 0;
       person.legs.forEach((leg, side) => leg.rotation.x = pose.activity === "walk"
         ? Math.sin(seconds * 8 + side * Math.PI) * .52
         : pose.activity === "meeting" || pose.activity === "desk" ? -.95 : 0);
@@ -463,7 +478,9 @@ export function createOfficeScene(host: HTMLElement,
           case "coffee": arm.rotation.x = side ? -.78 + Math.sin(seconds * 1.6) * .1 : -.18; break;
           case "reading": arm.rotation.x = -.72 + side * .04; break;
           case "toilet": arm.rotation.x = -.12; break;
-          case "lounge": arm.rotation.x = side ? -.42 + quiet * 2 : -.14; break;
+          case "lounge": case "sofa": arm.rotation.x = side ? -.42 + quiet * 2 : -.14; break;
+          case "write": case "cards": case "copy": case "call": case "snack":
+            arm.rotation.x = side ? -.72 + Math.sin(seconds * 2 + side) * .06 : -.4; break;
           default: arm.rotation.x = -.2;
         }
       });

@@ -19811,11 +19811,14 @@ def export_compilation(
     clips_dir.mkdir(parents=True, exist_ok=True)
     source_candidates = copy.deepcopy(candidates)
     guidance = retention_loop.load(retention_series)
-    candidates, narrative_roles, story_director = build_long_form_story_sequence(
-        candidates,
-        transcript,
-        teaser_target_seconds=guidance.get('teaser_seconds', 16.0),
-    )
+    teaser_seconds = float(guidance.get('teaser_seconds', 16.0))
+    # Keep the legacy two-argument call when there is no measured adjustment,
+    # so existing workers and their tests keep the same contract.
+    if teaser_seconds == 16.0:
+        candidates, narrative_roles, story_director = build_long_form_story_sequence(candidates, transcript)
+    else:
+        candidates, narrative_roles, story_director = build_long_form_story_sequence(
+            candidates, transcript, teaser_target_seconds=teaser_seconds)
     long_review = None
     compilation_review = None
     if cron_long_strategy_required:

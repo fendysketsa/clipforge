@@ -1,5 +1,6 @@
 export type OfficePoint = { x: number; z: number; y?: number };
-export type OfficeActivity = "desk" | "walk" | "meeting" | "coffee" | "lounge" | "game" | "toilet" | "stairs" | "reading";
+export type OfficeActivity = "desk" | "walk" | "meeting" | "coffee" | "lounge" | "game" | "toilet" | "stairs" | "reading"
+  | "sofa" | "cards" | "copy" | "write" | "call" | "snack";
 export const FLOOR_HEIGHT = 3.6;
 const STAIRS = { x: -12.3, z: -1.6 };
 const STAIRS_DOOR = -11.2;
@@ -18,27 +19,27 @@ export const OFFICE_PEOPLE = [
 // Waiting people are spread across real places instead of gathering in one spot.
 const BLOCKED_SPOTS: (OfficePoint & { activity: OfficeActivity })[] = [
   { x: -9.9, z: .9, activity: "meeting" },
-  { x: -6.1, z: 2.9, activity: "meeting" },
-  { x: -8.6, z: -5, y: FLOOR_HEIGHT, activity: "game" },
-  { x: -5.9, z: -5, y: FLOOR_HEIGHT, activity: "game" },
+  { x: -6.1, z: 2.9, activity: "write" },
+  { x: -10.6, z: -5, y: FLOOR_HEIGHT, activity: "copy" },
+  { x: -4.9, z: -6.3, y: FLOOR_HEIGHT, activity: "call" },
   { x: 6.6, z: -5.75, y: FLOOR_HEIGHT, activity: "toilet" },
-  { x: -5.9, z: -5, y: FLOOR_HEIGHT, activity: "game" },
+  { x: -10.6, z: .9, activity: "cards" },
 ];
 const IDLE_SPOTS: (OfficePoint & { activity: OfficeActivity })[] = [
-  { x: -2.4, z: 3.4, activity: "lounge" },
-  { x: 2.4, z: 3.4, activity: "coffee" },
+  { x: -1.5, z: 4.8, activity: "sofa" },
+  { x: 6.6, z: 4.1, activity: "snack" },
   { x: -8.4, z: 3.6, activity: "reading" },
-  { x: 8.4, z: 3.6, activity: "coffee" },
+  { x: 10.2, z: 4.1, activity: "coffee" },
   { x: -7.2, z: -5, y: FLOOR_HEIGHT, activity: "game" },
-  { x: 8.4, z: 3.6, activity: "coffee" },
+  { x: -3, z: 2.2, activity: "cards" },
 ];
 const QUEUE_SPOTS: (OfficePoint & { activity: OfficeActivity })[] = [
   { x: 6.6, z: 4.1, activity: "coffee" },
-  { x: 8.4, z: 3.6, activity: "coffee" },
-  { x: -5.9, z: -5, y: FLOOR_HEIGHT, activity: "game" },
-  { x: -8.6, z: -5, y: FLOOR_HEIGHT, activity: "game" },
+  { x: 3.5, z: 2.2, activity: "write" },
+  { x: -5.9, z: -4.2, y: FLOOR_HEIGHT, activity: "game" },
+  { x: -8.6, z: -4.2, y: FLOOR_HEIGHT, activity: "game" },
   { x: -1, z: -4.8, y: FLOOR_HEIGHT, activity: "reading" },
-  { x: 0, z: 4.4, activity: "lounge" },
+  { x: 2, z: 4.8, activity: "sofa" },
 ];
 
 export function officeDestination(index: number, state: string): OfficePoint & { activity: OfficeActivity } {
