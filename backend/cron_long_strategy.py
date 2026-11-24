@@ -11,6 +11,8 @@ import hashlib
 import json
 
 COMPILATION_FALLBACK_VERSION = 1
+STORY_REVIEW_VERSION = 2
+PROMISE_OPENING_SECONDS = 30.0
 
 LONG_EDITOR_BRIEF = (
     "Konsep khusus Long: satu pertanyaan atau perjalanan tokoh dengan konteks, perkembangan, "
@@ -22,6 +24,8 @@ LONG_EDITOR_BRIEF = (
     "Short demi lima menit. Judul dan thumbnail harus cocok dengan isi pembuka dan jawaban. "
     "Untuk game/fiksi ikuti tujuan, pilihan, akibat dan penyelesaian tokoh; untuk pengetahuan ikuti "
     "pertanyaan, penjelasan, contoh/bukti dan simpulan. Caption stabil, visual mengikuti kejadian. "
+    "Setiap tahap baru harus menyumbang informasi atau akibat yang belum disebut sebelumnya; "
+    "why_continue menyebut nilai barunya secara spesifik, bukan mengulang ringkasan tahap sebelumnya. "
     "Misteri boleh berakhir dengan batas pengetahuan yang jelas; jangan mengarang penyelesaian. "
     "Legenda diberi atribusi sebagai cerita rakyat. Politik membedakan fakta, opini dan tuduhan "
     "serta memerlukan review manusia. Review makanan membedakan pengalaman rasa dengan fakta "
@@ -78,7 +82,8 @@ def review_prompt(material: list[dict], editorial_brief: str = "") -> str:
         "apa yang diketahui dan belum diketahui boleh tuntas tanpa memalsukan solusi misteri/kasus. Nilai keseluruhan "
         "Long, bukan skor FYP tiap potongan. Buat empat bukti berbeda: promise pada part pertama, "
         "context di awal, development di tengah, payoff di part terakhir. Kutipan harus persis "
-        "minimal empat kata dari teks part terkait. why_continue menjelaskan nilai baru tiap tahap. "
+        "minimal empat kata dari teks part terkait. why_continue menjelaskan nilai baru tiap tahap, "
+        "harus berbeda satu sama lain, dan janji (promise) harus berada dalam 30 detik pertama output. "
         "Jika bukti tidak cukup, set pemeriksaan terkait false. "
         'Jawab JSON: {"viewer_need":"...", "title_promise":"...", "checks":{'
         '"coherent_topic":true,"progression":true,"resolved_ending":true,'
@@ -123,6 +128,7 @@ def validate_review(review, material: list[dict], short_ranges=()) -> dict:
     beats = review.get("beats")
     beats = beats if isinstance(beats, list) else []
     roles = {}
+    continuations: set[str] = set()
     for beat in beats:
         if not isinstance(beat, dict):
             reasons.append("invalid_beat")
@@ -139,10 +145,24 @@ def validate_review(review, material: list[dict], short_ranges=()) -> dict:
             reasons.append("ungrounded_or_duplicate_beat")
             continue
         roles[role] = part
+        value = normalized(beat.get("why_continue", ""))
+        if value in continuations:
+            reasons.append("repeated_why_continue")
+        continuations.add(value)
     order = [roles.get(role, 0) for role in ("promise", "context", "development", "payoff")]
     if not (order[0] == 1 and 1 < order[1] < order[2] < order[3] == len(material)):
         reasons.append("missing_ordered_story_arc")
-    return dict(version=1, passed=not reasons, reasons=list(dict.fromkeys(reasons)),
+    if material and "promise" in roles:
+        first = material[0]
+        words = normalized(first.get("text", "")).split()
+        quote = normalized((next((b for b in beats if isinstance(b, dict)
+                                  and b.get("role") == "promise"), {})).get("quote", "")).split()
+        if words and quote:
+            position = max(0, " ".join(words).find(" ".join(quote[:2]))) / max(1, len(" ".join(words)))
+            part_duration = max(0.0, first["end"] - first["start"])
+            if position * part_duration > PROMISE_OPENING_SECONDS:
+                reasons.append("promise_not_in_opening")
+    return dict(version=STORY_REVIEW_VERSION, passed=not reasons, reasons=list(dict.fromkeys(reasons)),
                 review=review, output_seconds=round(duration, 3),
                 new_material_fraction=round(added_fraction, 4),
                 basis="ai_editorial_review_with_exact_transcript_quotes",

@@ -47,9 +47,13 @@ def story():
                   checks={k: True for k in ("coherent_topic", "progression", "resolved_ending",
                       "adds_value_beyond_short", "no_filler", "promise_matches_content")},
                   beats=[dict(role=role, part=i + 1, quote=text,
-                              why_continue="Tahap ini memberi informasi baru kepada penonton")
-                         for i, (role, text) in enumerate(zip(
-                             ("promise", "context", "development", "payoff"), texts))])
+                              why_continue=value)
+                         for i, (role, text, value) in enumerate(zip(
+                             ("promise", "context", "development", "payoff"), texts,
+                             ("Menjanjikan pertanyaan yang menggerakkan penonton",
+                              "Menjelaskan siapa yang datang dan mengapa",
+                              "Menunjukkan sumber suara yang belum diketahui",
+                              "Menutup dengan perbaikan yang terbukti")))])
     return review, material
 
 
@@ -75,6 +79,19 @@ def test_unknown_or_weak_story_cannot_render(story, change):
     if change == "mostly_short": anchors = [(0, 200)]
     if change == "bad_json": review = [review]
     assert not strategy.validate_review(review, material, anchors)["passed"]
+
+
+def test_repeated_continuation_and_late_promise_are_rejected(story):
+    review, material = deepcopy(story)
+    review["beats"][2]["why_continue"] = review["beats"][1]["why_continue"]
+    assert "repeated_why_continue" in strategy.validate_review(review, material)["reasons"]
+
+    late, late_material = deepcopy(story)
+    quote = "Akhirnya kucing kembali makan dengan tenang"
+    late_material[0]["text"] = ("Pembukaan panjang tanpa janji. " * 30) + quote + "."
+    late["beats"][0]["quote"] = quote
+    result = strategy.validate_review(late, late_material)
+    assert not result["passed"]
 
 
 def test_long_direction_never_inherits_short_fyp_brief():

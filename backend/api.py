@@ -1257,6 +1257,8 @@ class YouTubePerformanceSnapshot(BaseModel):
     stayed_to_watch_percentage: float | None = Field(default=None, ge=0, le=100)
     average_view_duration: float | None = Field(default=None, ge=0)
     average_view_percentage: float | None = Field(default=None, ge=0)
+    retention_first_30_seconds: float | None = Field(default=None, ge=0, le=100)
+    retention_curve: list[dict[str, float]] | None = Field(default=None)
     likes: int | None = Field(default=None, ge=0)
     comments: int | None = Field(default=None, ge=0)
     shares: int | None = Field(default=None, ge=0)
@@ -1271,6 +1273,8 @@ class YouTubePerformanceUpdateRequest(BaseModel):
     stayed_to_watch_percentage: float | None = Field(default=None, ge=0, le=100)
     average_view_duration: float | None = Field(default=None, ge=0)
     average_view_percentage: float | None = Field(default=None, ge=0, le=1000)
+    retention_first_30_seconds: float | None = Field(default=None, ge=0, le=100)
+    retention_curve: list[dict[str, float]] | None = Field(default=None)
     likes: int | None = Field(default=None, ge=0)
     comments: int | None = Field(default=None, ge=0)
     shares: int | None = Field(default=None, ge=0)
@@ -10103,6 +10107,8 @@ def carry_forward_youtube_performance_fields(
         "stayed_to_watch_percentage",
         "average_view_duration",
         "average_view_percentage",
+        "retention_first_30_seconds",
+        "retention_curve",
         "likes",
         "comments",
         "shares",
@@ -10318,6 +10324,19 @@ def youtube_performance_diagnosis(
                 diagnosis.append(
                     "Konversi subscriber per engaged view berada di bawah median seri; buat alasan mengikuti seri lebih spesifik."
                 )
+    measured_30 = snapshot.retention_first_30_seconds
+    if measured_30 is not None:
+        diagnosis.append(
+            f"Retensi 30 detik terukur dari YouTube Analytics: {measured_30:.1f}% "
+            "(bukan perkiraan). Jika turun tajam pada 10 detik pertama, pangkas pembukaan dan "
+            "munculkan janji topik lebih awal."
+        )
+        early = [row for row in (snapshot.retention_curve or []) if 0 <= row.get("ratio", 1) <= 0.35]
+        if len(early) >= 2 and early[0].get("retention", 0) - early[-1].get("retention", 0) >= 15:
+            diagnosis.append(
+                "Kurva retensi terukur turun lebih dari 15 poin sebelum 35% durasi; periksa apakah "
+                "tahap context mengulang atau menunda informasi baru."
+            )
     if not diagnosis:
         diagnosis.append(
             "Performa masih dalam fase belajar dan tidak menunjukkan kelemahan relatif yang jelas."
@@ -10389,6 +10408,70 @@ def youtube_analytics_access_token() -> str:
     return token
 
 
+def youtube_audience_retention_snapshot(
+    access_token: str,
+    video_id: str,
+    start_date: str,
+    end_date: str,
+    duration_seconds: float | None = None,
+) -> tuple[float | None, list[dict[str, float]] | None]:
+    """Read the real retention curve when Analytics OAuth exposes it.
+
+    This is a separate Analytics report; a missing or denied report leaves the
+    fields empty. It never estimates, predicts or fills retention from views.
+    """
+    url = "https://youtubeanalytics.googleapis.com/v2/reports?" + urlencode(
+        {
+            "ids": "channel==MINE",
+            "startDate": start_date,
+            "endDate": end_date,
+            "metrics": "audienceRetention",
+            "dimensions": "elapsedVideoTimeRatio",
+            "filters": f"video=={video_id}",
+            "sort": "elapsedVideoTimeRatio",
+            "maxResults": "100",
+        }
+    )
+    request = urllib.request.Request(
+        url,
+        headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        headers = payload.get("columnHeaders") if isinstance(payload, dict) else []
+        rows = payload.get("rows") if isinstance(payload, dict) else []
+        if not isinstance(headers, list) or not isinstance(rows, list):
+            return None, None
+        names = [str(item.get("name") or "") for item in headers if isinstance(item, dict)]
+        ratio_index = names.index("elapsedVideoTimeRatio") if "elapsedVideoTimeRatio" in names else -1
+        retention_index = names.index("audienceRetention") if "audienceRetention" in names else -1
+        if ratio_index < 0 or retention_index < 0:
+            return None, None
+        points: list[dict[str, float]] = []
+        for row in rows[:100]:
+            if not isinstance(row, list) or max(ratio_index, retention_index) >= len(row):
+                continue
+            try:
+                ratio = float(row[ratio_index])
+                retention = float(row[retention_index])
+            except (TypeError, ValueError):
+                continue
+            if not (math.isfinite(ratio) and math.isfinite(retention)):
+                continue
+            if 0 <= ratio <= 1 and 0 <= retention <= 100:
+                points.append({"ratio": round(ratio, 6), "retention": round(retention, 4)})
+        if not points:
+            return None, None
+        first_30 = None
+        if duration_seconds and duration_seconds > 0:
+            target = min(1.0, 30.0 / duration_seconds)
+            first_30 = min(points, key=lambda point: abs(point["ratio"] - target))["retention"]
+        return first_30, points
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, ValueError):
+        return None, None
+
+
 def youtube_analytics_snapshot(upload: YouTubeUploadJob) -> YouTubePerformanceSnapshot | None:
     access_token = youtube_analytics_access_token()
     if not access_token:
@@ -10430,9 +10513,16 @@ def youtube_analytics_snapshot(upload: YouTubeUploadJob) -> YouTubePerformanceSn
     else:
         names = [str(item.get("name") or "") for item in headers if isinstance(item, dict)]
         values = dict(zip(names, rows[0], strict=False)) if isinstance(rows[0], list) else {}
+    first_30, curve = youtube_audience_retention_snapshot(
+        access_token, video_id, start_date,
+        datetime.now(timezone.utc).date().isoformat(),
+        getattr(upload, "duration_seconds", None),
+    )
     return YouTubePerformanceSnapshot(
         captured_at=now_iso(),
         source="youtube_analytics",
+        retention_first_30_seconds=first_30,
+        retention_curve=curve,
         views=int(values.get("views") or 0),
         engaged_views=int(values["engagedViews"]) if values.get("engagedViews") is not None else None,
         average_view_duration=float(values["averageViewDuration"]) if values.get("averageViewDuration") is not None else None,
