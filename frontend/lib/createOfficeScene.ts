@@ -159,11 +159,11 @@ export function createOfficeScene(host: HTMLElement,
   glassX(-4.25, -6.8, -1.4); glassX(4.25, -6.8, -1.4);
   glassFront(-12.2, -4.25, -11.2); glassFront(-4.25, 4.25, 0); glassFront(4.25, 11.8, 7.8);
   // Meeting room: a clearly marked open area in front-left of the ground floor.
-  box(-8, .09, 1.9, 8.2, .1, 5.2, "#d8b98d");
-  box(-8, .16, 1.9, 7.6, .06, 4.6, "#8daba1");
-  box(-8, 1.12, 1.9, 3.4, .18, 2.2, "#c88754");
-  box(-8, .62, 1.9, 2.4, .9, 1.5, "#7a8f84");
-  box(-8, 1.23, 1.9, 2.6, .04, 1.4, "#f0d9b8");
+  box(-8, .09, 2, 9, .1, 6, "#d8b98d");
+  box(-8, .16, 2, 8.4, .06, 5.4, "#8daba1");
+  box(-8, 1.12, 2, 5, .18, 3, "#c88754");
+  box(-8, .62, 2, 3.6, .9, 2, "#7a8f84");
+  box(-8, 1.23, 2, 4.2, .04, 2.2, "#f0d9b8");
   function chair(x: number, z: number, rotation = 0, color = "#4f655f") {
     const group = new THREE.Group(); group.position.set(x, 0, z); group.rotation.y = rotation; fixed.add(group);
     box(0, .64, 0, .72, .2, .72, color, group);
@@ -177,6 +177,15 @@ export function createOfficeScene(host: HTMLElement,
   box(-11.84, 2.1, 1.9, .07, 1.7, 3.1, "#faf9f1");
   for (let i = 0; i < 6; i++) box(-11.79, 1.9 + (i % 2) * .5, .8 + Math.floor(i / 2) * .8, .03, .32, .45, ["#eacb79", "#91b6a2", "#d4a18f"][i % 3]);
   signMaterials.push(board("RUANG RAPAT", -8, 3.15, 1.9, 4.6, "#2d5a4e", "#ffeccb"));
+  signMaterials.push(board("RUANG PIMPINAN", 0.4, 2.95, -6.75, 5.2, "#4a3f2f", "#ffe6ad"));
+  // Task board: everyone takes a turn checking that work is on track.
+  box(7.4, 1.55, 1.6, .12, 2.7, 3.4, "#b9a888");
+  box(7.32, 1.55, 1.6, .05, 2.4, 3.1, "#f7f2e3");
+  for (let i = 0; i < 5; i++) {
+    box(7.27, 2.3 - i * .42, .65, .03, .2, 1.4, i % 2 ? "#c8d8c5" : "#e8d9b8");
+    box(7.25, 2.3 - i * .42, 2.35, .03, .2, .5, i % 3 ? "#7ca893" : "#d29b72");
+  }
+  signMaterials.push(board("PAPAN TUGAS", 7.24, 2.85, 1.6, 2.6, "#2d5a4e", "#ffeccb"));
   const clock = cylinder(-4.75, 2.5, -6.83, .31, .08, "#344d47"); clock.rotation.x = Math.PI / 2;
   const face = cylinder(-4.75, 2.5, -6.77, .26, .015, "#faf5e7"); face.rotation.x = Math.PI / 2;
   box(-4.75, 2.57, -6.73, .025, .18, .02, "#344d47"); box(-4.68, 2.5, -6.72, .17, .025, .02, "#344d47");
@@ -195,10 +204,11 @@ export function createOfficeScene(host: HTMLElement,
     box(-.95, 1.12, .13, .35, .045, .45, color, group);
     chair(x, z + (reverse ? -1 : 1), reverse ? Math.PI : 0);
   }
-  // Front-row workstations stay visible: the back half is covered by floor 2.
-  desk(-2.6, 2.2, "#4f9383"); desk(-0.6, 2.2, "#9880bd");
-  desk(1.4, 2.2, "#588db7"); desk(3.4, 2.2, "#c28d54");
-  desk(-8.8, 4.3, "#7c9b5b", true); desk(-5.5, 4.3, "#697db8", true);
+  // Every workstation lives inside its own glass room on floor 1.
+  desk(-2.5, -5, "#4f9383"); desk(.5, -5, "#9880bd");       // Produksi & QC
+  desk(2.5, -5, "#c99433");                                  // Ruang pimpinan
+  desk(6.5, -5, "#588db7"); desk(9, -5, "#c28d54");          // Distribusi & pemulihan
+  desk(-9, -5, "#7c9b5b", true); desk(-6.5, -5, "#697db8", true); // Sosial & aset
   // Storage and open shelving along the social studio.
   box(-11.3, .72, 4.7, .8, 1.4, 3.2, "#c5a17b");
   for (let i = 0; i < 5; i++) box(-10.87, .8, 3.5 + i * .55, .04, .92, .035, "#9e805e");
@@ -331,7 +341,10 @@ export function createOfficeScene(host: HTMLElement,
     }
     const projections = people.map((person, index) => {
       const profile = OFFICE_PEOPLE[index];
-      const state = states[profile.id] || "unavailable";
+      const observedState = states[profile.id] || "unavailable";
+      const state = profile.id === 'director'
+        ? (Math.floor(seconds / 28) % 2 ? 'briefing' : 'observing')
+        : (Math.floor(seconds / 32) % 7 === index && observedState !== 'unavailable' ? 'notice' : observedState);
       const target = officeDestination(index, state);
       const destination = `${target.x}:${target.z}:${target.y ?? 0}`;
       if (state === "unavailable") {
@@ -371,7 +384,8 @@ export function createOfficeScene(host: HTMLElement,
         person.rotation += turn * Math.min(1, delta * 5);
       }
       const pose = { ...person.point, rotation: person.rotation, activity: person.path.length && state !== "unavailable" ? "walk" as const : target.activity };
-      person.group.position.set(pose.x, pose.y ?? 0, pose.z); person.group.rotation.y = pose.rotation;
+      person.group.position.set(pose.x, pose.y ?? 0, pose.z);
+      person.group.rotation.y = pose.rotation + (pose.activity === 'observing' ? Math.sin(seconds * .8) * .5 : 0);
       const seated = ["desk", "meeting", "reading", "cards", "write", "snack"].includes(pose.activity);
       person.seat.visible = seated;
       person.seat.position.set(pose.x, pose.y ?? 0, pose.z);
@@ -404,6 +418,8 @@ export function createOfficeScene(host: HTMLElement,
           case "desk": arm.rotation.x = state === "running" ? -.55 + Math.sin(seconds * 5 + side) * .08 : -.2; break;
           case "coffee": arm.rotation.x = side ? -.78 + Math.sin(seconds * 1.6) * .1 : -.18; break;
           case "reading": arm.rotation.x = -.72 + side * .04; break;
+          case "observing": arm.rotation.x = -.18 + Math.sin(seconds * .8 + side) * .06; break;
+          case "briefing": arm.rotation.x = side ? -.7 + Math.sin(seconds * 2.4 + side) * .22 : -.3; break;
           case "lounge": case "sofa": arm.rotation.x = side ? -.42 + quiet * 2 : -.14; break;
           case "write": case "cards": case "copy": case "call": case "snack":
             arm.rotation.x = side ? -.72 + Math.sin(seconds * 2 + side) * .06 : -.4; break;

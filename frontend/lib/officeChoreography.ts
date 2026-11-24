@@ -1,15 +1,16 @@
 export type OfficePoint = { x: number; z: number; y?: number };
-export type OfficeActivity = "desk" | "walk" | "meeting" | "coffee" | "lounge" | "sofa" | "reading" | "write" | "call" | "copy" | "snack" | "cards";
+export type OfficeActivity = "desk" | "walk" | "meeting" | "briefing" | "observing" | "notice" | "coffee" | "lounge" | "sofa" | "reading" | "write" | "call" | "copy" | "snack" | "cards";
 
 // One floor only. Every working spot is in the open front area (z > -1.4),
 // so nobody ever has to cross the glass partition or a wall to do their job.
 export const OFFICE_PEOPLE = [
-  { id: "production", name: "Raka", role: "Produksi", color: "#4f9383", desk: { x: -2.6, z: 2.2 } },
-  { id: "quality", name: "Naya", role: "Quality control", color: "#9880bd", desk: { x: -0.6, z: 2.2 } },
-  { id: "distribution", name: "Dimas", role: "Distribusi", color: "#588db7", desk: { x: 1.4, z: 2.2 } },
-  { id: "recovery", name: "Bima", role: "Pemulihan", color: "#c28d54", desk: { x: 3.4, z: 2.2 } },
-  { id: "cleanup", name: "Sari", role: "Pengelola aset", color: "#7c9b5b", desk: { x: -8.8, z: 4.3 } },
-  { id: "facebook", name: "Mika", role: "Facebook", color: "#697db8", desk: { x: -5.5, z: 4.3 } },
+  { id: "production", name: "Raka", role: "Produksi", color: "#4f9383", desk: { x: -2.5, z: -4 } },
+  { id: "quality", name: "Naya", role: "Quality control", color: "#9880bd", desk: { x: .5, z: -4 } },
+  { id: "distribution", name: "Dimas", role: "Distribusi", color: "#588db7", desk: { x: 6.5, z: -4 } },
+  { id: "recovery", name: "Bima", role: "Pemulihan", color: "#c28d54", desk: { x: 9, z: -4 } },
+  { id: "cleanup", name: "Sari", role: "Pengelola aset", color: "#7c9b5b", desk: { x: -9, z: -4 } },
+  { id: "facebook", name: "Mika", role: "Facebook", color: "#697db8", desk: { x: -6.5, z: -4 } },
+  { id: "director", name: "Pimpinan", role: "Direktur Studio", color: "#c99433", desk: { x: 2.5, z: -4 } },
 ] as const;
 
 const SPOTS: Record<'queued' | 'blocked' | 'idle', (OfficePoint & { activity: OfficeActivity })[]> = {
@@ -39,19 +40,38 @@ const SPOTS: Record<'queued' | 'blocked' | 'idle', (OfficePoint & { activity: Of
   ],
 };
 
+const TASK_BOARD_SPOTS: OfficePoint[] = [
+  { x: 5.2, z: 1.2 }, { x: 5.9, z: 1.2 }, { x: 6.6, z: 1.2 },
+  { x: 5.2, z: 2 }, { x: 5.9, z: 2 }, { x: 6.6, z: 2 },
+];
+
 export function officeDestination(index: number, state: string): OfficePoint & { activity: OfficeActivity } {
+  if (state === 'notice') return { ...TASK_BOARD_SPOTS[index % TASK_BOARD_SPOTS.length], activity: 'notice' };
+  if (OFFICE_PEOPLE[index].id === 'director') {
+    if (state === 'briefing') return { x: -8, z: 2, activity: 'briefing' };
+    return { ...OFFICE_PEOPLE[index].desk, activity: 'observing' };
+  }
   if (state === 'queued' || state === 'blocked' || state === 'idle') return SPOTS[state][index % SPOTS[state].length];
   return { ...OFFICE_PEOPLE[index].desk, activity: 'desk' };
 }
 
-// Ground floor only: routes stay in the open front area and never touch glass.
+// Ground floor rooms: leave through the room's own door, walk in the open
+// front corridor, then enter the destination room through its door.
 export function officePath(from: OfficePoint, to: OfficePoint): OfficePoint[] {
-  const lane = 3.8 + (OFFICE_PEOPLE.findIndex(row => Math.abs(row.desk.x - from.x) < .01 && Math.abs(row.desk.z - from.z) < .01) % 3) * .35;
-  const points: OfficePoint[] = [at(from)];
-  if (Math.abs(from.z - to.z) > .01) points.push(at({ x: from.x, z: lane }));
-  if (Math.abs(from.x - to.x) > .01) points.push(at({ x: to.x, z: lane }));
-  points.push(at(to));
-  return points.filter((point, index, array) =>
+  const doorFor = (x: number) => x < -4.25 ? -11.2 : x > 4.25 ? 7.8 : 0;
+  const exit = (point: OfficePoint): OfficePoint[] => {
+    if (point.z >= -1.4) return [at(point)];
+    const door = doorFor(point.x);
+    return [at(point), at({ x: point.x, z: -2.4 }), at({ x: door, z: -2.4 }),
+      at({ x: door, z: -1.5 }), at({ x: door, z: -1.35 })];
+  };
+  const enter = (point: OfficePoint): OfficePoint[] => {
+    if (point.z >= -1.4) return [at(point)];
+    const door = doorFor(point.x);
+    return [at({ x: door, z: -1.35 }), at({ x: door, z: -1.5 }),
+      at({ x: door, z: -2.4 }), at({ x: point.x, z: -2.4 }), at(point)];
+  };
+  return [...exit(from), ...enter(to)].filter((point, index, array) =>
     !index || Math.hypot(point.x - array[index - 1].x, point.z - array[index - 1].z) > .001);
 }
 

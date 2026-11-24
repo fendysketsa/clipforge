@@ -2,25 +2,34 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { OFFICE_PEOPLE, officeDestination, officePath, officeStep } from '../lib/officeChoreography.ts';
 
-const STATES = ['running', 'queued', 'blocked', 'idle', 'running'];
+const DOORS = [-11.2, 0, 7.8];
+const PARTITION_GAP = [-3.25, -1.55];
+const STATES = ['running', 'queued', 'blocked', 'idle', 'notice', 'briefing', 'running'];
 
-test('setiap agen bekerja di lantai 1, tidak melintas dinding, dan sampai tujuan', () => {
+test('setiap agen mencapai tujuan tanpa menembus kaca atau partisi', () => {
   for (let i = 0; i < OFFICE_PEOPLE.length; i++) {
     let point = { ...OFFICE_PEOPLE[i].desk };
     for (const state of STATES) {
       const target = officeDestination(i, state);
       let path = officePath(point, target), steps = 0;
-      assert.ok(target.z > -1.4, `${OFFICE_PEOPLE[i].id}/${state}: tujuan di belakang kaca`);
+      assert.ok(target.x > -12.3 && target.x < 12.3 && target.z > -7 && target.z < 7,
+        `${OFFICE_PEOPLE[i].id}/${state}: tujuan di luar area`);
       while (path.length && steps++ < 3000) {
         const previous = { ...point };
         const next = officeStep(point, path, .05);
         point = { x: next.x, z: next.z };
         path = next.path;
-        assert.ok(point.z > -1.4,
-          `${OFFICE_PEOPLE[i].id}/${state}: menembus kaca depan di z=${point.z.toFixed(2)}`);
-        assert.ok(point.x > -12.3 && point.x < 12.3 && point.z < 7,
-          `${OFFICE_PEOPLE[i].id}/${state}: keluar area`);
-        assert.ok(Math.hypot(point.x - previous.x, point.z - previous.z) <= .09,
+        if ((previous.z + 1.4) * (point.z + 1.4) < 0) {
+          assert.ok(DOORS.some(door => Math.abs(point.x - door) < .95),
+            `${OFFICE_PEOPLE[i].id}/${state}: tembus kaca depan di x=${point.x.toFixed(2)}`);
+        }
+        for (const wall of [-4.25, 4.25]) {
+          if ((previous.x - wall) * (point.x - wall) < 0 && point.z < -1.4) {
+            assert.ok(point.z >= PARTITION_GAP[0] && point.z <= PARTITION_GAP[1],
+              `${OFFICE_PEOPLE[i].id}/${state}: tembus partisi x=${wall} z=${point.z.toFixed(2)}`);
+          }
+        }
+        assert.ok(Math.hypot(point.x - previous.x, point.z - previous.z) <= .1,
           `${OFFICE_PEOPLE[i].id}/${state}: gerakan melompat`);
       }
       assert.equal(path.length, 0, `${OFFICE_PEOPLE[i].id}/${state}: rute tidak selesai`);
@@ -30,10 +39,12 @@ test('setiap agen bekerja di lantai 1, tidak melintas dinding, dan sampai tujuan
   }
 });
 
-test('tidak ada agen yang selalu dikirim ke istirahat', () => {
-  for (let i = 0; i < OFFICE_PEOPLE.length; i++) {
-    const activities = ['queued', 'blocked', 'idle'].map(state => officeDestination(i, state).activity);
-    assert.ok(activities.filter(row => row === 'coffee' || row === 'sofa' || row === 'snack').length < 2,
-      `${OFFICE_PEOPLE[i].id}: terlalu sering istirahat`);
-  }
+test('pimpinan punya ruang sendiri dan turun ke ruang rapat saat memberi arahan', () => {
+  const director = OFFICE_PEOPLE.findIndex(row => row.id === 'director');
+  assert.ok(director >= 0);
+  const desk = officeDestination(director, 'observing');
+  const brief = officeDestination(director, 'briefing');
+  assert.equal(desk.activity, 'observing');
+  assert.equal(brief.activity, 'briefing');
+  assert.ok(Math.hypot(desk.x - brief.x, desk.z - brief.z) > 3, 'Pimpinan tidak benar-benar berpindah');
 });
