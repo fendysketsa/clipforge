@@ -31,10 +31,19 @@ export function createOfficeScene(host: HTMLElement,
   const CAMERA_RADIUS = Math.hypot(18, 30, 24);
   const BASE_ELEVATION = Math.atan2(24, Math.hypot(18, 30));
   let azimuth = BASE_AZIMUTH, elevation = BASE_ELEVATION;
+  const focus = new THREE.Vector3(0, 0, 0);
+  const pan = new THREE.Vector3();
+  function refreshFocus() {
+    const detail = Math.max(0, zoom - 1);
+    focus.set(pan.x, pan.y + Math.min(3.1, detail * 2.4), pan.z - Math.min(3.2, detail * 2.4));
+    updateCamera();
+  }
   function updateCamera() {
     const flat = Math.cos(elevation) * CAMERA_RADIUS;
-    camera.position.set(Math.sin(azimuth) * flat, Math.sin(elevation) * CAMERA_RADIUS, Math.cos(azimuth) * flat);
-    camera.lookAt(0, 0, 0); camera.updateMatrixWorld();
+    camera.position.set(focus.x + Math.sin(azimuth) * flat,
+      focus.y + Math.sin(elevation) * CAMERA_RADIUS,
+      focus.z + Math.cos(azimuth) * flat);
+    camera.lookAt(focus); camera.updateMatrixWorld();
   }
   updateCamera();
   const ambient = new THREE.HemisphereLight(0xf8fbff, 0xb2a38e, 2.5);
@@ -214,11 +223,27 @@ export function createOfficeScene(host: HTMLElement,
   const upper = FLOOR_HEIGHT;
   box(0, upper - .18, -4.5, 24.4, .34, 6.2, "#d9cfb6");
   box(0, upper - .36, -1.45, 24.4, .14, .18, "#b5a98f");
-  // Stairs climb outside the full-width upper slab and land at the back-left corner.
+  // Stairs climb outside the full-width upper slab, with visible treads,
+  // risers, stringers and landings so nobody appears to walk on thin air.
+  const STAIR_X = -12.9, RUN_START = -1.6, RUN_LENGTH = 3.4;
+  box(STAIR_X, .06, RUN_START + .55, 1.55, .16, 1.4, "#d4c6a9");
+  box(STAIR_X, upper - .1, RUN_START - RUN_LENGTH - .5, 1.55, .2, 1.4, "#d4c6a9");
   for (let i = 0; i < 11; i++) {
     const t = (i + 1) / 11;
-    box(-12.9, upper * t - .08, -1.6 - t * 3.4, 1.35, .17, .32, "#c6b594");
-    box(-13.55, upper * t + .4, -1.6 - t * 3.4, .08, .9, .08, "#8b8069");
+    const z = RUN_START - t * RUN_LENGTH;
+    box(STAIR_X, upper * t - .06, z, 1.55, .16, .36, "#c6b594");
+    box(STAIR_X, upper * t - .26, z - .17, 1.55, .3, .07, "#b3a487");
+    box(STAIR_X + .72, upper * t + .38, z, .07, .88, .07, "#8b8069");
+    box(STAIR_X - .72, upper * t + .38, z, .07, .88, .07, "#8b8069");
+  }
+  const slope = Math.hypot(RUN_LENGTH, upper);
+  for (const side of [-.75, .75]) {
+    const stringer = box(STAIR_X + side, upper / 2 - .12, RUN_START - RUN_LENGTH / 2,
+      .16, slope, .16, "#9c8d72");
+    stringer.rotation.x = -Math.atan2(RUN_LENGTH, upper);
+    const rail = box(STAIR_X + side, upper / 2 + .5, RUN_START - RUN_LENGTH / 2,
+      .1, slope, .1, "#b9a888");
+    rail.rotation.x = -Math.atan2(RUN_LENGTH, upper);
   }
   box(-12.2, upper - .12, -5, 1.4, .24, 1.5, "#cfc3a6");
   box(0, upper + 1.05, -7.55, 24.3, 2.1, .1, "#b9c8bd", fixed, .22);
@@ -345,22 +370,33 @@ export function createOfficeScene(host: HTMLElement,
         const step = officeStep(person.point, person.path, delta);
         person.point = { x:step.x, z:step.z, y:step.y }; person.path = step.path; person.rotation = step.rotation;
       }
-      if (!person.path.length) person.rotation = target.activity === "desk" ? (profile.desk.z > 0 ? 0 : Math.PI) : index % 2 ? -Math.PI / 2 : Math.PI / 2;
+      if (!person.path.length) {
+        person.rotation = target.activity === "desk" ? (profile.desk.z > 0 ? 0 : Math.PI)
+          : target.activity === "game" || target.activity === "toilet" || target.activity === "reading" ? Math.PI
+            : target.activity === "meeting" ? Math.PI / 2 : 0;
+      }
       const pose = { ...person.point, rotation: person.rotation, activity: person.path.length && state !== "unavailable" ? "walk" as const : target.activity };
       person.group.position.set(pose.x, pose.y ?? 0, pose.z); person.group.rotation.y = pose.rotation;
-      person.body.position.y = pose.activity === "walk" ? Math.abs(Math.sin(seconds * 8)) * .045 : pose.activity === "desk" ? -.12 : 0;
-      person.legs.forEach((leg, side) => leg.rotation.x = pose.activity === "walk" ? Math.sin(seconds * 8 + side * Math.PI) * .52 : 0);
+      const quiet = Math.sin(seconds * 1.4 + index) * .03;
+      person.body.position.y = pose.activity === "walk" ? Math.abs(Math.sin(seconds * 8)) * .045
+        : pose.activity === "desk" ? -.12 : pose.activity === "coffee" || pose.activity === "reading" ? quiet : 0;
+      person.legs.forEach((leg, side) => leg.rotation.x = pose.activity === "walk"
+        ? Math.sin(seconds * 8 + side * Math.PI) * .52 : 0);
       person.arms.forEach((arm, side) => {
-        arm.rotation.x = pose.activity === "walk" ? Math.sin(seconds * 8 + side * Math.PI + Math.PI) * .4
-          : pose.activity === "meeting" ? -.5 + Math.sin(seconds * 2.5 + side) * .25
-            : pose.activity === "desk" && state === "running" ? -.55 + Math.sin(seconds * 5 + side) * .08 : -.2;
+        switch (pose.activity) {
+          case "walk": arm.rotation.x = Math.sin(seconds * 8 + side * Math.PI + Math.PI) * .4; break;
+          case "meeting": arm.rotation.x = -.5 + Math.sin(seconds * 2.5 + side) * .25; break;
+          case "desk": arm.rotation.x = state === "running" ? -.55 + Math.sin(seconds * 5 + side) * .08 : -.2; break;
+          case "game": arm.rotation.x = -.62 + Math.sin(seconds * 7 + side * 1.7) * .12; break;
+          case "coffee": arm.rotation.x = side ? -.78 + Math.sin(seconds * 1.6) * .1 : -.18; break;
+          case "reading": arm.rotation.x = -.72 + side * .04; break;
+          case "toilet": arm.rotation.x = -.12; break;
+          case "lounge": arm.rotation.x = side ? -.42 + quiet * 2 : -.14; break;
+          default: arm.rotation.x = -.2;
+        }
       });
       person.mug.visible = pose.activity === "coffee";
       person.book.visible = pose.activity === "reading";
-      if (pose.activity === "game") person.arms.forEach((arm, side) =>
-        arm.rotation.x = -.6 + Math.sin(seconds * 9 + side * 1.7) * .18);
-      if (pose.activity === "coffee") person.arms.forEach((arm, side) =>
-        arm.rotation.x = side ? -.75 + Math.sin(seconds * 1.6) * .12 : -.25);
       return { id: OFFICE_PEOPLE[index].id, ...point(pose.x, 2.15 + (pose.y ?? 0), pose.z), activity: pose.activity };
     });
     renderer.render(scene, camera);
@@ -376,28 +412,40 @@ export function createOfficeScene(host: HTMLElement,
   });
   canvas.addEventListener("pointermove", event => {
     if (!dragging) return;
-    azimuth += (event.clientX - dragX) * .007;
-    elevation = Math.min(1.32, Math.max(.12, elevation - (event.clientY - dragY) * .005));
+    const dx = event.clientX - dragX, dy = event.clientY - dragY;
+    if (event.shiftKey || event.buttons === 2) {
+      const step = 12 / Math.max(.6, zoom);
+      pan.x -= dx * step / Math.max(width, 1);
+      pan.z -= dy * step / Math.max(height, 1);
+      pan.x = Math.max(-6, Math.min(6, pan.x));
+      pan.z = Math.max(-5, Math.min(5, pan.z));
+      refreshFocus();
+    } else {
+      azimuth += dx * .007;
+      elevation = Math.min(1.32, Math.max(.12, elevation - dy * .005));
+      updateCamera();
+    }
     dragX = event.clientX; dragY = event.clientY;
-    updateCamera(); render(lastSeconds, night, lastStates);
+    render(lastSeconds, night, lastStates);
   });
+  canvas.addEventListener("contextmenu", event => event.preventDefault());
   const endDrag = () => { dragging = false; canvas.style.cursor = "grab"; };
   canvas.addEventListener("pointerup", endDrag);
   canvas.addEventListener("pointercancel", endDrag);
   canvas.addEventListener("wheel", event => {
     event.preventDefault();
     zoom = Math.min(2.6, Math.max(.6, zoom * (event.deltaY > 0 ? .9 : 1.1)));
-    onZoomChange?.(zoom); resize();
+    onZoomChange?.(zoom); refreshFocus(); resize();
   }, { passive: false });
   const observer = new ResizeObserver(resize); observer.observe(host); resize();
   return {
     render,
-    zoom(value: number) { zoom = value; onZoomChange?.(zoom); resize(); },
+    zoom(value: number) { zoom = value; onZoomChange?.(zoom); refreshFocus(); resize(); },
     rotate(delta: number) { azimuth += delta; updateCamera(); render(lastSeconds, night, lastStates); },
     tilt(delta: number) { elevation = Math.min(1.32, Math.max(.12, elevation + delta));
       updateCamera(); render(lastSeconds, night, lastStates); },
-    resetView() { azimuth = BASE_AZIMUTH; elevation = BASE_ELEVATION; zoom = 1;
-      onZoomChange?.(zoom); updateCamera(); resize(); },
+    resetView() { azimuth = BASE_AZIMUTH; elevation = BASE_ELEVATION; zoom = 1; pan.set(0, 0, 0);
+      onZoomChange?.(zoom); refreshFocus(); resize(); },
     dispose() {
       observer.disconnect(); geometries.forEach(geometry => geometry.dispose());
       materials.forEach(mat => mat.dispose()); signMaterials.forEach(mat => mat.dispose());
