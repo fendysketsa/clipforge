@@ -4,7 +4,7 @@ import { OFFICE_PEOPLE, FLOOR_HEIGHT, officeDestination, officePath, officeStep,
 
 export type OfficeProjection = { id: string; x: number; y: number; activity: OfficeActivity };
 export const OFFICE_AREAS = [
-  { id: "meeting", label: "Ruang rapat", x: -8, z: -5.9, y: 0 },
+  { id: "meeting", label: "Ruang rapat", x: -8, z: 1.7, y: 0 },
   { id: "creative", label: "Produksi & QC", x: 0, z: -5.9, y: 0 },
   { id: "media", label: "Distribusi & pemulihan", x: 8, z: -5.9, y: 0 },
   { id: "assets", label: "Studio sosial & aset", x: -7.5, z: 5.8, y: 0 },
@@ -157,11 +157,11 @@ export function createOfficeScene(host: HTMLElement,
     }
   }
   glassX(-4.25, -6.8, -1.4); glassX(4.25, -6.8, -1.4);
-  glassFront(-11.8, -4.25, -6); glassFront(-4.25, 4.25, 0); glassFront(4.25, 11.8, 7.8);
-  // Meeting room, chairs, whiteboard with sticky notes and wall clock.
-  box(-8, .12, -3.8, 6.7, .025, 4.4, "#8daba1");
-  box(-8, 1.05, -4.2, 2.3, .16, 2.7, "#ba9671");
-  box(-8, .5, -4.2, 1.5, 1, 1.8, "#596e67");
+  glassFront(-12.2, -4.25, -11.2); glassFront(-4.25, 4.25, 0); glassFront(4.25, 11.8, 7.8);
+  // Meeting room sits in the open front-left area so the upper slab never hides it.
+  box(-8, .12, 1.7, 6.7, .025, 4.4, "#8daba1");
+  box(-8, 1.05, 1.7, 2.3, .16, 2.7, "#ba9671");
+  box(-8, .5, 1.7, 1.5, 1, 1.8, "#596e67");
   function chair(x: number, z: number, rotation = 0, color = "#4f655f") {
     const group = new THREE.Group(); group.position.set(x, 0, z); group.rotation.y = rotation; fixed.add(group);
     box(0, .64, 0, .64, .18, .67, color, group);
@@ -169,9 +169,9 @@ export function createOfficeScene(host: HTMLElement,
     cylinder(0, .3, 0, .055, .6, "#485451", group);
     box(0, .1, 0, .7, .07, .08, "#485451", group); box(0, .1, 0, .08, .07, .7, "#485451", group);
   }
-  for (const z of [-4.9, -3.5]) { chair(-9.65, z, Math.PI / 2); chair(-6.35, z, -Math.PI / 2); }
-  box(-11.84, 2, -4.5, .06, 1.45, 2.4, "#faf9f1");
-  for (let i = 0; i < 6; i++) box(-11.79, 1.8 + (i % 2) * .45, -5.3 + Math.floor(i / 2) * .6, .025, .27, .38, ["#eacb79", "#91b6a2", "#d4a18f"][i % 3]);
+  for (const z of [1, 2.4]) { chair(-9.65, z, -Math.PI / 2); chair(-6.35, z, Math.PI / 2); }
+  box(-11.84, 2, 1.7, .06, 1.45, 2.4, "#faf9f1");
+  for (let i = 0; i < 6; i++) box(-11.79, 1.8 + (i % 2) * .45, .9 + Math.floor(i / 2) * .6, .025, .27, .38, ["#eacb79", "#91b6a2", "#d4a18f"][i % 3]);
   const clock = cylinder(-4.75, 2.5, -6.83, .31, .08, "#344d47"); clock.rotation.x = Math.PI / 2;
   const face = cylinder(-4.75, 2.5, -6.77, .26, .015, "#faf5e7"); face.rotation.x = Math.PI / 2;
   box(-4.75, 2.57, -6.73, .025, .18, .02, "#344d47"); box(-4.68, 2.5, -6.72, .17, .025, .02, "#344d47");
@@ -230,7 +230,7 @@ export function createOfficeScene(host: HTMLElement,
   box(0, upper - .36, -1.45, 24.4, .14, .18, "#b5a98f");
   // Stairs climb outside the full-width upper slab, with visible treads,
   // risers, stringers and landings so nobody appears to walk on thin air.
-  const STAIR_X = -12.9, RUN_START = -1.6, RUN_LENGTH = 3.4;
+  const STAIR_X = -12.3, RUN_START = -1.6, RUN_LENGTH = 3.4;
   box(STAIR_X, .06, RUN_START + .55, 1.55, .16, 1.4, "#d4c6a9");
   box(STAIR_X, upper - .1, RUN_START - RUN_LENGTH - .5, 1.55, .2, 1.4, "#d4c6a9");
   for (let i = 0; i < 11; i++) {
@@ -250,7 +250,7 @@ export function createOfficeScene(host: HTMLElement,
       .1, slope, .1, "#b9a888");
     rail.rotation.x = -Math.atan2(RUN_LENGTH, upper);
   }
-  box(-12.2, upper - .12, -5, 1.4, .24, 1.5, "#cfc3a6");
+  box(-11.6, upper - .12, -5, 1.4, .24, 1.5, "#cfc3a6");
   box(0, upper + 1.05, -7.55, 24.3, 2.1, .1, "#b9c8bd", fixed, .22);
   // A doorway gap in each glass partition lines up with the upper corridor.
   for (const x of [-4.3, 4.3]) {

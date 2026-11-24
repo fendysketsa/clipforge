@@ -1,7 +1,8 @@
 export type OfficePoint = { x: number; z: number; y?: number };
 export type OfficeActivity = "desk" | "walk" | "meeting" | "coffee" | "lounge" | "game" | "toilet" | "stairs" | "reading";
 export const FLOOR_HEIGHT = 3.6;
-const STAIRS = { x: -12.9, z: -1.6 };
+const STAIRS = { x: -12.3, z: -1.6 };
+const STAIRS_DOOR = -11.2;
 const STAIRS_TOP_Z = -5;
 const UPPER_LANDING_Z = -4.6;
 
@@ -16,8 +17,8 @@ export const OFFICE_PEOPLE = [
 
 // Waiting people are spread across real places instead of gathering in one spot.
 const BLOCKED_SPOTS: (OfficePoint & { activity: OfficeActivity })[] = [
-  { x: -9.2, z: -4.8, activity: "meeting" },
-  { x: -6.8, z: -4.8, activity: "meeting" },
+  { x: -9.2, z: 1, activity: "meeting" },
+  { x: -6.8, z: 2.4, activity: "meeting" },
   { x: -8.6, z: -5, y: FLOOR_HEIGHT, activity: "game" },
   { x: -5.9, z: -5, y: FLOOR_HEIGHT, activity: "game" },
   { x: 6.6, z: -5.75, y: FLOOR_HEIGHT, activity: "toilet" },
@@ -76,9 +77,11 @@ export function officePath(from: OfficePoint, to: OfficePoint): OfficePoint[] {
   else route.push(...upper(from).reverse());
   if (fromY !== toY) {
     const top = at({ x: STAIRS.x, z: STAIRS_TOP_Z }, FLOOR_HEIGHT);
-    if (fromY === 0) route.push(at({ x: STAIRS.x, z: .2 }, 0), at(STAIRS, 0), top);
-    else route.push(at({ x: STAIRS.x, z: STAIRS_TOP_Z }, FLOOR_HEIGHT), at(STAIRS, 0));
-    if (toY === 0) route.push(at({ x: STAIRS.x, z: .2 }, 0));
+    if (fromY === 0) route.push(at({ x: STAIRS_DOOR, z: .2 }, 0),
+      at({ x: STAIRS_DOOR, z: STAIRS.z }, 0), at(STAIRS, 0), top);
+    else route.push(at({ x: STAIRS.x, z: STAIRS_TOP_Z }, FLOOR_HEIGHT), at(STAIRS, 0),
+      at({ x: STAIRS_DOOR, z: STAIRS.z }, 0));
+    if (toY === 0) route.push(at({ x: STAIRS_DOOR, z: .2 }, 0));
   }
   if (toY === 0) route.push(...lower(to).reverse());
   else route.push(...upper(to));
