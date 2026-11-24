@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { OFFICE_PEOPLE, officeDestination, officePath, officeStep } from '../lib/officeChoreography.ts';
 
-const DOORS = [-11.2, -6, 0, 7.8];
+const DOORS = [-11.2, 0, 7.8];
 const STATES = ['running', 'queued', 'blocked', 'idle', 'running'];
 
 function walk(index, state) {

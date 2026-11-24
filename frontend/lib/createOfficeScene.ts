@@ -197,8 +197,9 @@ export function createOfficeScene(host: HTMLElement,
     box(-.95, 1.12, .13, .35, .045, .45, color, group);
     chair(x, z + (reverse ? -1 : 1), reverse ? Math.PI : 0);
   }
-  desk(-1.9, -4.4, "#4f9383"); desk(1.8, -4.4, "#9880bd");
-  desk(6.1, -4.4, "#588db7"); desk(9.5, -4.4, "#c28d54");
+  // Front-row workstations stay visible: the back half is covered by floor 2.
+  desk(-2.6, 2.2, "#4f9383"); desk(-0.6, 2.2, "#9880bd");
+  desk(1.4, 2.2, "#588db7"); desk(3.4, 2.2, "#c28d54");
   desk(-8.8, 4.3, "#7c9b5b", true); desk(-5.5, 4.3, "#697db8", true);
   // Storage and open shelving along the social studio.
   box(-11.3, .72, 4.7, .8, 1.4, 3.2, "#c5a17b");

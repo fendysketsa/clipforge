@@ -8,12 +8,12 @@ const STAIRS_TOP_Z = -5;
 const UPPER_LANDING_Z = -4.6;
 
 export const OFFICE_PEOPLE = [
-  { id: "production", name: "Raka", role: "Produksi", color: "#4f9383", desk: { x: -7.5, z: -4.3 }, door: -6 },
-  { id: "quality", name: "Naya", role: "Quality control", color: "#9880bd", desk: { x: -2.5, z: -4.3 }, door: 0 },
-  { id: "distribution", name: "Dimas", role: "Distribusi", color: "#588db7", desk: { x: 2.5, z: -4.3 }, door: 0 },
-  { id: "recovery", name: "Bima", role: "Pemulihan", color: "#c28d54", desk: { x: 7.5, z: -4.3 }, door: 6 },
-  { id: "cleanup", name: "Sari", role: "Pengelola aset", color: "#7c9b5b", desk: { x: -7.5, z: 4.2 }, door: -6 },
-  { id: "facebook", name: "Mika", role: "Facebook", color: "#697db8", desk: { x: 7.5, z: 4.2 }, door: 6 },
+  { id: "production", name: "Raka", role: "Produksi", color: "#4f9383", desk: { x: -2.6, z: 2.2 }, door: 0 },
+  { id: "quality", name: "Naya", role: "Quality control", color: "#9880bd", desk: { x: -0.6, z: 2.2 }, door: 0 },
+  { id: "distribution", name: "Dimas", role: "Distribusi", color: "#588db7", desk: { x: 1.4, z: 2.2 }, door: 0 },
+  { id: "recovery", name: "Bima", role: "Pemulihan", color: "#c28d54", desk: { x: 3.4, z: 2.2 }, door: 7.8 },
+  { id: "cleanup", name: "Sari", role: "Pengelola aset", color: "#7c9b5b", desk: { x: -8.8, z: 4.3 }, door: -11.2 },
+  { id: "facebook", name: "Mika", role: "Facebook", color: "#697db8", desk: { x: -5.5, z: 4.3 }, door: -11.2 },
 ] as const;
 
 // Waiting people are spread across real places instead of gathering in one spot.
@@ -55,10 +55,15 @@ const at = (point: OfficePoint, y = point.y ?? 0): OfficePoint => ({ x: point.x,
 /** Doorways and one corner staircase connect both floors; traffic can pass both ways. */
 export function officePath(from: OfficePoint, to: OfficePoint): OfficePoint[] {
   const fromY = from.y ?? 0, toY = to.y ?? 0;
-  const doorFor = (x: number) => x < -3 ? -6 : x > 3 ? 7.8 : 0;
+  const doorFor = (x: number) => x < -3 ? -11.2 : x > 3 ? 7.8 : 0;
   const lower = (point: OfficePoint): OfficePoint[] => {
     const door = doorFor(point.x);
-    if (point.z >= -1.4) return [at(point, 0), at({ x: point.x, z: .2 }, 0)];
+    if (point.z >= -1.4) {
+      const route = [at(point, 0)];
+      if (Math.abs(point.x - door) > .01) route.push(at({ x: door, z: point.z }, 0));
+      route.push(at({ x: door, z: -1.5 }, 0));
+      return route;
+    }
     return [at(point, 0), at({ x: point.x, z: -2.4 }, 0),
       at({ x: door, z: -2.4 }, 0), at({ x: door, z: .2 }, 0)];
   };
@@ -78,11 +83,16 @@ export function officePath(from: OfficePoint, to: OfficePoint): OfficePoint[] {
   else route.push(...upper(from).reverse());
   if (fromY !== toY) {
     const top = at({ x: STAIRS.x, z: STAIRS_TOP_Z }, FLOOR_HEIGHT);
-    if (fromY === 0) route.push(at({ x: STAIRS_DOOR, z: .2 }, 0),
+    if (fromY === 0) route.push(at({ x: doorFor(from.x), z: -1.35 }, 0),
+      at({ x: STAIRS_DOOR, z: -1.35 }, 0), at({ x: STAIRS_DOOR, z: .2 }, 0),
       at({ x: STAIRS_DOOR, z: STAIRS.z }, 0), at(STAIRS, 0), top);
     else route.push(at({ x: STAIRS.x, z: STAIRS_TOP_Z }, FLOOR_HEIGHT), at(STAIRS, 0),
       at({ x: STAIRS_DOOR, z: STAIRS.z }, 0));
-    if (toY === 0) route.push(at({ x: STAIRS_DOOR, z: .2 }, 0));
+    if (toY === 0) {
+      const targetDoor = doorFor(to.x);
+      route.push(at({ x: STAIRS_DOOR, z: .2 }, 0), at({ x: targetDoor, z: .2 }, 0),
+        at({ x: targetDoor, z: -1.5 }, 0));
+    }
   }
   if (toY === 0) route.push(...lower(to).reverse());
   else route.push(...upper(to));
