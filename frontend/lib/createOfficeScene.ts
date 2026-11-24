@@ -160,20 +160,25 @@ export function createOfficeScene(host: HTMLElement,
   }
   glassX(-4.25, -6.8, -1.4); glassX(4.25, -6.8, -1.4);
   glassFront(-12.2, -4.25, -11.2); glassFront(-4.25, 4.25, 0); glassFront(4.25, 11.8, 7.8);
-  // Meeting room sits in the open front-left area so the upper slab never hides it.
-  box(-8, .12, 1.7, 6.7, .025, 4.4, "#8daba1");
-  box(-8, 1.05, 1.7, 2.3, .16, 2.7, "#ba9671");
-  box(-8, .5, 1.7, 1.5, 1, 1.8, "#596e67");
+  // Meeting room: a clearly marked open area in front-left of the ground floor.
+  box(-8, .09, 1.9, 8.2, .1, 5.2, "#d8b98d");
+  box(-8, .16, 1.9, 7.6, .06, 4.6, "#8daba1");
+  box(-8, 1.12, 1.9, 3.4, .18, 2.2, "#c88754");
+  box(-8, .62, 1.9, 2.4, .9, 1.5, "#7a8f84");
+  box(-8, 1.23, 1.9, 2.6, .04, 1.4, "#f0d9b8");
   function chair(x: number, z: number, rotation = 0, color = "#4f655f") {
     const group = new THREE.Group(); group.position.set(x, 0, z); group.rotation.y = rotation; fixed.add(group);
-    box(0, .64, 0, .64, .18, .67, color, group);
-    box(0, 1.02, .29, .66, .65, .12, color, group);
-    cylinder(0, .3, 0, .055, .6, "#485451", group);
-    box(0, .1, 0, .7, .07, .08, "#485451", group); box(0, .1, 0, .08, .07, .7, "#485451", group);
+    box(0, .64, 0, .72, .2, .72, color, group);
+    box(0, 1.08, .34, .74, .7, .14, color, group);
+    cylinder(0, .3, 0, .06, .6, "#485451", group);
+    box(0, .1, 0, .74, .08, .08, "#485451", group); box(0, .1, 0, .08, .08, .74, "#485451", group);
   }
-  for (const z of [1, 2.4]) { chair(-9.65, z, -Math.PI / 2); chair(-6.35, z, Math.PI / 2); }
-  box(-11.84, 2, 1.7, .06, 1.45, 2.4, "#faf9f1");
-  for (let i = 0; i < 6; i++) box(-11.79, 1.8 + (i % 2) * .45, .9 + Math.floor(i / 2) * .6, .025, .27, .38, ["#eacb79", "#91b6a2", "#d4a18f"][i % 3]);
+  for (const z of [.9, 2.9]) {
+    chair(-10.3, z, -Math.PI / 2); chair(-5.7, z, Math.PI / 2);
+  }
+  box(-11.84, 2.1, 1.9, .07, 1.7, 3.1, "#faf9f1");
+  for (let i = 0; i < 6; i++) box(-11.79, 1.9 + (i % 2) * .5, .8 + Math.floor(i / 2) * .8, .03, .32, .45, ["#eacb79", "#91b6a2", "#d4a18f"][i % 3]);
+  signMaterials.push(board("RUANG RAPAT", -8, 3.15, 1.9, 4.6, "#2d5a4e", "#ffeccb"));
   const clock = cylinder(-4.75, 2.5, -6.83, .31, .08, "#344d47"); clock.rotation.x = Math.PI / 2;
   const face = cylinder(-4.75, 2.5, -6.77, .26, .015, "#faf5e7"); face.rotation.x = Math.PI / 2;
   box(-4.75, 2.57, -6.73, .025, .18, .02, "#344d47"); box(-4.68, 2.5, -6.72, .17, .025, .02, "#344d47");
@@ -416,9 +421,11 @@ export function createOfficeScene(host: HTMLElement,
       person.group.position.set(pose.x, pose.y ?? 0, pose.z); person.group.rotation.y = pose.rotation;
       const quiet = Math.sin(seconds * 1.4 + index) * .03;
       person.body.position.y = pose.activity === "walk" ? Math.abs(Math.sin(seconds * 8)) * .045
-        : pose.activity === "desk" ? -.12 : pose.activity === "coffee" || pose.activity === "reading" ? quiet : 0;
+        : pose.activity === "meeting" ? -.24
+          : pose.activity === "desk" ? -.12 : pose.activity === "coffee" || pose.activity === "reading" ? quiet : 0;
       person.legs.forEach((leg, side) => leg.rotation.x = pose.activity === "walk"
-        ? Math.sin(seconds * 8 + side * Math.PI) * .52 : 0);
+        ? Math.sin(seconds * 8 + side * Math.PI) * .52
+        : pose.activity === "meeting" || pose.activity === "desk" ? -.95 : 0);
       person.arms.forEach((arm, side) => {
         switch (pose.activity) {
           case "walk": arm.rotation.x = Math.sin(seconds * 8 + side * Math.PI + Math.PI) * .4; break;
