@@ -125,7 +125,9 @@ export function createOfficeScene(host: HTMLElement,
     box(x, .04, z, 1.97, .06, .48, woods[(row * 3 + col) % woods.length]);
   }
   box(0, 1.55, -7, 24.3, 3.1, .18, "#f0ecdf");
-  box(-12, 1.55, -3.5, .18, 3.1, 7, "#e2ded0");
+  // Left wall has a real opening at z=-1.6 so the staircase has an exit.
+  box(-12, 1.55, -4.65, .18, 3.1, 4.7, "#e2ded0");
+  box(-12, 1.55, -.45, .18, 3.1, .9, "#e2ded0");
   box(-12, .45, 3.5, .18, .9, 7, "#e2ded0");
   box(0, .15, -6.84, 24, .22, .12, "#b7a182");
   // Skyline and large blue windows across the back of the office.
@@ -228,6 +230,24 @@ export function createOfficeScene(host: HTMLElement,
   const upper = FLOOR_HEIGHT;
   box(0, upper - .18, -4.5, 24.4, .34, 6.2, "#d9cfb6");
   box(0, upper - .36, -1.45, 24.4, .14, .18, "#b5a98f");
+  // Upper-storey shell: front, left, right and back walls with door openings
+  // that match the walking routes (stairs, centre, right room).
+  function upperFront(start: number, end: number, door: number) {
+    for (const [a, b] of [[start, door - .9], [door + .9, end]]) {
+      if (b - a < .15) continue;
+      box((a + b) / 2, upper + 1.15, -1.45, b - a, 2.3, .06, "#a9cbc7", fixed, .2);
+      [a, b].forEach(x => box(x, upper + 1.15, -1.45, .07, 2.3, .08, "#6d8883"));
+      box((a + b) / 2, upper + 2.3, -1.45, b - a, .06, .08, "#6d8883");
+    }
+    box(door, upper + 2.3, -1.45, 1.8, .12, .1, "#6d8883");
+  }
+  upperFront(-12.2, -4.3, -11.2);
+  upperFront(-4.3, 4.3, 0);
+  upperFront(4.3, 12.2, 7.8);
+  box(-12.2, upper + 1.15, -6.62, .08, 2.3, 1.85, "#ced8ce", fixed, .2);
+  box(-12.2, upper + 1.15, -2.9, .08, 2.3, 2.9, "#ced8ce", fixed, .2);
+  box(-12.2, upper + 2.3, -5, .12, .12, 1.4, "#6d8883");
+  box(12.2, upper + 1.15, -4.5, .08, 2.3, 6.1, "#ced8ce", fixed, .2);
   // Stairs climb outside the full-width upper slab, with visible treads,
   // risers, stringers and landings so nobody appears to walk on thin air.
   const STAIR_X = -12.3, RUN_START = -1.6, RUN_LENGTH = 3.4;
