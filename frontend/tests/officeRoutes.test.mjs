@@ -31,6 +31,9 @@ test('setiap agen mencapai tujuan tanpa menembus kaca atau partisi', () => {
         }
         assert.ok(Math.hypot(point.x - previous.x, point.z - previous.z) <= .1,
           `${OFFICE_PEOPLE[i].id}/${state}: gerakan melompat`);
+        const inTable = (x, z) => x > -10.5 && x < -5.5 && z > .5 && z < 3.5;
+        assert.ok(!(inTable(previous.x, previous.z) && inTable(point.x, point.z)),
+          `${OFFICE_PEOPLE[i].id}/${state}: menabrak meja rapat`);
       }
       assert.equal(path.length, 0, `${OFFICE_PEOPLE[i].id}/${state}: rute tidak selesai`);
       assert.ok(Math.hypot(point.x - target.x, point.z - target.z) < .01,

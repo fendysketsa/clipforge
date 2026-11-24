@@ -23,10 +23,10 @@ const SPOTS: Record<'queued' | 'blocked' | 'idle', (OfficePoint & { activity: Of
     { x: -5.5, z: 6.3, activity: "write" },
   ],
   blocked: [
-    { x: -10.3, z: 1, activity: "meeting" },
-    { x: -5.7, z: 1, activity: "meeting" },
-    { x: -10.3, z: 2.4, activity: "meeting" },
-    { x: -5.7, z: 2.4, activity: "meeting" },
+    { x: -11.2, z: 1, activity: "meeting" },
+    { x: -4.8, z: 1, activity: "meeting" },
+    { x: -11.2, z: 2.4, activity: "meeting" },
+    { x: -4.8, z: 2.4, activity: "meeting" },
     { x: -9.2, z: 4.8, activity: "call" },
     { x: -6.8, z: 4.8, activity: "call" },
   ],
@@ -45,10 +45,13 @@ const TASK_BOARD_SPOTS: OfficePoint[] = [
   { x: 5.2, z: 2 }, { x: 5.9, z: 2 }, { x: 6.6, z: 2 },
 ];
 
+const SOFA_SPOTS: OfficePoint[] = [{ x: -1.2, z: 5.55 }, { x: 1.5, z: 5.55 }];
+
 export function officeDestination(index: number, state: string): OfficePoint & { activity: OfficeActivity } {
+  if (state === 'sofa') return { ...SOFA_SPOTS[index % SOFA_SPOTS.length], activity: 'sofa' };
   if (state === 'notice') return { ...TASK_BOARD_SPOTS[index % TASK_BOARD_SPOTS.length], activity: 'notice' };
   if (OFFICE_PEOPLE[index].id === 'director') {
-    if (state === 'briefing') return { x: -8, z: 2, activity: 'briefing' };
+    if (state === 'briefing') return { x: -8, z: 4.4, activity: 'briefing' };
     return { ...OFFICE_PEOPLE[index].desk, activity: 'observing' };
   }
   if (state === 'queued' || state === 'blocked' || state === 'idle') return SPOTS[state][index % SPOTS[state].length];
@@ -71,7 +74,19 @@ export function officePath(from: OfficePoint, to: OfficePoint): OfficePoint[] {
     return [at({ x: door, z: -1.35 }), at({ x: door, z: -1.5 }),
       at({ x: door, z: -2.4 }), at({ x: point.x, z: -2.4 }), at(point)];
   };
-  return [...exit(from), ...enter(to)].filter((point, index, array) =>
+  const route = [...exit(from)];
+  // The meeting table occupies x[-10.5,-5.5], z[.5,3.5]. Walk around its right
+  // edge and along the front instead of cutting through the furniture.
+  const nearMeeting = (point: OfficePoint) => point.z > -1.4 && point.z < 7 && point.x < -4.5 && point.x > -12;
+  if (nearMeeting(from)) {
+    route.push(at({ x: from.x, z: 4.4 }), at({ x: -4.6, z: 4.4 }), at({ x: -4.6, z: -1.35 }));
+  }
+  if (nearMeeting(to)) {
+    const current = route[route.length - 1];
+    route.push(at({ x: -4.6, z: current.z }), at({ x: -4.6, z: 4.4 }), at({ x: to.x, z: 4.4 }));
+  }
+  route.push(...enter(to));
+  return route.filter((point, index, array) =>
     !index || Math.hypot(point.x - array[index - 1].x, point.z - array[index - 1].z) > .001);
 }
 

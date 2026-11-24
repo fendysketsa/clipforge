@@ -172,12 +172,12 @@ export function createOfficeScene(host: HTMLElement,
     box(0, .1, 0, .74, .08, .08, "#485451", group); box(0, .1, 0, .08, .08, .74, "#485451", group);
   }
   for (const z of [.9, 2.9]) {
-    chair(-10.3, z, -Math.PI / 2); chair(-5.7, z, Math.PI / 2);
+    chair(-11.2, z, -Math.PI / 2); chair(-4.8, z, Math.PI / 2);
   }
   box(-11.84, 2.1, 1.9, .07, 1.7, 3.1, "#faf9f1");
   for (let i = 0; i < 6; i++) box(-11.79, 1.9 + (i % 2) * .5, .8 + Math.floor(i / 2) * .8, .03, .32, .45, ["#eacb79", "#91b6a2", "#d4a18f"][i % 3]);
   signMaterials.push(board("RUANG RAPAT", -8, 3.15, 1.9, 4.6, "#2d5a4e", "#ffeccb"));
-  signMaterials.push(board("RUANG PIMPINAN", 0.4, 2.95, -6.75, 5.2, "#4a3f2f", "#ffe6ad"));
+  signMaterials.push(board("RYUUNDY / RUANG PIMPINAN", 0.4, 2.95, -6.75, 6, "#4a3f2f", "#ffe6ad"));
   // Task board: everyone takes a turn checking that work is on track.
   box(7.4, 1.55, 1.6, .12, 2.7, 3.4, "#b9a888");
   box(7.32, 1.55, 1.6, .05, 2.4, 3.1, "#f7f2e3");
@@ -279,6 +279,14 @@ export function createOfficeScene(host: HTMLElement,
     });
     const mug = cylinder(.31, .76, .13, .075, .17, "#f7e8d0", body); mug.visible = false;
     const book = box(.1, .98, .3, .34, .05, .25, "#d8c9a6", body); book.visible = false;
+    const mouse = cylinder(.42, 1.14, .86, .07, .04, "#d8d4c7", body); mouse.visible = false;
+    const screenMat = new THREE.MeshBasicMaterial({ color: 0x9fe0d2 });
+    const screenGeo = new THREE.PlaneGeometry(1, .55); geometries.add(screenGeo);
+    const screen = new THREE.Mesh(screenGeo, screenMat);
+    const reverse = person.desk.x < -4.25;
+    screen.position.set(person.desk.x, 1.58, person.desk.z + (reverse ? .164 : -.164));
+    screen.rotation.y = reverse ? Math.PI : 0;
+    screen.visible = false; scene.add(screen);
     // A personal workstation follows anyone who sits down: chair, desk and
     // a lit monitor, so nobody is ever seen sitting in empty space.
     const seat = new THREE.Group(); scene.add(seat);
@@ -303,7 +311,7 @@ export function createOfficeScene(host: HTMLElement,
     const copier = box(-1.1, 1.05, 1.15, 1.4, .95, 1, "#9aa9a2", prop);
     const cup = cylinder(.55, 1.16, 1.02, .11, .24, "#f7e8d0", prop);
     const cards = box(.62, 1.02, 1.16, .5, .04, .36, "#f6f0de", prop);
-    return { group, body, legs, arms, mug, book, seat, station, prop,
+    return { group, body, head, legs, arms, mug, book, mouse, screen, screenMat, seat, station, prop,
       notebook, phone, copier, cup, cards, point: { ...person.desk } as OfficePoint,
       path: [] as OfficePoint[], destination: "", pendingDestination: "", pendingSince: 0,
       speed: 0, rotation: person.desk.z > 0 ? 0 : Math.PI };
@@ -344,8 +352,14 @@ export function createOfficeScene(host: HTMLElement,
       const observedState = states[profile.id] || "unavailable";
       const state = profile.id === 'director'
         ? (Math.floor(seconds / 28) % 2 ? 'briefing' : 'observing')
-        : (Math.floor(seconds / 32) % 7 === index && observedState !== 'unavailable' ? 'notice' : observedState);
-      const target = officeDestination(index, state);
+        : observedState;
+      // A visible work routine: people move between desk, task board and
+      // coordination on a staggered cycle. Status bubbles still use real data.
+      const routine = ['desk', 'notice', 'queued', 'desk', 'sofa', 'desk', 'blocked', 'desk'];
+      const motionState = profile.id === 'director' ? state
+        : (observedState === 'unavailable'
+          ? observedState : routine[(Math.floor(seconds / 22) + index) % routine.length]);
+      const target = officeDestination(index, motionState);
       const destination = `${target.x}:${target.z}:${target.y ?? 0}`;
       if (state === "unavailable") {
         person.pendingDestination = ""; person.pendingSince = 0;
@@ -386,11 +400,16 @@ export function createOfficeScene(host: HTMLElement,
       const pose = { ...person.point, rotation: person.rotation, activity: person.path.length && state !== "unavailable" ? "walk" as const : target.activity };
       person.group.position.set(pose.x, pose.y ?? 0, pose.z);
       person.group.rotation.y = pose.rotation + (pose.activity === 'observing' ? Math.sin(seconds * .8) * .5 : 0);
-      const seated = ["desk", "meeting", "reading", "cards", "write", "snack"].includes(pose.activity);
+      person.head.rotation.y = Math.sin(seconds * .6 + index) * .16;
+      person.mouse.visible = pose.activity === 'desk' || pose.activity === 'observing';
+      person.mouse.position.x = .42 + Math.sin(seconds * 1.8 + index) * .08;
+      person.screen.visible = pose.activity === 'desk' || pose.activity === 'observing';
+      person.screenMat.color.setHex(Math.floor(seconds * 1.2 + index) % 6 === 0 ? 0xeaf6b9 : 0x9fe0d2);
+      const seated = ["desk", "reading", "cards", "write", "snack", "sofa"].includes(pose.activity);
       person.seat.visible = seated;
       person.seat.position.set(pose.x, pose.y ?? 0, pose.z);
       person.seat.rotation.y = pose.rotation;
-      const workstation = pose.activity === "meeting" || pose.activity === "reading";
+      const workstation = pose.activity === "reading";
       person.station.visible = workstation;
       person.station.position.set(pose.x, pose.y ?? 0, pose.z);
       person.station.rotation.y = pose.rotation;
@@ -487,6 +506,7 @@ export function createOfficeScene(host: HTMLElement,
       observer.disconnect(); geometries.forEach(geometry => geometry.dispose());
       materials.forEach(mat => mat.dispose()); signMaterials.forEach(mat => mat.dispose());
       lampMaterials.forEach(mat => mat.dispose()); poolMaterials.forEach(mat => mat.dispose());
+      people.forEach(person => person.screenMat.dispose());
       textures.forEach(texture => texture.dispose());
       renderer.dispose(); renderer.domElement.remove();
     },
