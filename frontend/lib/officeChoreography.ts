@@ -30,13 +30,13 @@ const IDLE_SPOTS: (OfficePoint & { activity: OfficeActivity })[] = [
   { x: 6.6, z: 4.1, activity: "snack" },
   { x: -8.4, z: 3.6, activity: "reading" },
   { x: 10.2, z: 4.1, activity: "coffee" },
-  { x: -7.2, z: -5, y: FLOOR_HEIGHT, activity: "game" },
+  { x: -8.6, z: -5.15, y: FLOOR_HEIGHT, activity: "game" },
   { x: -3, z: 2.2, activity: "cards" },
 ];
 const QUEUE_SPOTS: (OfficePoint & { activity: OfficeActivity })[] = [
   { x: 6.6, z: 4.1, activity: "coffee" },
   { x: 3.5, z: 2.2, activity: "write" },
-  { x: -5.9, z: -4.2, y: FLOOR_HEIGHT, activity: "game" },
+  { x: -5.9, z: -5.15, y: FLOOR_HEIGHT, activity: "game" },
   { x: -8.6, z: -4.2, y: FLOOR_HEIGHT, activity: "game" },
   { x: -1, z: -4.8, y: FLOOR_HEIGHT, activity: "reading" },
   { x: 2, z: 4.8, activity: "sofa" },

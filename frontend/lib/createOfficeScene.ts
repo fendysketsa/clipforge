@@ -288,8 +288,7 @@ export function createOfficeScene(host: HTMLElement,
     box(x, upper + .72, -6.1, 1, 1.44, .78, "#3b5a50");
     box(x, upper + 1.02, -5.69, .76, .58, .03, "#9ad0c2");
     box(x, upper + .62, -5.68, .56, .07, .14, "#263b35");
-    cylinder(x, upper + .4, -5.15, .22, .08, "#c98f62");
-    cylinder(x, upper + .19, -5.15, .05, .4, "#6d7c6b");
+    // No fixed stool here: each seated player brings their own chair.
   }
   // Toilet stalls with translucent doors and a shared sink.
   for (const x of [6.6, 9.2]) {
