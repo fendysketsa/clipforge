@@ -113,8 +113,10 @@ SCENE_HINTS = (
     (('mendengarkan', 'menyela', 'guru'), 'listening'),
     (('terima kasih', 'dibantu'), 'gratitude'),
     (('menyapa', 'sopan', 'tetangga'), 'greeting'),
-    (('jujur', 'kembalian', 'uang'), 'honesty'),
+    (('jujur', 'kembalian', 'uang', 'kasir', 'belanja'), 'honesty'),
     (('lupa', 'PR', 'pekerjaan rumah'), 'homework'),
+    (('memasak', 'masak', 'dapur', 'masakan'), 'cooking'),
+    (('kartu', 'main kartu', 'bermain kartu'), 'card_game'),
 )
 
 
@@ -175,6 +177,10 @@ DEFAULT_TOPICS = (
     dict(text='mengakui kesalahan saat lupa mengerjakan PR', style='moral_anak'),
     dict(text='menyapa tetangga dengan sopan saat pulang sekolah', style='moral_anak'),
     dict(text='membantu merapikan meja makan di rumah setelah makan', style='moral_anak'),
+    dict(text='membantu ibu memasak di dapur setelah pulang sekolah', style='moral_anak'),
+    dict(text='berbelanja dan menerima kembalian dari kasir dengan jujur', style='moral_anak'),
+    dict(text='bermain kartu sambil bergiliran dengan teman', style='moral_anak'),
+    dict(text='merapikan mainan bersama teman setelah selesai bermain', style='moral_anak'),
 )
 _BANK_TEXT = {row['text'].casefold() for row in DEFAULT_TOPICS}
 
