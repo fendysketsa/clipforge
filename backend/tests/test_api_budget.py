@@ -7646,6 +7646,22 @@ def test_build_clipper_command_does_not_require_creative_commons_for_uploaded_fi
     assert "--require-creative-commons" not in command
 
 
+def test_build_clipper_command_uses_available_series_key_without_missing_field():
+    request = ClipJobRequest(
+        source_file="/tmp/source.mp4",
+        clip_mode="highlight_5m",
+        compilation_target_seconds=300,
+        cron_long_strategy=True,
+        scheduled_theme_key="gaming_story",
+    )
+    command = build_clipper_command(request)
+    assert "--retention-series" in command
+    assert command[command.index("--retention-series") + 1] == "gaming_story"
+
+    plain = ClipJobRequest(source_file="/tmp/source.mp4", clip_mode="highlight_5m")
+    assert "--retention-series" not in build_clipper_command(plain)
+
+
 def test_build_clipper_command_includes_five_minute_highlight_mode():
     request = ClipJobRequest(
         source_file="/tmp/source.mp4",

@@ -16230,8 +16230,11 @@ def build_clipper_command(
         )
     if request.clip_mode == "highlight_5m" and request.cron_long_strategy:
         command.append("--cron-long-strategy")
-    if request.clip_mode == "highlight_5m" and request.growth_series:
-        command.extend(["--retention-series", request.growth_series[:80]])
+    if request.clip_mode == "highlight_5m":
+        retention_series = (getattr(request, "growth_series", "")
+                            or getattr(request, "scheduled_theme_key", ""))
+        if isinstance(retention_series, str) and retention_series.strip():
+            command.extend(["--retention-series", retention_series.strip()[:80]])
     if request.clip_mode == "long_animate":
         command.extend(
             ["--long-animate-target-duration", str(request.compilation_target_seconds),
