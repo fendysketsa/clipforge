@@ -402,18 +402,26 @@ export default function HomePage() {
   }, [activeJobId]);
 
   const loadYouTubeUploads = useCallback(async () => {
-    const [config, uploads] = await Promise.all([getYouTubeConfig(), getYouTubeUploads()]);
-    setYoutubeConfig(config);
-    setYoutubeUploads(uploads);
-    setDataReady(current => ({ ...current, youtube: true }));
+    const [, uploads] = await Promise.all([
+      getYouTubeConfig().then(config => { setYoutubeConfig(config); }),
+      getYouTubeUploads().then(uploads => {
+        setYoutubeUploads(uploads);
+        setDataReady(current => ({ ...current, youtube: true }));
+        return uploads;
+      }),
+    ]);
     return uploads;
   }, []);
 
   const loadTikTokUploads = useCallback(async () => {
-    const [config, uploads] = await Promise.all([getTikTokConfig(), getTikTokUploads()]);
-    setTiktokConfig(config);
-    setTiktokUploads(uploads);
-    setDataReady(current => ({ ...current, tiktok: true }));
+    const [, uploads] = await Promise.all([
+      getTikTokConfig().then(config => { setTiktokConfig(config); }),
+      getTikTokUploads().then(uploads => {
+        setTiktokUploads(uploads);
+        setDataReady(current => ({ ...current, tiktok: true }));
+        return uploads;
+      }),
+    ]);
     return uploads;
   }, []);
 

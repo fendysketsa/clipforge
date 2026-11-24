@@ -12,6 +12,7 @@ import { uploadQueuePosition } from "../../lib/uploadQueue";
 import { tiktokAutomaticRetryLabel, tiktokUploadForClip } from "../../lib/tiktokRetry";
 import { automaticHandlingView, automaticUploadSummary } from "../../lib/automaticHandling";
 import { queueDate } from "../../lib/studioQueue";
+import { historyJobIsActive, historyUploadActivity, intakeIsFresh } from "../../lib/historyActivity";
 
 function jobFormat(job: ClipJob) {
   if (job.request.clip_mode === "highlight_5m") {
@@ -60,7 +61,7 @@ type AutomaticIntake = {
 };
 
 function intakeSummary(job: ClipJob, intake: AutomaticIntake | null): PlatformUploadSummary | null {
-  if (!intake?.enabled) return null;
+  if (!intake?.enabled || !intakeIsFresh(intake.checked_epoch)) return null;
   const rows = intake.clips?.filter((row) => row.source_job_id === job.id) ?? [];
   if (!rows.length) return null;
   if (rows.some((row) => row.status === "waiting_for_long_qc")) {
@@ -91,6 +92,9 @@ function uploadSummary<T extends PlatformUpload>(
     .filter((upload) => upload.source_job_id === job.id && !upload.attention_archived_at)
     .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
   if (!relevant.length) {
+    if (job.request.publication_review_required) {
+      return { state: "unverified", label: "Menunggu review / QC", title: "Upload ditahan sampai pemeriksaan publikasi selesai." };
+    }
     return { state: "idle", label: job.request.review_only ? "Mode review" : "Menunggu penanganan otomatis",
       title: job.request.review_only ? "Mode review tidak masuk upload otomatis."
         : "Belum ada catatan upload; sistem memeriksa kelayakan sebelum menyiapkan pengiriman." };
@@ -192,6 +196,8 @@ export function HistorySection({
   onToggleJobSelection,
 }: HistorySectionProps) {
   const hasActiveJobs = jobs.some((item) => item.status === "queued" || item.status === "running");
+  const uploadActivity = historyUploadActivity([...youtubeUploads, ...tiktokUploads]);
+  const activeJobCount = jobs.filter(item => historyJobIsActive(item, uploadActivity.jobIds)).length;
   const [intake, setIntake] = useState<AutomaticIntake | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [query, setQuery] = useState("");
@@ -226,7 +232,7 @@ export function HistorySection({
 
   const sourceUrl = (job: ClipJob) => job.source_url || job.request.url;
   const filteredJobs = jobs.filter(item => {
-    const match = filter === "all" || (filter === "active" ? ["running", "queued"].includes(item.status)
+    const match = filter === "all" || (filter === "active" ? historyJobIsActive(item, uploadActivity.jobIds)
       : filter === "failed" ? ["failed", "cancelled"].includes(item.status) : item.status === filter);
     return match && `${sourceLabel(item)} ${item.source_uploader || ""}`.toLowerCase().includes(query.toLowerCase());
   });
@@ -277,7 +283,7 @@ export function HistorySection({
           <p>Produksi, pemulihan, dan cleanup rutin dilanjutkan otomatis; hasil dan buktinya dapat dilihat di sini.</p>
         </div>
         <div className="historyActions">
-          <span className="historyLiveCount"><span />{jobs.filter((item) => item.status === "running" || item.status === "queued").length} diproses</span>
+          <span className="historyLiveCount"><span />{activeJobCount} diproses · {uploadActivity.count} upload aktif</span>
           <span className="historyReadyCount"><CheckCheck size={15} />{jobs.filter((item) => item.status === "completed").length} selesai</span>
           <span className="sectionBadge">{jobs.length} total</span>
           {failedJobs.length > 0 ? (
@@ -318,7 +324,9 @@ export function HistorySection({
           const handling = automaticHandlingView(item.automatic_handling);
           const handlingStatus = handling?.urgent ? "failed" : handling
             ? handling.state === "archived" ? "cancelled" : "queued" : item.status;
-          const shownStatus = recovery?.status || (item.status === "running" || item.status === "queued" ? item.status : handlingStatus);
+          const deliveryStatus = uploadActivity.jobIds.has(item.id)
+            ? uploadActivity.runningJobIds.has(item.id) ? "running" : "queued" : null;
+          const shownStatus = recovery?.status || (item.status === "running" || item.status === "queued" ? item.status : deliveryStatus || handlingStatus);
           const Icon = statusIcon[shownStatus];
           const count = item.clips.length ? `${item.clips.length} klip` : `${item.candidates.length} kandidat`;
           const canSelectForDelete = item.status !== "queued" && item.status !== "running";
@@ -333,7 +341,7 @@ export function HistorySection({
           const progressDetail =
             item.progress_detail?.trim() ||
             (item.status === "queued" ? "Menunggu slot worker" : "Memproses video");
-          const recordedYoutubeSummary = item.status === "completed"
+          const recordedYoutubeSummary = item.status === "completed" || youtubeUploads.some(upload => upload.source_job_id === item.id && !upload.attention_archived_at)
             ? uploadSummary(
                 item,
                 youtubeUploads,
@@ -348,7 +356,7 @@ export function HistorySection({
             : recordedYoutubeSummary;
           const youtubeSummary: PlatformUploadSummary | null = intakeYoutubeSummary
             ? automaticUploadSummary(item.automatic_handling, intakeYoutubeSummary.state) ?? intakeYoutubeSummary : null;
-          const recordedTiktokSummary = item.status === "completed"
+          const recordedTiktokSummary = item.status === "completed" || tiktokUploads.some(upload => upload.source_job_id === item.id && !upload.attention_archived_at)
             ? uploadSummary(
                 item,
                 tiktokUploads,
@@ -398,7 +406,7 @@ export function HistorySection({
                     <span className="jobRow-statusIcon">
                       <Icon className={shownStatus === "running" ? "spin" : ""} size={15} />
                     </span>
-                    <span className="jobRow-statusLabel">{recovery ? recovery.status === "completed" ? "Sumber pulih" : "Sedang dipulihkan" : handling?.label || statusCopy[item.status]}</span>
+                    <span className="jobRow-statusLabel">{recovery ? recovery.status === "completed" ? "Sumber pulih" : "Sedang dipulihkan" : !isProcessing && deliveryStatus ? deliveryStatus === "running" ? "Sedang mengunggah" : "Antrean upload" : handling?.label || statusCopy[item.status]}</span>
                     {isProcessing ? <span className="jobRow-statusPercent">{progressPercent}%</span> : null}
                   </span>
                   <span className="jobClipCount"><Film size={13} />{count}</span>
