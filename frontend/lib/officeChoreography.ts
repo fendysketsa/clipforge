@@ -3,7 +3,7 @@ export type OfficeActivity = "desk" | "walk" | "meeting" | "coffee" | "lounge" |
 export const FLOOR_HEIGHT = 3.6;
 const STAIRS = { x: -12.9, z: -1.6 };
 const STAIRS_TOP_Z = -5;
-const UPPER_LANDING_Z = -1.55;
+const UPPER_LANDING_Z = -4.6;
 
 export const OFFICE_PEOPLE = [
   { id: "production", name: "Raka", role: "Produksi", color: "#4f9383", desk: { x: -7.5, z: -4.3 }, door: -6 },
@@ -29,7 +29,7 @@ const IDLE_SPOTS: (OfficePoint & { activity: OfficeActivity })[] = [
   { x: -8.4, z: 3.6, activity: "reading" },
   { x: 8.4, z: 3.6, activity: "coffee" },
   { x: -7.2, z: -5, y: FLOOR_HEIGHT, activity: "game" },
-  { x: 7.9, z: -5.75, y: FLOOR_HEIGHT, activity: "toilet" },
+  { x: 9.2, z: -5.75, y: FLOOR_HEIGHT, activity: "toilet" },
 ];
 const QUEUE_SPOTS: (OfficePoint & { activity: OfficeActivity })[] = [
   { x: 6.6, z: 4.1, activity: "coffee" },
@@ -50,30 +50,38 @@ export function officeDestination(index: number, state: string): OfficePoint & {
 
 const at = (point: OfficePoint, y = point.y ?? 0): OfficePoint => ({ x: point.x, z: point.z, y });
 
-/** Doorways and one shared staircase connect both floors; traffic can pass both ways. */
+/** Doorways and one corner staircase connect both floors; traffic can pass both ways. */
 export function officePath(from: OfficePoint, to: OfficePoint): OfficePoint[] {
-  const fromY = from.y ?? 0;
-  const toY = to.y ?? 0;
+  const fromY = from.y ?? 0, toY = to.y ?? 0;
   const doorFor = (x: number) => x < -3 ? -6 : x > 3 ? 6 : 0;
   const lower = (point: OfficePoint): OfficePoint[] => {
-    const level = point.y ?? 0;
     const door = doorFor(point.x);
-    if (level === 0) {
-      if (point.z >= -1.4) return [at(point, 0), at({ x: point.x, z: .2 }, 0)];
-      return [at(point, 0), at({ x: point.x, z: -2.4 }, 0), at({ x: door, z: -2.4 }, 0), at({ x: door, z: .2 }, 0)];
-    }
-    return [at(point, level), at({ x: door, z: point.z }, level), at({ x: door, z: UPPER_LANDING_Z }, level)];
+    if (point.z >= -1.4) return [at(point, 0), at({ x: point.x, z: .2 }, 0)];
+    return [at(point, 0), at({ x: point.x, z: -2.4 }, 0),
+      at({ x: door, z: -2.4 }, 0), at({ x: door, z: .2 }, 0)];
   };
-  const route = [...lower(from)];
+  // On the upper floor, people walk along one corridor and pass through the
+  // doorway gaps in the glass partitions instead of crossing the glass.
+  const upper = (point: OfficePoint): OfficePoint[] => {
+    const level = FLOOR_HEIGHT;
+    const corridor = at({ x: point.x, z: UPPER_LANDING_Z }, level);
+    const route: OfficePoint[] = [at({ x: STAIRS.x, z: UPPER_LANDING_Z }, level)];
+    if (point.x > 4.3) route.push(at({ x: 4.3, z: UPPER_LANDING_Z }, level));
+    else if (point.x > -4.3) route.push(at({ x: -4.3, z: UPPER_LANDING_Z }, level));
+    route.push(corridor, at(point, level));
+    return route;
+  };
+  const route: OfficePoint[] = [];
+  if (fromY === 0) route.push(...lower(from));
+  else route.push(...upper(from).reverse());
   if (fromY !== toY) {
     const top = at({ x: STAIRS.x, z: STAIRS_TOP_Z }, FLOOR_HEIGHT);
-    if (fromY === 0) route.push(at({ x: STAIRS.x, z: .2 }, 0), at(STAIRS, 0), top,
-      at({ x: STAIRS.x, z: UPPER_LANDING_Z }, FLOOR_HEIGHT));
-    else route.push(at({ x: STAIRS.x, z: UPPER_LANDING_Z }, FLOOR_HEIGHT), top, at(STAIRS, 0));
+    if (fromY === 0) route.push(at({ x: STAIRS.x, z: .2 }, 0), at(STAIRS, 0), top);
+    else route.push(at({ x: STAIRS.x, z: STAIRS_TOP_Z }, FLOOR_HEIGHT), at(STAIRS, 0));
     if (toY === 0) route.push(at({ x: STAIRS.x, z: .2 }, 0));
-    else route.push(at({ x: doorFor(to.x), z: UPPER_LANDING_Z }, FLOOR_HEIGHT));
   }
-  route.push(...lower(to).reverse());
+  if (toY === 0) route.push(...lower(to).reverse());
+  else route.push(...upper(to));
   route.push(at(to, toY));
   return route.filter((point, index, array) =>
     !index || Math.hypot(point.x - array[index - 1].x, point.z - array[index - 1].z,

@@ -247,8 +247,12 @@ export function createOfficeScene(host: HTMLElement,
   }
   box(-12.2, upper - .12, -5, 1.4, .24, 1.5, "#cfc3a6");
   box(0, upper + 1.05, -7.55, 24.3, 2.1, .1, "#b9c8bd", fixed, .22);
-  box(-4.3, upper + 1.05, -4.5, .1, 2.1, 6.1, "#b9c8bd", fixed, .22);
-  box(4.3, upper + 1.05, -4.5, .1, 2.1, 6.1, "#b9c8bd", fixed, .22);
+  // A doorway gap in each glass partition lines up with the upper corridor.
+  for (const x of [-4.3, 4.3]) {
+    box(x, upper + 1.05, -6.43, .1, 2.1, 2.25, "#b9c8bd", fixed, .22);
+    box(x, upper + 1.05, -2.68, .1, 2.1, 2.45, "#b9c8bd", fixed, .22);
+    box(x, upper + 1.95, -4.6, .13, .16, 1.4, "#9cae9f", fixed);
+  }
   // Arcade cabinets and two stools in the game room.
   for (const x of [-8.6, -5.9]) {
     box(x, upper + .72, -6.1, 1, 1.44, .78, "#3b5a50");
