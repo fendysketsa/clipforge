@@ -6,7 +6,7 @@ const root = path.resolve(__dirname, '..');
 const digest = data => crypto.createHash('sha256').update(data).digest('hex');
 const requiredJS = ['jobDirectorRecovery', 'history-four-columns', 'jobPlatformQueue', '/reconcile',
   'officeHQ', '/api/ai-office', 'officeFloorRooms', 'officeIncidentBoard', 'officeJournal', 'aiOfficeProcessMap',
-  'Arahan Pimpinan Digital', 'officeLeaderBrief', 'officeDirectiveList', 'Kapabilitas konten aktif',
+  'Arahan Pimpinan Digital', 'officeLeaderBrief', 'officeDirectiveList', 'Kapabilitas konten aktif', 'Pembelajaran tersimpan', 'AI Office 3D', 'office3dFloor', 'officeWalker',
   'dijadwalkan ulang otomatis', 'pengaturan privasi tertunda', 'jobAutomaticHandling', 'Percepat pemeriksaan', 'Terjadwal otomatis',
   'cronActivityHeading', 'Detail pemeriksaan', 'cronDailyLanes',
   'studioSidebar', 'studioQueueRow', 'connectionCard', 'studioThemeToggle',

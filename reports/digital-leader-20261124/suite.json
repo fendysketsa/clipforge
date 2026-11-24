@@ -1,7 +1,7 @@
 {
   "command": "backend/.venv/bin/python -m pytest tests -q",
   "result": "passed",
-  "passed": 3431,
+  "passed": 3439,
   "failed": 0,
   "warnings": 37,
   "duration_seconds": 543.23,

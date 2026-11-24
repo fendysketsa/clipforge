@@ -50,7 +50,7 @@ export function AIOfficePanel() {
     {strategy ? <section className="officeLeaderBrief" aria-labelledby="office-leader-title">
       <header className="officeSectionHead"><div><span className="studioEyebrow">PIMPINAN DIGITAL</span><h2 id="office-leader-title">Arahan Pimpinan Digital</h2></div><span className="officeTotal">{strategy.name}</span></header>
       <p className="officeLeaderMission">{strategy.mission}</p>
-      <p className="officeLeaderSkills">Kapabilitas konten aktif: {stats?.skills_applied ?? 0}/{stats?.skills_total ?? 0}</p>
+      <p className="officeLeaderSkills">Kapabilitas konten aktif: {stats?.skills_applied ?? 0}/{stats?.skills_total ?? 0} · Pembelajaran tersimpan: {stats?.learning?.total ?? 0}{stats?.learning?.index_fresh === false ? " · indeks perlu diperbarui" : ""}</p>
       <div className="officeLeaderTags">{strategy.focus.map(item => <span key={item}>{item}</span>)}<span>{strategy.audience}</span></div>
       {directives.length ? <ol className="officeDirectiveList">{directives.map(item => <li key={item.id} className={`is-${item.status}`}>
         <span className="officeDirectiveMark">{item.status === "active" ? <Radio size={14} /> : <Clock3 size={14} />}</span>

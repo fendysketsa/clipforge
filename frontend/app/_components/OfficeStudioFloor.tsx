@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Crown, Pause, Play } from "lucide-react";
+import { Pause, Play } from "lucide-react";
 import { officeMotion, officeStateLabel, officeStatus, type AIOfficeSnapshot } from "../../lib/aiOffice";
+import { Office3DFloor } from "./OfficeLivingFloor";
 
 const team: Record<string, { role: string; color: string; initials: string }> = {
   production: { role: "Produser & peneliti", color: "#65aa96", initials: "PR" },
@@ -44,8 +45,7 @@ export function OfficeStudioFloor({ snapshot, now, refreshFailed, selected, onSe
     <header className="officeSectionHead"><div><span className="studioEyebrow">TIM OPERASIONAL</span><h3 id="office-floor-title">Di balik setiap video.</h3></div>
       <button type="button" className="officeQuietButton" aria-pressed={paused} disabled={reduced} title="Mengatur gerakan tampilan; pekerjaan server tetap berjalan."
         onClick={() => setPaused(value => !value)}>{paused || reduced ? <Play size={13} /> : <Pause size={13} />}{reduced ? "Gerak minimal" : paused ? "Aktifkan gerak" : "Jeda gerak"}</button></header>
-    <div className="officeDirectorDesk"><span className="officeDirectorAvatar"><Crown size={23} /></span>
-      <div><span>DIREKTUR STUDIO</span><strong>Prioritas jelas. Tim terarah.</strong><p>{status.stale ? "Menunggu pembaruan dari koordinator." : !snapshot.enabled ? "Koordinasi dijeda sesuai pengaturan." : "Memantau kendala, membagi arahan, memeriksa tindak lanjut."}</p></div><span className="officeDirectorSignal" aria-label={status.label} /></div>
+    <Office3DFloor snapshot={snapshot} now={now} refreshFailed={refreshFailed} selected={selected} onSelect={onSelect} />
     <div className="officeFloorRooms">{snapshot.departments.map((department, index) => {
       const member = team[department.id] || { role: department.role, color: "#65aa96", initials: "AI" };
       return <button type="button" className={`officeRoom${active.has(department.id) ? " is-working" : ""}${department.state === "degraded" ? " is-degraded" : ""}`}

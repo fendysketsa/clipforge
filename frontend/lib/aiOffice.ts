@@ -25,6 +25,8 @@ export type OfficeDirector = {
   strategy?: OfficeStrategy; directives?: OfficeDirective[];
   strategy_revision?: string; directives_at?: string | null;
   skills_version?: number; skills_applied?: number; skills_total?: number;
+  learning?: { version: number; total: number; last_recorded_at: string | null;
+    index_fresh: boolean; rules: string[] };
   active_jobs: number; active_uploads: number; open_incidents: number; needs_operator: number;
 };
 

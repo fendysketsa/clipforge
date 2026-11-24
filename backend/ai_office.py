@@ -12,6 +12,7 @@ import time
 import uuid
 import ai_office_director
 import ai_office_incidents
+import ai_office_learning
 import yt_skills
 
 VERSION = 1
@@ -54,6 +55,9 @@ class OfficeService:
 
     def enabled(self):
         return self.api.env_bool('AI_OFFICE_ENABLED', True)
+
+    def _learning_root(self):
+        return self.api.JOBS_PATH.parent.parent
 
     def _load(self):
         with self.lock:
@@ -403,6 +407,7 @@ class OfficeService:
         enabled = self.enabled()
         worker_running = alive(self.thread)
         skills = yt_skills.snapshot()
+        learning = ai_office_learning.snapshot(self._learning_root())
         departments = []
         def department(key, name, role, enabled, working, running, detail):
             state = ('working' if working else 'disabled' if not enabled else
@@ -466,6 +471,7 @@ class OfficeService:
                         skills_version=yt_skills.VERSION,
                         skills_applied=skills['applied'],
                         skills_total=skills['total'],
+                        learning=learning,
                         active_jobs=(context or {}).get('jobs', 0),
                         active_uploads=(context or {}).get('uploads', 0),
                         open_incidents=len(live_incidents), needs_operator=sum(r['state'] == 'needs_operator' for r in live_incidents)),
@@ -474,7 +480,8 @@ class OfficeService:
                                       publication_gates_preserved=True, no_parallel_production_owner=True,
                                       incident_ownership=True, observed_resolution=True, safe_delegate_only=True,
                                       autonomous_recovery=True, configured_qc_fallback=True,
-                                      digital_director=True, strategic_directives=True))
+                                      digital_director=True, strategic_directives=True,
+                                      organizational_learning=True))
 
     def request_check(self):
         if not self.enabled():
@@ -497,6 +504,7 @@ class OfficeService:
     def start(self):
         if not self.enabled():
             return
+        ai_office_learning.ensure_seed(self._learning_root())
         with self.start_lock:
             if alive(self.thread):
                 return
@@ -524,6 +532,20 @@ def install(app, api):
         accepted = service.request_check()
         return dict(accepted=accepted, message='Arahan pemeriksaan dikirim ke koordinator.' if accepted else
                     'Koordinator dijeda sesuai setelan server.')
+
+    @app.get('/api/ai-office/learning')
+    def office_learning():
+        ai_office_learning.ensure_seed(service._learning_root())
+        return ai_office_learning.snapshot(service._learning_root())
+
+    @app.post('/api/ai-office/learning')
+    def record_learning(payload: dict):
+        try:
+            entry = ai_office_learning.record(payload, service._learning_root())
+        except ValueError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(422, str(exc)) from exc
+        return dict(accepted=True, entry=entry)
 
     @app.get('/api/ai-office/yt-skills')
     def youtube_skills():
