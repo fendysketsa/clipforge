@@ -1,0 +1,96 @@
+{
+  "fixture_only": true,
+  "backend_projection": "OfficeService.snapshot -> ai_office_activity.observe",
+  "checks": [
+    {
+      "theme": "light",
+      "wood_pixels": 97213,
+      "width": 1440,
+      "scroll": 1440,
+      "tracks": "178px 178px 178px 178px 178px 178px"
+    },
+    {
+      "theme": "dark",
+      "wood_pixels": 97213,
+      "width": 1440,
+      "scroll": 1440,
+      "tracks": "178px 178px 178px 178px 178px 178px"
+    },
+    {
+      "theme": "light",
+      "wood_pixels": 74691,
+      "width": 1280,
+      "scroll": 1280,
+      "tracks": "151.328px 151.328px 151.328px 151.344px 151.328px 151.328px"
+    },
+    {
+      "theme": "dark",
+      "wood_pixels": 74691,
+      "width": 1280,
+      "scroll": 1280,
+      "tracks": "151.328px 151.328px 151.328px 151.344px 151.328px 151.328px"
+    },
+    {
+      "theme": "light",
+      "wood_pixels": 33543,
+      "width": 900,
+      "scroll": 900,
+      "tracks": "190px 190px 190px"
+    },
+    {
+      "theme": "dark",
+      "wood_pixels": 33543,
+      "width": 900,
+      "scroll": 900,
+      "tracks": "190px 190px 190px"
+    },
+    {
+      "theme": "light",
+      "wood_pixels": 10784,
+      "width": 390,
+      "scroll": 390,
+      "tracks": "161px 161px"
+    },
+    {
+      "theme": "dark",
+      "wood_pixels": 10784,
+      "width": 390,
+      "scroll": 390,
+      "tracks": "161px 161px"
+    },
+    {
+      "theme": "light",
+      "wood_pixels": 6859,
+      "width": 320,
+      "scroll": 320,
+      "tracks": "131px 131px"
+    },
+    {
+      "theme": "dark",
+      "wood_pixels": 6859,
+      "width": 320,
+      "scroll": 320,
+      "tracks": "131px 131px"
+    }
+  ],
+  "errors": [],
+  "writes": [],
+  "queued_not_running": true,
+  "identity_preserved": true,
+  "qc_handoff": true,
+  "observed_movement": true,
+  "pause": true,
+  "tools": true,
+  "internal_panels_removed": true,
+  "upload_lifecycle": true,
+  "stale": true,
+  "missing_telemetry": true,
+  "reduced_motion": true,
+  "build_id": "zDlinP1r5jufyWbY5otRu",
+  "release_id": "e1fb5ca2e6cd226390eee920bec4ebb8343100473b83e16c83acc4443d808e60",
+  "production_build": true,
+  "preview_health": true,
+  "backend_and_capability_tests": 108,
+  "deployed": false,
+  "deployment_blocker": "sudo requires a password"
+}

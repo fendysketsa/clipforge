@@ -1,0 +1,63 @@
+{
+  "captured_at": "2026-11-24T09:13:47.415585+00:00",
+  "source": "Read-only local API queue records projected through the new source module; not deployed runtime",
+  "active_job_ids": [
+    "cc160195edb54f78b2ad5c7bc9870cd4"
+  ],
+  "observed_job_ids": [
+    "cc160195edb54f78b2ad5c7bc9870cd4"
+  ],
+  "identities_match": true,
+  "states": [
+    {
+      "id": "production",
+      "state": "running",
+      "running_count": 1,
+      "queued_count": 0,
+      "blocked_count": 0
+    },
+    {
+      "id": "quality",
+      "state": "idle",
+      "running_count": 0,
+      "queued_count": 0,
+      "blocked_count": 0
+    },
+    {
+      "id": "distribution",
+      "state": "idle",
+      "running_count": 0,
+      "queued_count": 0,
+      "blocked_count": 0
+    },
+    {
+      "id": "recovery",
+      "state": "paused",
+      "running_count": 0,
+      "queued_count": 0,
+      "blocked_count": 0
+    },
+    {
+      "id": "cleanup",
+      "state": "idle",
+      "running_count": 0,
+      "queued_count": 0,
+      "blocked_count": 0
+    },
+    {
+      "id": "facebook",
+      "state": "unavailable",
+      "running_count": 0,
+      "queued_count": 0,
+      "blocked_count": 0
+    }
+  ],
+  "limitations": [
+    "Private process locks and Facebook runner state are not available through the old deployed endpoint; not asserted by this capture."
+  ],
+  "browser_identity_match": true,
+  "browser_errors": [],
+  "rendered_job_ids": [
+    "cc160195edb54f78b2ad5c7bc9870cd4"
+  ]
+}

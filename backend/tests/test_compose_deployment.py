@@ -148,7 +148,8 @@ def test_backend_contract_does_not_resume_disabled_cron(monkeypatch):
     payloads['/api/ai-office']['control_version'] = 2
     payloads['/api/ai-office']['capabilities'].update(incident_ownership=True, observed_resolution=True, safe_delegate_only=True,
         autonomous_recovery=True,configured_qc_fallback=True,digital_director=True,strategic_directives=True,
-        organizational_learning=True)
+        organizational_learning=True,observed_queue_activity=True)
+    payloads['/api/ai-office']['activity']={'version':1,'available':True}
     payloads['/api/facebook/config']['autonomous_recovery_version']=1
     payloads['/api/facebook/config']['terminal_cleanup_version']=1
     monkeypatch.setattr(deploy,'get_json',lambda url:payloads[url.removeprefix('http://local')])
@@ -205,7 +206,7 @@ for(const name of ['package.json','package-lock.json','next.config.ts','tsconfig
 for(const dir of ['app','public','.next/static'])fs.mkdirSync(dir,{recursive:true});
 fs.writeFileSync('app/page.tsx','original source');
 fs.writeFileSync('.next/BUILD_ID','build-a');
-const js='jobDirectorRecovery history-four-columns jobPlatformQueue /reconcile dijadwalkan ulang otomatis pengaturan privasi tertunda jobAutomaticHandling Percepat pemeriksaan Terjadwal otomatis cronActivityHeading Detail pemeriksaan cronDailyLanes studioSidebar studioQueueRow connectionCard studioThemeToggle fbWorkspace facebook/uploads Facebook Reels fbControlGrid fbAutopilot facebook/autopilot facebook/storage/cleanup fbStorage Antrean produksi & upload Buat Reel baru Tonton preview fbSeriesPicker Tema animasi Gunakan tema untuk jadwal overviewMetrics overviewRecentRow Semua produksi, satu tempat. Buka navigasi Penanganan otomatis aktif /api/uploads/attention Sedang dipulihkan Rincian percobaan sebelumnya Klip yang ditolak dibersihkan otomatis officeHQ /api/ai-office officeFloorRooms officeIncidentBoard officeJournal aiOfficeProcessMap Arahan Pimpinan Digital officeLeaderBrief officeDirectiveList Kapabilitas konten aktif Pembelajaran tersimpan AI Office 3D office3dFloor officeWalker';
+const js='jobDirectorRecovery history-four-columns jobPlatformQueue /reconcile dijadwalkan ulang otomatis pengaturan privasi tertunda jobAutomaticHandling Percepat pemeriksaan Terjadwal otomatis cronActivityHeading Detail pemeriksaan cronDailyLanes studioSidebar studioQueueRow connectionCard studioThemeToggle fbWorkspace facebook/uploads Facebook Reels fbControlGrid fbAutopilot facebook/autopilot facebook/storage/cleanup fbStorage Antrean produksi & upload Buat Reel baru Tonton preview fbSeriesPicker Tema animasi Gunakan tema untuk jadwal overviewMetrics overviewRecentRow Semua produksi, satu tempat. Buka navigasi Penanganan otomatis aktif /api/uploads/attention Sedang dipulihkan Rincian percobaan sebelumnya Klip yang ditolak dibersihkan otomatis officeHQ /api/ai-office officeFloorRooms officeIncidentBoard officeWorkBoard officeWorkTools AI Office 3D office3dFloor officeWalker officeDioramaStage officePersonLabel officeSpeech Antrean langsung RYUUNDY / CREATIVE STUDIO';
 const css='.outputWorkspacePane .jobList{grid-template-columns:repeat(4,minmax(0,1fr))}.clipGrid{grid-template-columns:repeat(3,minmax(0,1fr))}:root[data-theme=light]{color-scheme:light}';
 const shell='studioSidebar overviewMetrics Buka navigasi';
 fs.writeFileSync('.next/static/app.js',shell);fs.writeFileSync('.next/static/panels.js',js);fs.writeFileSync('.next/static/app.css',css);

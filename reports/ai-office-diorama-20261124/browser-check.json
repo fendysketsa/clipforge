@@ -1,0 +1,101 @@
+{
+  "fixture_only": true,
+  "checks": [
+    {
+      "theme": "light",
+      "wood_pixels": 98406,
+      "width": 1440,
+      "scroll": 1440,
+      "tracks": "172px 172px 172px 172px 172px 172px",
+      "canvas": 1090
+    },
+    {
+      "theme": "dark",
+      "wood_pixels": 98406,
+      "width": 1440,
+      "scroll": 1440,
+      "tracks": "172px 172px 172px 172px 172px 172px",
+      "canvas": 1090
+    },
+    {
+      "theme": "light",
+      "wood_pixels": 75675,
+      "width": 1280,
+      "scroll": 1280,
+      "tracks": "145.328px 145.328px 145.328px 145.344px 145.328px 145.328px",
+      "canvas": 930
+    },
+    {
+      "theme": "dark",
+      "wood_pixels": 75675,
+      "width": 1280,
+      "scroll": 1280,
+      "tracks": "145.328px 145.328px 145.328px 145.344px 145.328px 145.328px",
+      "canvas": 930
+    },
+    {
+      "theme": "light",
+      "wood_pixels": 33209,
+      "width": 900,
+      "scroll": 900,
+      "tracks": "184px 184px 184px",
+      "canvas": 574
+    },
+    {
+      "theme": "dark",
+      "wood_pixels": 33209,
+      "width": 900,
+      "scroll": 900,
+      "tracks": "184px 184px 184px",
+      "canvas": 574
+    },
+    {
+      "theme": "light",
+      "wood_pixels": 10157,
+      "width": 390,
+      "scroll": 390,
+      "tracks": "155.5px 155.5px",
+      "canvas": 318
+    },
+    {
+      "theme": "dark",
+      "wood_pixels": 10157,
+      "width": 390,
+      "scroll": 390,
+      "tracks": "155.5px 155.5px",
+      "canvas": 318
+    },
+    {
+      "theme": "light",
+      "wood_pixels": 6312,
+      "width": 320,
+      "scroll": 320,
+      "tracks": "125.5px 125.5px",
+      "canvas": 258
+    },
+    {
+      "theme": "dark",
+      "wood_pixels": 6312,
+      "width": 320,
+      "scroll": 320,
+      "tracks": "125.5px 125.5px",
+      "canvas": 258
+    }
+  ],
+  "errors": [],
+  "movement": true,
+  "pause": true,
+  "employee_filter": true,
+  "bubbles": true,
+  "lighting": true,
+  "zoom": true,
+  "stale": true,
+  "reduced_motion": true,
+  "webgl_fallback": true,
+  "build_id": "3s70L2st5E5w74ggnYYUf",
+  "release_id": "5d301a57132f876a986c9a485f69cca44e820ab06c4412fe2a0b2862cef91508",
+  "production_build": true,
+  "preview_health": true,
+  "deployed": false,
+  "deployment_blocker": "sudo requires a password; Docker socket is not accessible to this account"
+}

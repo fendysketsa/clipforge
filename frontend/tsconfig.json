@@ -78,7 +78,11 @@
     ".next-ai-office/types/**/*.ts",
     ".next-ai-office/dev/types/**/*.ts",
     ".next-autonomous-backlog/types/**/*.ts",
-    ".next-autonomous-backlog/dev/types/**/*.ts"
+    ".next-autonomous-backlog/dev/types/**/*.ts",
+    ".next-office-diorama/types/**/*.ts",
+    ".next-office-diorama/dev/types/**/*.ts",
+    ".next-office-diorama-production/types/**/*.ts",
+    ".next-office-diorama-production/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

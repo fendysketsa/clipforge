@@ -13,6 +13,7 @@ import uuid
 import ai_office_director
 import ai_office_incidents
 import ai_office_learning
+import ai_office_activity
 import yt_skills
 
 VERSION = 1
@@ -170,6 +171,7 @@ class OfficeService:
             retry_alive=alive(a.tiktok_retry_sweeper_thread),
             attention_alive=alive(a.upload_attention_service.thread), facebook=facebook)
         context['incidents'] = ai_office_incidents.detect(a, context)
+        context['activity'] = ai_office_activity.observe(a, context)
         return context
 
     def _sync_incidents(self, rows):
@@ -445,6 +447,14 @@ class OfficeService:
             departments.append(dict(id='facebook', name='Facebook Studio',
                 role='Mengelola produksi, QC, dan antrean Facebook.', state=fb['state'],
                 detail=fb['detail'], active_count=fb['active_count']))
+            activity_by_id = {row['id']: row for row in c['activity']['departments']}
+            for row in departments:
+                observed = activity_by_id[row['id']]
+                row.update(active_count=observed['running_count'], queued_count=observed['queued_count'],
+                           blocked_count=observed['blocked_count'], detail=observed['detail'])
+                if observed['available']:
+                    row['state'] = ('working' if observed['running_count'] else 'disabled' if observed['state'] == 'paused'
+                                    else 'degraded' if row['state'] == 'degraded' else 'waiting')
         degraded = bool(error or (enabled and not worker_running)
                         or any(row['state'] == 'degraded' for row in departments))
         state = ('disabled' if not enabled else 'starting' if last is None and not error else
@@ -460,6 +470,8 @@ class OfficeService:
                             'Koordinator membagi arahan ke worker yang ada. QC, jadwal, dan konfirmasi platform tetap menentukan hasil.'),
                     last_tick_at=last, next_tick_at=next_tick if enabled else None,
                     departments=departments, tasks=tasks,
+                    activity=context['activity'] if context is not None else dict(version=ai_office_activity.VERSION,
+                        available=False, observed_at=stamp(), departments=[]),
                     incidents=incident_rows, incident_observation_available=context is not None,
                     resolved_incidents=[r for r in saved_incidents.values() if r['state'] == 'resolved'][-12:],
                     director=dict(version=ai_office_director.VERSION, name=self.strategy['name'],
@@ -481,7 +493,7 @@ class OfficeService:
                                       incident_ownership=True, observed_resolution=True, safe_delegate_only=True,
                                       autonomous_recovery=True, configured_qc_fallback=True,
                                       digital_director=True, strategic_directives=True,
-                                      organizational_learning=True))
+                                      organizational_learning=True, observed_queue_activity=True))
 
     def request_check(self):
         if not self.enabled():

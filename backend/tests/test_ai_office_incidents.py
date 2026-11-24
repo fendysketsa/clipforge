@@ -193,4 +193,6 @@ def test_facebook_office_observation_reports_real_qc_and_upload_counters(tmp_pat
     path=tmp_path/'facebook_workspace.json';path.write_text(json.dumps(state))
     result=runtime.facebook_office_snapshot()
     assert result['qc_wait_count']==1 and result['failed_upload_count']==2 and result['unknown_post_count']==1
+    assert result['activity_available'] is True
+    assert len(result['activity_work'])==1 and result['activity_work'][0]['state']=='blocked'
     assert json.loads(path.read_text())==state

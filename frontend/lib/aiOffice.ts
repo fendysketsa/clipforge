@@ -32,6 +32,7 @@ export type OfficeDirector = {
 
 export type AIOfficeSnapshot = {
   version: 1;
+  activity?: { version: 1; available: boolean; observed_at: string; departments: OfficeDepartmentActivity[] };
   control_version?: number;
   incident_observation_available?: boolean;
   incidents?: OfficeIncident[];
@@ -105,4 +106,41 @@ export function officeTime(value: string | null) {
   return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat("id-ID", {
     day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta",
   }).format(date) + " WIB" : "Belum tersedia";
+}
+
+export type OfficeWorkState = "running" | "queued" | "blocked" | "idle" | "paused" | "unavailable";
+export type OfficeWork = {
+  id: string; state: "running" | "queued" | "blocked"; title: string; stage: string;
+  kind: string; progress_percent: number | null; job_id: string | null; upload_id: string | null;
+  platform: string | null; destination: "history" | "facebook";
+};
+export type OfficeDepartmentActivity = {
+  id: string; available: boolean; state: OfficeWorkState; running_count: number;
+  queued_count: number; blocked_count: number; total_count: number; detail: string; work: OfficeWork[];
+};
+export const officeWorkLabel: Record<OfficeWorkState, string> = {
+  running: "Bekerja", queued: "Mengantre", blocked: "Tertahan", idle: "Siaga", paused: "Dijeda", unavailable: "Belum terbaca",
+};
+
+export function officeActivityStatus(snapshot: AIOfficeSnapshot | null, now: number, failed = false) {
+  const activity = snapshot?.activity;
+  const observed = Date.parse(activity?.observed_at || "");
+  const fresh = !failed && activity?.version === 1 && activity.available && Number.isFinite(observed)
+    && now - observed <= 30_000 && observed - now <= 5_000;
+  return { fresh: Boolean(fresh), observedAt: activity?.observed_at || null };
+}
+
+export function officeAgentWork(snapshot: AIOfficeSnapshot | null, id: string, now: number, failed = false): OfficeDepartmentActivity {
+  const row = snapshot?.activity?.departments.find(item => item.id === id);
+  if (!officeActivityStatus(snapshot, now, failed).fresh || !row?.available) {
+    return { id, available: false, state: "unavailable", running_count: 0, queued_count: 0, blocked_count: 0,
+      total_count: 0, detail: snapshot?.activity?.version === 1 ? "Menunggu pembaruan aktivitas" : "Menunggu data antrean dari server", work: [] };
+  }
+  return row;
+}
+
+export function officeSpeech(snapshot: AIOfficeSnapshot, id: string, now: number, failed = false) {
+  const row = officeAgentWork(snapshot, id, now, failed);
+  const work = row.work[0];
+  return { kind: "status", text: work ? `${work.stage}${work.progress_percent != null && work.state === "running" ? ` · ${Math.round(work.progress_percent)}%` : ""}: ${work.title}` : row.detail };
 }

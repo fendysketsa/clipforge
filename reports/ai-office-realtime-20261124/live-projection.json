@@ -1,0 +1,1112 @@
+{
+  "version": 1,
+  "control_version": 2,
+  "enabled": true,
+  "worker_running": true,
+  "state": "working",
+  "label": "Kantor AI sedang bekerja",
+  "detail": "Koordinator membagi arahan ke worker yang ada. QC, jadwal, dan konfirmasi platform tetap menentukan hasil.",
+  "last_tick_at": "2026-11-24T09:13:38.086442+00:00",
+  "next_tick_at": "2026-11-24T09:14:08.086465+00:00",
+  "departments": [
+    {
+      "id": "production",
+      "name": "Produksi & riset",
+      "role": "Memilih sumber dan memproduksi Short serta Long.",
+      "state": "working",
+      "detail": "1 pekerjaan video aktif atau mengantre.",
+      "active_count": 1
+    },
+    {
+      "id": "quality",
+      "name": "QC & perbaikan",
+      "role": "Memeriksa hasil; perbaikan sekali, lalu lolos atau dibuang.",
+      "state": "waiting",
+      "detail": "0 audit atau perbaikan aktif; kelulusan wajib dibuktikan.",
+      "active_count": 0
+    },
+    {
+      "id": "distribution",
+      "name": "Distribusi",
+      "role": "Menjalankan antrean yang disetujui dan memverifikasi posting.",
+      "state": "waiting",
+      "detail": "0 upload aktif atau mengantre; ID posting tetap dipertahankan.",
+      "active_count": 0
+    },
+    {
+      "id": "recovery",
+      "name": "Pemulihan",
+      "role": "Mencocokkan bukti dan mengulang kegagalan yang aman.",
+      "state": "waiting",
+      "detail": "0 catatan belum terkonfirmasi; jadwal retry dan bukti tetap diperiksa.",
+      "active_count": 0
+    },
+    {
+      "id": "cleanup",
+      "name": "Kebersihan",
+      "role": "Mengarsipkan penolakan dan membersihkan hasil terminal.",
+      "state": "waiting",
+      "detail": "Cleanup mengikuti keputusan penolakan; file pekerjaan aktif tetap dilindungi.",
+      "active_count": 0
+    },
+    {
+      "id": "facebook",
+      "name": "Facebook Studio",
+      "role": "Mengelola produksi, QC, dan antrean Facebook.",
+      "state": "waiting",
+      "detail": "Menunggu jadwal berikutnya atau hasil proses yang sedang berjalan.",
+      "active_count": 0
+    }
+  ],
+  "tasks": [
+    {
+      "id": "bbdb533f10804e00911e83723aa90afc",
+      "department": "facebook",
+      "action": "Koordinasi: 1 hasil Facebook menunggu QC",
+      "status": "completed",
+      "started_at": "2026-11-24T05:56:10.999971+00:00",
+      "finished_at": "2026-11-24T05:56:11.013019+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "da3d356f61764bc89e61d54bfec4c87f",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T05:56:11.017772+00:00",
+      "finished_at": "2026-11-24T05:56:11.023818+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "b4b3325aa00c4abd9d152aebdffb80d9",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T06:01:11.297704+00:00",
+      "finished_at": "2026-11-24T06:01:11.298899+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "7d6e42735cc741d9b6f1b1a121a74800",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T06:06:12.345562+00:00",
+      "finished_at": "2026-11-24T06:06:12.346642+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "d6d7b4cd75f44e13a73860176b522c79",
+      "department": "facebook",
+      "action": "Koordinasi: 1 hasil Facebook menunggu QC",
+      "status": "completed",
+      "started_at": "2026-11-24T06:11:13.174700+00:00",
+      "finished_at": "2026-11-24T06:11:13.188535+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "fd96e5b01f644552a37f4473f324e0a4",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T06:11:13.218739+00:00",
+      "finished_at": "2026-11-24T06:11:13.252069+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "123b8b038374465eb6ac489b9d6b7ff2",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T06:16:14.206394+00:00",
+      "finished_at": "2026-11-24T06:16:14.208176+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "d637ae9fdcde4bc0b8f4bd5d8aca31d6",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T06:21:14.994078+00:00",
+      "finished_at": "2026-11-24T06:21:14.995698+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "9107d8fc67684ef7a1a73a9451743f37",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T06:26:15.551820+00:00",
+      "finished_at": "2026-11-24T06:26:15.554391+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "71c4dafdab6c48d8833301b54d046f4a",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T06:31:15.859513+00:00",
+      "finished_at": "2026-11-24T06:31:15.860126+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "2e98438e0f6f410cafcf2c291217627a",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T06:36:16.765465+00:00",
+      "finished_at": "2026-11-24T06:36:16.768089+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "2bfa9bf6fc694466981318051ba7281b",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T06:41:17.350240+00:00",
+      "finished_at": "2026-11-24T06:41:17.351237+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "f15e6e73dd9740c19e02d5eb9f57b9a5",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T06:46:19.879588+00:00",
+      "finished_at": "2026-11-24T06:46:19.906934+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "463d558a90af4afbb3e939ee4015ff81",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T06:51:22.530431+00:00",
+      "finished_at": "2026-11-24T06:51:22.532559+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "ee273de68a5f4bc4b3972c551420b2ec",
+      "department": "distribution",
+      "action": "Koordinasi: Yuta Mio Kerjasama Bawa Pasien Ke Rumah Sakit Tapi Harus Lewati Rintangan | ROBLOX",
+      "status": "completed",
+      "started_at": "2026-11-24T06:54:23.064956+00:00",
+      "finished_at": "2026-11-24T06:54:23.072248+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "32e7b5b547cc4026a06086bbebf4105e",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T06:56:23.377805+00:00",
+      "finished_at": "2026-11-24T06:56:23.381003+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "d6734e7769774900967a02cd5a90790d",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T07:01:23.661722+00:00",
+      "finished_at": "2026-11-24T07:01:23.663224+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "6fc7104df5fd401387bfe50008625d18",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T07:06:42.645707+00:00",
+      "finished_at": "2026-11-24T07:06:42.670815+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "608027137d0c405c98b5d062ad06d96b",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T07:11:43.363303+00:00",
+      "finished_at": "2026-11-24T07:11:43.364357+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "8b5608e968314dffbc7852b7d0b36143",
+      "department": "distribution",
+      "action": "Koordinasi: Yuta, Mio Dan Baby Celine Mau Dimasak Uncle Muthu Upln Ipln || ROBLOX",
+      "status": "completed",
+      "started_at": "2026-11-24T07:14:13.893127+00:00",
+      "finished_at": "2026-11-24T07:15:54.442121+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "f7d51e4dc6b74ddeb4cc867ac658e61c",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T07:16:54.736401+00:00",
+      "finished_at": "2026-11-24T07:16:54.758260+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "0b8904f0d5f14790917d314ae251521e",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T07:21:55.770971+00:00",
+      "finished_at": "2026-11-24T07:21:55.772446+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "4de80daa9e2a46c18cc870d4630d26f2",
+      "department": "production",
+      "action": "Meminta pemeriksaan cron",
+      "status": "completed",
+      "started_at": "2026-11-24T07:26:29.160993+00:00",
+      "finished_at": "2026-11-24T07:26:29.275954+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "f77d143c6e5e4d0b9ee790df47ec2731",
+      "department": "distribution",
+      "action": "Meminta pemeriksaan generic",
+      "status": "completed",
+      "started_at": "2026-11-24T07:26:29.280037+00:00",
+      "finished_at": "2026-11-24T07:26:29.294359+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "0b44e8587a13407192806756198267e0",
+      "department": "recovery",
+      "action": "Meminta pemeriksaan retry",
+      "status": "completed",
+      "started_at": "2026-11-24T07:26:29.307116+00:00",
+      "finished_at": "2026-11-24T07:26:29.309983+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "fff7377d0a5b4500bffa9d35f89c8159",
+      "department": "recovery",
+      "action": "Meminta pemeriksaan attention",
+      "status": "completed",
+      "started_at": "2026-11-24T07:26:29.311829+00:00",
+      "finished_at": "2026-11-24T07:26:29.312926+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "0d3ec3edf6d54531b00d92967159528a",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T07:26:59.333161+00:00",
+      "finished_at": "2026-11-24T07:26:59.333938+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "ee5cea88d71c4b14b52e4ceec2f79148",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T07:32:00.407916+00:00",
+      "finished_at": "2026-11-24T07:32:00.410858+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "eeeba985f239443a94283b0d71c9d813",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T07:37:29.481714+00:00",
+      "finished_at": "2026-11-24T07:37:29.487108+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "93bf425f8633433fbb1e6723c750a12a",
+      "department": "production",
+      "action": "Meminta pemeriksaan cron",
+      "status": "completed",
+      "started_at": "2026-11-24T07:38:41.809632+00:00",
+      "finished_at": "2026-11-24T07:38:41.811756+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "015ce1d6b2f84ee1ac2d9c40122dc645",
+      "department": "distribution",
+      "action": "Meminta pemeriksaan generic",
+      "status": "completed",
+      "started_at": "2026-11-24T07:38:41.827813+00:00",
+      "finished_at": "2026-11-24T07:38:41.847722+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "a00b92b563f84ef99bce5de9bd2b9865",
+      "department": "recovery",
+      "action": "Meminta pemeriksaan retry",
+      "status": "completed",
+      "started_at": "2026-11-24T07:38:41.892028+00:00",
+      "finished_at": "2026-11-24T07:38:41.934339+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "ba61ba9531a14112b733962e16a80bb0",
+      "department": "recovery",
+      "action": "Meminta pemeriksaan attention",
+      "status": "completed",
+      "started_at": "2026-11-24T07:38:41.967600+00:00",
+      "finished_at": "2026-11-24T07:38:41.970752+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "e9c2a431df1445f9bb08af56ad459da9",
+      "department": "distribution",
+      "action": "Koordinasi: Yuta, Mio Dan Baby Celine Jaga Warung Dekat Rumah TITUT || ROBLOX",
+      "status": "completed",
+      "started_at": "2026-11-24T07:40:12.186334+00:00",
+      "finished_at": "2026-11-24T07:40:43.062392+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "60752193cd3b4c6aa32b40407fea0e7e",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T07:42:43.133512+00:00",
+      "finished_at": "2026-11-24T07:42:43.134279+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "b2fef5356e6647a2a9351dfc752d5dde",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T07:47:44.476368+00:00",
+      "finished_at": "2026-11-24T07:47:44.477561+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "5d6ecf95154f4f5fa8700c54cbb7a6bd",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T07:52:44.894643+00:00",
+      "finished_at": "2026-11-24T07:52:44.953296+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "596ce317037f46d9b64297cdc9ddf397",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T07:57:57.118948+00:00",
+      "finished_at": "2026-11-24T07:57:57.123495+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "bd30765273cb4e8a9b03a357c4d2b60b",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T08:02:57.555688+00:00",
+      "finished_at": "2026-11-24T08:02:57.588428+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "cf8673d7c808475996ed68e26b4eb3cf",
+      "department": "production",
+      "action": "Meminta pemeriksaan cron",
+      "status": "completed",
+      "started_at": "2026-11-24T08:06:56.563265+00:00",
+      "finished_at": "2026-11-24T08:06:56.564495+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "efabfd45f4ed425fbe616b8d27c98c67",
+      "department": "distribution",
+      "action": "Meminta pemeriksaan generic",
+      "status": "completed",
+      "started_at": "2026-11-24T08:06:56.583984+00:00",
+      "finished_at": "2026-11-24T08:06:56.650547+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "8385dbabcc3d4da0abced3a76b12bdca",
+      "department": "recovery",
+      "action": "Meminta pemeriksaan retry",
+      "status": "completed",
+      "started_at": "2026-11-24T08:06:56.693793+00:00",
+      "finished_at": "2026-11-24T08:06:56.762442+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "4df74c72e70c48c6ad1b46dd5e2d3f88",
+      "department": "recovery",
+      "action": "Meminta pemeriksaan attention",
+      "status": "completed",
+      "started_at": "2026-11-24T08:06:56.895992+00:00",
+      "finished_at": "2026-11-24T08:06:56.966897+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "77c613d781444e528e5056a33d0d2a12",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T08:08:27.580329+00:00",
+      "finished_at": "2026-11-24T08:08:27.632785+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "bee323a9c7eb4d2ab604053917ece44d",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T08:13:28.601927+00:00",
+      "finished_at": "2026-11-24T08:13:28.603172+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "1fe165ab97d8430492a2193925d58a2b",
+      "department": "production",
+      "action": "Meminta pemeriksaan cron",
+      "status": "completed",
+      "started_at": "2026-11-24T08:13:58.821767+00:00",
+      "finished_at": "2026-11-24T08:13:58.848981+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "091e601134d7440aa3333708ac78998f",
+      "department": "distribution",
+      "action": "Meminta pemeriksaan generic",
+      "status": "completed",
+      "started_at": "2026-11-24T08:13:59.068478+00:00",
+      "finished_at": "2026-11-24T08:13:59.112672+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "2245bb79cb7249eaa34052fac0384b04",
+      "department": "recovery",
+      "action": "Meminta pemeriksaan retry",
+      "status": "completed",
+      "started_at": "2026-11-24T08:13:59.212600+00:00",
+      "finished_at": "2026-11-24T08:13:59.283773+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "0a5ea6fc6af94946b4bc4bcdb9667c37",
+      "department": "recovery",
+      "action": "Meminta pemeriksaan attention",
+      "status": "completed",
+      "started_at": "2026-11-24T08:13:59.341595+00:00",
+      "finished_at": "2026-11-24T08:13:59.499261+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "8856ee471d884cb694a7956a07c1f325",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T08:18:55.946235+00:00",
+      "finished_at": "2026-11-24T08:18:55.947350+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "1b6403bb39b745609d8e799e544b0384",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T08:23:56.324121+00:00",
+      "finished_at": "2026-11-24T08:23:56.325051+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "6d81ddb6eb354ffba0e3114667a44beb",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T08:29:08.712351+00:00",
+      "finished_at": "2026-11-24T08:29:08.714340+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "b489f04bb8ae4f959eb0cc8a78483553",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T08:34:09.600081+00:00",
+      "finished_at": "2026-11-24T08:34:09.648965+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "3379414c98ce44dc98264f730369ad42",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T08:39:11.480137+00:00",
+      "finished_at": "2026-11-24T08:39:11.483135+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "0a98e5c040fd4ac59b4550a97518bfc7",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T08:44:12.196960+00:00",
+      "finished_at": "2026-11-24T08:44:12.201703+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "1c33a5c4a8704812b4311335f0cf2aa7",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T08:49:13.099867+00:00",
+      "finished_at": "2026-11-24T08:49:13.113382+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "cc02bdf8bece477c962ff314b4d6c98b",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T08:54:32.149652+00:00",
+      "finished_at": "2026-11-24T08:54:32.182162+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "e5e5c05ad79843259383dcf38b714827",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T08:59:36.882298+00:00",
+      "finished_at": "2026-11-24T08:59:36.884472+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "fd22c811ad174a2a98776c5164407b4b",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T09:04:37.370370+00:00",
+      "finished_at": "2026-11-24T09:04:37.371948+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    },
+    {
+      "id": "84445393af3c40869348204edd52f51a",
+      "department": "quality",
+      "action": "Koordinasi: Cerita memakai jalur cron cadangan",
+      "status": "completed",
+      "started_at": "2026-11-24T09:09:37.742240+00:00",
+      "finished_at": "2026-11-24T09:09:37.743385+00:00",
+      "summary": "Worker pemilik menerima arahan. Hasil video tetap menunggu QC dan konfirmasi platform.",
+      "next_retry_at": null
+    }
+  ],
+  "incidents": [
+    {
+      "id": "policy:story-rights",
+      "department": "quality",
+      "title": "Cerita memakai jalur cron cadangan",
+      "reason": "Bukti izin provider cerita belum tersedia. Eksperimen ini dilewati; slot tetap diisi sumber cron yang memenuhi syarat. Izin provider tidak diasumsikan.",
+      "action": "use_supported_cron",
+      "automatic": true,
+      "state": "waiting",
+      "severity": "info",
+      "job_id": null,
+      "upload_id": null,
+      "destination": "history",
+      "revision": "5bddffc79e117e7a9730",
+      "first_seen_at": "2026-11-24T05:30:15.442181+00:00",
+      "last_seen_at": "2026-11-24T09:13:38.085030+00:00"
+    }
+  ],
+  "incident_observation_available": true,
+  "resolved_incidents": [
+    {
+      "id": "job:6060c233c43847149cd8b0fd4d87f798",
+      "department": "distribution",
+      "title": "Yuta Mio Kerjasama Bawa Pasien Ke Rumah Sakit Tapi Harus Lewati Rintangan | ROBLOX",
+      "reason": "Hasil cron belum memiliki catatan upload. Worker distribusi akan memeriksa seluruh syarat sebelum mengantrekan.",
+      "action": "recover_scheduled_uploads",
+      "automatic": true,
+      "state": "resolved",
+      "severity": "info",
+      "job_id": "6060c233c43847149cd8b0fd4d87f798",
+      "upload_id": null,
+      "destination": "history",
+      "revision": "e5dbba279d41854d7239",
+      "first_seen_at": "2026-11-24T06:54:23.086830+00:00",
+      "last_seen_at": "2026-11-24T06:54:23.086830+00:00",
+      "resolved_at": "2026-11-24T06:54:53.185636+00:00"
+    },
+    {
+      "id": "job:65d5bd9855d54efba6e426c3a0bd0781",
+      "department": "quality",
+      "title": "Popo Dan Mimi Diajak kak Yuta Mio KKN Di Desa Terpencil || ROBLOX",
+      "reason": "Hasil tersedia, tetapi pemeriksaan kualitas atau review publikasi belum selesai. Upload tetap ditahan.",
+      "action": "review_quality",
+      "automatic": false,
+      "state": "resolved",
+      "severity": "warning",
+      "job_id": "65d5bd9855d54efba6e426c3a0bd0781",
+      "upload_id": null,
+      "destination": "history",
+      "revision": "8727f09d40e92a8085f7",
+      "first_seen_at": "2026-11-24T06:31:15.863706+00:00",
+      "last_seen_at": "2026-11-24T06:33:16.071687+00:00",
+      "resolved_at": "2026-11-24T06:33:46.158368+00:00"
+    },
+    {
+      "id": "facebook:quality",
+      "department": "facebook",
+      "title": "1 hasil Facebook menunggu QC",
+      "reason": "Worker memulihkan audit dengan model proyek yang sudah dikonfigurasi dan jeda retry bertingkat. Upload menunggu bukti QC yang lulus.",
+      "action": "recover_facebook",
+      "automatic": true,
+      "state": "resolved",
+      "severity": "warning",
+      "job_id": null,
+      "upload_id": null,
+      "destination": "facebook",
+      "revision": "4e713f601174e11d3b5d",
+      "first_seen_at": "2026-11-24T05:30:15.442181+00:00",
+      "last_seen_at": "2026-11-24T06:15:44.165264+00:00",
+      "resolved_at": "2026-11-24T06:16:14.213377+00:00"
+    },
+    {
+      "id": "facebook:uploads",
+      "department": "facebook",
+      "title": "3 pengiriman Facebook belum selesai",
+      "reason": "Pengiriman dihentikan oleh pemeriksaan Facebook. Kendala dan batas percobaan tetap dipertahankan.",
+      "action": "inspect_facebook",
+      "automatic": false,
+      "state": "resolved",
+      "severity": "warning",
+      "job_id": null,
+      "upload_id": null,
+      "destination": "facebook",
+      "revision": "978a712da5f189b2a59f",
+      "first_seen_at": "2026-11-24T05:30:15.442181+00:00",
+      "last_seen_at": "2026-11-24T05:55:36.854712+00:00",
+      "resolved_at": "2026-11-24T05:56:11.040863+00:00"
+    },
+    {
+      "id": "job:f1510cbe1a934af1ae433a6af2ce0c9e",
+      "department": "production",
+      "title": "Seperti Apa Keluarga yang Dirindukan Surga? Ini Ciri-Cirinya! – Ustadz Dr. Firanda Andirja, M.A.",
+      "reason": "Produksi gagal. Hasil dan bukti yang tersisa dipertahankan untuk pemeriksaan penyebab.",
+      "action": "inspect_production",
+      "automatic": false,
+      "state": "resolved",
+      "severity": "warning",
+      "job_id": "f1510cbe1a934af1ae433a6af2ce0c9e",
+      "upload_id": null,
+      "destination": "history",
+      "revision": "8ab8072d7d0a1c1516b1",
+      "first_seen_at": "2026-11-24T05:30:15.442181+00:00",
+      "last_seen_at": "2026-11-24T05:33:45.880195+00:00",
+      "resolved_at": "2026-11-24T05:34:16.139488+00:00"
+    },
+    {
+      "id": "job:f5b9c4a283134860925288922cde51c6",
+      "department": "quality",
+      "title": "BITCOIN DUMP SENTUH 61K ! POLA BEARISH TERBENTUK LAGI APAKAH EFEK DARI FOMC MEETING MINUTES ?",
+      "reason": "Hasil tersedia, tetapi pemeriksaan kualitas atau review publikasi belum selesai. Upload tetap ditahan.",
+      "action": "review_quality",
+      "automatic": false,
+      "state": "resolved",
+      "severity": "warning",
+      "job_id": "f5b9c4a283134860925288922cde51c6",
+      "upload_id": null,
+      "destination": "history",
+      "revision": "4258a95e1f79968e771e",
+      "first_seen_at": "2026-11-24T05:30:15.442181+00:00",
+      "last_seen_at": "2026-11-24T05:33:45.880195+00:00",
+      "resolved_at": "2026-11-24T05:34:16.139488+00:00"
+    }
+  ],
+  "director": {
+    "version": 1,
+    "name": "Pimpinan Digital RYUUNDY",
+    "role": "Penentu arah studio dan pembagi arahan Kantor AI",
+    "model": "digital_leader",
+    "supervision": "supervised_existing_workers",
+    "strategy": {
+      "version": 1,
+      "name": "Pimpinan Digital RYUUNDY",
+      "role": "Penentu arah studio dan pembagi arahan Kantor AI",
+      "mission": "Menumbuhkan literasi dan kebiasaan baik anak sekolah lewat cerita edukasi yang aman, orisinal, dan dekat dengan kehidupan sehari-hari.",
+      "focus": [
+        "pendidikan_moral",
+        "kehidupan_sehari_hari",
+        "anak_sekolah"
+      ],
+      "priority_platforms": [
+        "facebook",
+        "youtube",
+        "tiktok"
+      ],
+      "content_standard": [
+        "Satu pesan moral yang jelas per video",
+        "Tokoh dan naskah orisinal; tanpa footage atau musik pihak ketiga",
+        "Bahasa ramah anak, contoh konkret, tanpa klaim atau janji hasil",
+        "QC independen wajib lolos sebelum apa pun dikirim",
+        "Identitas remote dicocokkan; Post tidak dikirim ulang",
+        "Setelan operator, publication hold, dan jeda retry tetap dipertahankan"
+      ],
+      "audience": "Anak sekolah dan keluarga",
+      "model": "supervised_existing_workers"
+    },
+    "directives": [
+      {
+        "id": "bc7f921b:education_first",
+        "key": "education_first",
+        "department": "production",
+        "title": "Utamakan cerita moral dan kebiasaan baik anak sekolah",
+        "reason": "Bank topik edukasi dipakai lebih dulu untuk slot produksi. Sumber cron yang memenuhi syarat tetap menjadi pemilik produksi; arahan ini tidak membuat job baru.",
+        "action": "use_supported_cron",
+        "priority": "high",
+        "automatic": false,
+        "status": "blocked",
+        "destination": "history",
+        "evidence": {
+          "jobs": 1,
+          "quality": 0,
+          "uploads": 0,
+          "queued": 0,
+          "unverified": 0,
+          "facebook_active": 0,
+          "facebook_qc_wait": 0,
+          "facebook_failed": 0,
+          "open_incidents": 1
+        },
+        "skills": [
+          "yt-plan",
+          "yt-script",
+          "yt-viral"
+        ]
+      },
+      {
+        "id": "bc7f921b:facebook_education",
+        "key": "facebook_education",
+        "department": "facebook",
+        "title": "Produksi Original Facebook bertema edukasi dan moral anak",
+        "reason": "Departemen Facebook mengutamakan naskah orisinal anak sekolah dan kehidupan sehari-hari. QC independen dan konfirmasi platform tetap menentukan hasil.",
+        "action": "recover_facebook",
+        "priority": "high",
+        "automatic": true,
+        "status": "active",
+        "destination": "facebook",
+        "evidence": {
+          "jobs": 1,
+          "quality": 0,
+          "uploads": 0,
+          "queued": 0,
+          "unverified": 0,
+          "facebook_active": 0,
+          "facebook_qc_wait": 0,
+          "facebook_failed": 0,
+          "open_incidents": 1
+        },
+        "skills": [
+          "yt-script",
+          "yt-shorts",
+          "yt-package"
+        ]
+      },
+      {
+        "id": "bc7f921b:all_platforms",
+        "key": "all_platforms",
+        "department": "distribution",
+        "title": "Salurkan hasil yang lolos QC ke semua platform aktif",
+        "reason": "Setiap klip yang disetujui diperiksa untuk YouTube, TikTok, dan Facebook sesuai setelan masing-masing. Publication hold dan identitas remote tidak ditimpa.",
+        "action": "recover_scheduled_uploads",
+        "priority": "high",
+        "automatic": true,
+        "status": "active",
+        "destination": "history",
+        "evidence": {
+          "jobs": 1,
+          "quality": 0,
+          "uploads": 0,
+          "queued": 0,
+          "unverified": 0,
+          "facebook_active": 0,
+          "facebook_qc_wait": 0,
+          "facebook_failed": 0,
+          "open_incidents": 1
+        },
+        "skills": [
+          "yt-package",
+          "yt-seo",
+          "yt-chapters"
+        ]
+      },
+      {
+        "id": "bc7f921b:education_qc",
+        "key": "education_qc",
+        "department": "quality",
+        "title": "Buktikan QC naskah dan video edukasi sebelum publikasi",
+        "reason": "Naskah ramah anak, satu pesan moral, dan bebas klaim harus dibuktikan. Tidak ada kelulusan atau bukti QC yang dibuat-buat oleh koordinator.",
+        "action": "review_quality",
+        "priority": "high",
+        "automatic": true,
+        "status": "active",
+        "destination": "history",
+        "evidence": {
+          "jobs": 1,
+          "quality": 0,
+          "uploads": 0,
+          "queued": 0,
+          "unverified": 0,
+          "facebook_active": 0,
+          "facebook_qc_wait": 0,
+          "facebook_failed": 0,
+          "open_incidents": 1
+        },
+        "skills": [
+          "yt-audit",
+          "yt-retention",
+          "yt-edit"
+        ]
+      },
+      {
+        "id": "bc7f921b:delivery_proof",
+        "key": "delivery_proof",
+        "department": "recovery",
+        "title": "Tutup bukti pengiriman yang belum terkonfirmasi",
+        "reason": "Catatan yang belum terkonfirmasi dicocokkan dengan identitas remote. Post tidak dikirim ulang hanya karena statusnya belum jelas.",
+        "action": "verify_upload",
+        "priority": "normal",
+        "automatic": false,
+        "status": "blocked",
+        "destination": "history",
+        "evidence": {
+          "jobs": 1,
+          "quality": 0,
+          "uploads": 0,
+          "queued": 0,
+          "unverified": 0,
+          "facebook_active": 0,
+          "facebook_qc_wait": 0,
+          "facebook_failed": 0,
+          "open_incidents": 1
+        },
+        "skills": [
+          "yt-comment",
+          "yt-audit"
+        ]
+      },
+      {
+        "id": "bc7f921b:terminal_hygiene",
+        "key": "terminal_hygiene",
+        "department": "cleanup",
+        "title": "Arsipkan hasil terminal tanpa menghapus bukti",
+        "reason": "Penolakan dan Story kedaluwarsa yang belum pernah dikirim diarsipkan sesuai kebijakan; file pekerjaan aktif tetap dilindungi.",
+        "action": "cleanup_history",
+        "priority": "normal",
+        "automatic": false,
+        "status": "blocked",
+        "destination": "history",
+        "evidence": {
+          "jobs": 1,
+          "quality": 0,
+          "uploads": 0,
+          "queued": 0,
+          "unverified": 0,
+          "facebook_active": 0,
+          "facebook_qc_wait": 0,
+          "facebook_failed": 0,
+          "open_incidents": 1
+        },
+        "skills": [
+          "yt-audit"
+        ]
+      }
+    ],
+    "strategy_revision": "bc7f921b71ec5367",
+    "directives_at": "2026-11-24T09:13:38.083606+00:00",
+    "skills_version": 1,
+    "skills_applied": 11,
+    "skills_total": 11,
+    "learning": {
+      "version": 1,
+      "total": 7,
+      "last_recorded_at": "2026-11-24T000000Z",
+      "index_fresh": true,
+      "rules": [
+        "Update stale fixtures when an owner signature or snapshot shape changes.",
+        "Publish strategic directives without creating a parallel production owner.",
+        "Pass an ordered recent-style sequence to choose_topic, never a set.",
+        "Never hold the shared browser turn while waiting out an upload cooldown.",
+        "Fingerprint every runtime scene module before calling an image source-verified.",
+        "Exclude recovery_status=skipped from the story_blocked gate.",
+        "A skill may read evidence but must never invent QC approval or remote publication."
+      ]
+    },
+    "active_jobs": 1,
+    "active_uploads": 0,
+    "open_incidents": 1,
+    "needs_operator": 0
+  },
+  "journal_ready": true,
+  "capabilities": {
+    "supervised_workers": true,
+    "persisted_decisions": true,
+    "operator_settings_preserved": true,
+    "publication_gates_preserved": true,
+    "no_parallel_production_owner": true,
+    "incident_ownership": true,
+    "observed_resolution": true,
+    "safe_delegate_only": true,
+    "autonomous_recovery": true,
+    "configured_qc_fallback": true,
+    "digital_director": true,
+    "strategic_directives": true,
+    "organizational_learning": true
+  },
+  "activity": {
+    "version": 1,
+    "available": true,
+    "observed_at": "2026-11-24T09:13:47.415585+00:00",
+    "departments": [
+      {
+        "id": "production",
+        "state": "running",
+        "available": true,
+        "running_count": 1,
+        "queued_count": 0,
+        "blocked_count": 0,
+        "detail": "1 berjalan · 0 mengantre",
+        "work": [
+          {
+            "id": "job:cc160195edb54f78b2ad5c7bc9870cd4",
+            "state": "running",
+            "title": "Yuta Mio Kerjasama Bawa Pasien Ke Rumah Sakit Tapi Harus Lewati Rintangan | ROBLOX",
+            "stage": "Merender video",
+            "progress_percent": 78,
+            "job_id": "cc160195edb54f78b2ad5c7bc9870cd4",
+            "upload_id": null,
+            "platform": null,
+            "kind": "production",
+            "destination": "history"
+          }
+        ],
+        "total_count": 1
+      },
+      {
+        "id": "quality",
+        "state": "idle",
+        "available": true,
+        "running_count": 0,
+        "queued_count": 0,
+        "blocked_count": 0,
+        "detail": "Tidak ada pekerjaan aktif",
+        "work": [],
+        "total_count": 0
+      },
+      {
+        "id": "distribution",
+        "state": "idle",
+        "available": true,
+        "running_count": 0,
+        "queued_count": 0,
+        "blocked_count": 0,
+        "detail": "Tidak ada pekerjaan aktif",
+        "work": [],
+        "total_count": 0
+      },
+      {
+        "id": "recovery",
+        "state": "paused",
+        "available": true,
+        "running_count": 0,
+        "queued_count": 0,
+        "blocked_count": 0,
+        "detail": "Otomasi dijeda",
+        "work": [],
+        "total_count": 0
+      },
+      {
+        "id": "cleanup",
+        "state": "idle",
+        "available": true,
+        "running_count": 0,
+        "queued_count": 0,
+        "blocked_count": 0,
+        "detail": "Tidak ada pekerjaan aktif",
+        "work": [],
+        "total_count": 0
+      },
+      {
+        "id": "facebook",
+        "state": "unavailable",
+        "available": false,
+        "running_count": 0,
+        "queued_count": 0,
+        "blocked_count": 0,
+        "detail": "Menunggu data aktivitas",
+        "work": [],
+        "total_count": 0
+      }
+    ]
+  }
+}

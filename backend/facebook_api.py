@@ -477,6 +477,21 @@ def install(app, api):
         data=store()
         with data.lock:
             enabled=facebook_autopilot.config(data.data.get('autopilot'))['enabled']
+            activity_work=[]
+            for key,row in data.data.get('uploads',{}).items():
+                if row.get('status') in {'queued','running'} and not row.get('upload_confirmed'):
+                    activity_work.append(dict(id='facebook-upload:'+key,kind='upload',state=row['status'],
+                        title=row.get('title') or 'Facebook '+key[:8],job_id=row.get('job_id'),upload_id=key,
+                        stage='Mengirim ke Facebook' if row['status']=='running' else 'Antrean Facebook'))
+            upload_jobs={row.get('job_id') for row in activity_work}
+            for key,row in data.data.get('autopilot_runs',{}).items():
+                if row.get('job_id') in upload_jobs or row.get('status') not in {'reserved','rendering','qc','ready','queued','running','qc_wait'}:
+                    continue
+                pending=row['status'] in {'reserved','ready','queued'}
+                activity_work.append(dict(id='facebook-run:'+key,kind='production',
+                    state='queued' if pending else 'blocked',title=row.get('topic') or 'Produksi Facebook '+key[:8],
+                    job_id=row.get('job_id'),stage='Menunggu QC' if row['status']=='qc_wait' else
+                    'Menunggu produksi' if pending else 'Menunggu status pekerjaan'))
             active={str(row.get('job_id') or key) for key,row in data.data.get('autopilot_runs',{}).items()
                     if row.get('status') in {'reserved','rendering','qc','ready','queued','running'}}
             active.update(str(row.get('job_id') or key) for key,row in data.data.get('uploads',{}).items()
@@ -495,6 +510,7 @@ def install(app, api):
         detail=redact_diagnostic(originals.qc.safe_error_detail(RuntimeError(str(detail))))[:400]
         running=bool(runner.thread and runner.thread.is_alive())
         return dict(enabled=enabled,worker_running=running,active_count=len(active),
+            activity_available=True,activity_work=activity_work,
             qc_wait_count=len(qc_wait), failed_upload_count=len(failed_uploads), unknown_post_count=unknown_posts,
             skipped_upload_count=skipped_uploads, autonomous_recovery_version=1,
             state='disabled' if not enabled else 'degraded' if not running else 'working' if active else 'waiting',

@@ -1,33 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Pause, Play } from "lucide-react";
-import { officeMotion, officeStateLabel, officeStatus, type AIOfficeSnapshot } from "../../lib/aiOffice";
+import { officeActivityStatus, officeAgentWork, officeWorkLabel, type AIOfficeSnapshot } from "../../lib/aiOffice";
 import { Office3DFloor } from "./OfficeLivingFloor";
 
-const team: Record<string, { role: string; color: string; initials: string }> = {
-  production: { role: "Produser & peneliti", color: "#65aa96", initials: "PR" },
-  quality: { role: "Editor & auditor", color: "#a495ce", initials: "QC" },
-  distribution: { role: "Manajer distribusi", color: "#7dadd1", initials: "UP" },
-  recovery: { role: "Teknisi pemulihan", color: "#d2a571", initials: "RE" },
-  cleanup: { role: "Pengelola aset", color: "#9ebd79", initials: "AS" },
-  facebook: { role: "Produser Facebook", color: "#828fd0", initials: "FB" },
-};
-function AgentDesk({ color, variant }: { color: string; variant: number }) {
-  return <svg className="officeDeskDrawing" viewBox="0 0 160 115" aria-hidden="true">
-    <ellipse cx="80" cy="105" rx="58" ry="7" fill="currentColor" opacity=".05" />
-    <path d="M25 69h110v9H25zM32 78h5v23h-5zm91 0h5v23h-5z" fill="var(--office-desk)" />
-    <rect x="54" y="28" width="61" height="38" rx="4" fill="var(--office-monitor)" />
-    <rect x="58" y="32" width="53" height="29" rx="2" fill={color} opacity=".17" />
-    <g className="officeMonitorLines" stroke={color} strokeWidth="2" strokeLinecap="round"><path d="M65 41h21m-21 6h34m-34 6h15" /><path className="officeCursor" d="M87 53h10" /></g>
-    <path d="M80 66v4m-10 0h24" stroke="var(--office-monitor)" strokeWidth="4" />
-    <rect x="34" y="60" width="10" height="10" rx="2" fill={color} /><path d="M44 62h3v5h-3" fill="none" stroke={color} strokeWidth="2" />
-    <path d="M120 58l-3-10m3 10 7-12m-6 12 8-4" stroke={color} strokeWidth="3" strokeLinecap="round" /><path d="M115 57h13l-2 13h-9z" fill="var(--office-monitor)" />
-    <rect x="55" y="81" width="48" height="22" rx="8" fill="var(--office-chair)" />
-    <g className="officeAgentPerson"><path d="M62 78q18-19 36 0v17H62z" fill={color} /><path d="M66 76l-6-8m34 8 6-8" stroke={color} strokeWidth="8" strokeLinecap="round" />
-      <circle cx="80" cy="68" r="12" fill="#dcae91" /><path d={variant % 2 ? "M68 68v-6q2-13 14-10 13 1 10 17l-5-9q-9 7-19 8" : "M67 68q-2-17 14-17 15 1 12 18l-5-8-16 2z"} fill="#35434a" />
-      <path d="M72 96v9m16-9v9" stroke="var(--office-monitor)" strokeWidth="5" strokeLinecap="round" /></g>
-  </svg>;
-}
 export function OfficeStudioFloor({ snapshot, now, refreshFailed, selected, onSelect }: {
   snapshot: AIOfficeSnapshot; now: number; refreshFailed: boolean; selected: string; onSelect: (value: string) => void;
 }) {
@@ -38,23 +14,13 @@ export function OfficeStudioFloor({ snapshot, now, refreshFailed, selected, onSe
     update(); document.addEventListener("visibilitychange", update); media.addEventListener("change", update);
     return () => { document.removeEventListener("visibilitychange", update); media.removeEventListener("change", update); };
   }, []);
-  const status = officeStatus(snapshot, now, refreshFailed);
-  const motion = officeMotion(snapshot, now, refreshFailed, visible && !paused && !reduced);
-  const active = new Set(motion.activeDepartments);
-  return <section className="officeFloor" aria-labelledby="office-floor-title" data-motion={motion.canAnimate ? "live" : "paused"}>
-    <header className="officeSectionHead"><div><span className="studioEyebrow">TIM OPERASIONAL</span><h3 id="office-floor-title">Di balik setiap video.</h3></div>
-      <button type="button" className="officeQuietButton" aria-pressed={paused} disabled={reduced} title="Mengatur gerakan tampilan; pekerjaan server tetap berjalan."
-        onClick={() => setPaused(value => !value)}>{paused || reduced ? <Play size={13} /> : <Pause size={13} />}{reduced ? "Gerak minimal" : paused ? "Aktifkan gerak" : "Jeda gerak"}</button></header>
-    <Office3DFloor snapshot={snapshot} now={now} refreshFailed={refreshFailed} selected={selected} onSelect={onSelect} />
-    <div className="officeFloorRooms">{snapshot.departments.map((department, index) => {
-      const member = team[department.id] || { role: department.role, color: "#65aa96", initials: "AI" };
-      return <button type="button" className={`officeRoom${active.has(department.id) ? " is-working" : ""}${department.state === "degraded" ? " is-degraded" : ""}`}
-        key={department.id} data-department={department.id} aria-pressed={selected === department.id} title={department.role + " " + department.detail} onClick={() => onSelect(selected === department.id ? "all" : department.id)}>
-        <span className="officeRoomTop"><span>{member.initials}</span><span><i />{status.stale ? "Status terakhir" : officeStateLabel[department.state]}</span></span>
-        <AgentDesk color={member.color} variant={index} /><strong>{department.name}</strong><span className="officeRoomRole">{member.role}</span>
-        <span className="officeRoomWork">{status.stale ? "Menunggu pembaruan" : department.active_count > 0 ? `${department.active_count} pekerjaan aktif` : department.detail}</span>
-      </button>;
+  const animate = officeActivityStatus(snapshot,now,refreshFailed).fresh && visible && !paused && !reduced;
+  return <section className="officeFloor" aria-label="Kantor AI 3D" data-motion={animate ? "live" : "paused"}>
+    <header className="officeSectionHead"><h3>Aktivitas studio</h3><button type="button" className="officeQuietButton" aria-pressed={paused} disabled={reduced} title="Jeda tampilan; pekerjaan server tetap berjalan." onClick={() => setPaused(value => !value)}>{paused || reduced ? <Play size={13} /> : <Pause size={13} />}{reduced ? "Gerak minimal" : paused ? "Aktifkan gerak" : "Jeda gerak"}</button></header>
+    <Office3DFloor snapshot={snapshot} now={now} refreshFailed={refreshFailed} selected={selected} onSelect={onSelect} animate={animate} />
+    <div className="officeFloorRooms" role="group" aria-label="Pilih bagian">{snapshot.departments.map(department => {
+      const row=officeAgentWork(snapshot,department.id,now,refreshFailed);
+      return <button type="button" className={`officeRoom is-${row.state}`} key={department.id} data-department={department.id} aria-pressed={selected===department.id} onClick={()=>onSelect(selected===department.id ? "all":department.id)}><strong>{department.name}</strong><span>{officeWorkLabel[row.state]}{row.running_count ? ` · ${row.running_count}` : row.queued_count ? ` · ${row.queued_count}` : ""}</span></button>;
     })}</div>
-    <p className="officeFloorLegend"><i />{status.stale ? "Menampilkan pengamatan terakhir." : `${active.size} bagian sedang bekerja.`} Pilih meja untuk melihat kendalanya.</p>
   </section>;
 }
