@@ -10,7 +10,9 @@ import tempfile
 import threading
 import time
 import uuid
+import ai_office_director
 import ai_office_incidents
+import yt_skills
 
 VERSION = 1
 INTERVAL = 30
@@ -46,6 +48,9 @@ class OfficeService:
         self.error = None
         self.force_requested = False
         self.dirty = False
+        self.strategy = dict(ai_office_director.DEFAULT_STRATEGY)
+        self.directives = []
+        self.directive_at = None
 
     def enabled(self):
         return self.api.env_bool('AI_OFFICE_ENABLED', True)
@@ -82,6 +87,20 @@ class OfficeService:
                     or row.get('state') not in {'waiting', 'needs_operator', 'resolved'} for row in incidents.values())):
                 raise ValueError('Invalid office incident journal')
             self.incidents = incidents
+            self.strategy = (ai_office_director.validate_strategy(data['strategy'])
+                             if isinstance(data.get('strategy'), dict)
+                             else dict(ai_office_director.DEFAULT_STRATEGY))
+            directives = data.get('directives', [])
+            if (not isinstance(directives, list) or len(directives) > ai_office_director.HISTORY_LIMIT
+                    or any(not isinstance(row, dict) or not isinstance(row.get('id'), str)
+                           or not isinstance(row.get('department'), str)
+                           or row.get('status') not in {'active', 'blocked'}
+                           for row in directives)):
+                directives = []
+            self.directives = directives
+            self.directive_at = data.get('directive_at')
+            if self.directive_at is not None and not isinstance(self.directive_at, str):
+                self.directive_at = None
             for task in self.tasks:
                 if task['status'] == 'running':
                     task.update(status='deferred', finished_at=stamp(),
@@ -96,7 +115,9 @@ class OfficeService:
             with os.fdopen(descriptor, 'w') as stream:
                 os.fchmod(stream.fileno(), 0o600)
                 json.dump(dict(version=VERSION, tasks=self.tasks[-HISTORY_LIMIT:],
-                               assignments=self.assignments, incidents=self.incidents), stream, ensure_ascii=False)
+                               assignments=self.assignments, incidents=self.incidents,
+                               strategy=self.strategy, directives=self.directives,
+                               directive_at=self.directive_at), stream, ensure_ascii=False)
             os.replace(temporary, self.path)
             self.dirty = False
         finally:
@@ -170,6 +191,18 @@ class OfficeService:
                 self.assignments.pop(key, None)
             self.dirty = True
             self._save()
+
+    def _plan_directives(self, state):
+        """Publish the digital leader's assignments; execution stays with owners.
+
+        Directives are derived from the current observation, so they are not
+        written to the journal on their own. Strategy changes are persisted
+        explicitly by the strategy endpoint and by normal coordinator writes.
+        """
+        rows = ai_office_director.build_directives(self.strategy, state, state['incidents'])
+        with self.lock:
+            self.directives = rows
+            self.directive_at = stamp()
 
     def _dispatch_incident(self, incident):
         a = self.api
@@ -298,6 +331,7 @@ class OfficeService:
                 if self.dirty:
                     self._save()
             state = self.context()
+            self._plan_directives(state)
             owners = [('cron', 'production', state['cron_enabled'], state['cron_alive']),
                       ('generic', 'distribution', state['generic_enabled'], state['generic_alive']),
                       ('retry', 'recovery', state['retry_enabled'], state['retry_alive']),
@@ -368,6 +402,7 @@ class OfficeService:
             last, next_tick, error = self.last_tick_at, self.next_tick_at, self.error
         enabled = self.enabled()
         worker_running = alive(self.thread)
+        skills = yt_skills.snapshot()
         departments = []
         def department(key, name, role, enabled, working, running, detail):
             state = ('working' if working else 'disabled' if not enabled else
@@ -422,15 +457,24 @@ class OfficeService:
                     departments=departments, tasks=tasks,
                     incidents=incident_rows, incident_observation_available=context is not None,
                     resolved_incidents=[r for r in saved_incidents.values() if r['state'] == 'resolved'][-12:],
-                    director=dict(name='Direktur Studio', role='Koordinator operasi RYUUNDY',
-                        model='supervised_existing_workers', active_jobs=(context or {}).get('jobs', 0),
+                    director=dict(version=ai_office_director.VERSION, name=self.strategy['name'],
+                        role=self.strategy['role'], model='digital_leader',
+                        supervision='supervised_existing_workers',
+                        strategy=self.strategy, directives=list(self.directives),
+                        strategy_revision=ai_office_director.revision(self.strategy),
+                        directives_at=self.directive_at,
+                        skills_version=yt_skills.VERSION,
+                        skills_applied=skills['applied'],
+                        skills_total=skills['total'],
+                        active_jobs=(context or {}).get('jobs', 0),
                         active_uploads=(context or {}).get('uploads', 0),
                         open_incidents=len(live_incidents), needs_operator=sum(r['state'] == 'needs_operator' for r in live_incidents)),
                     journal_ready=self.loaded and error is None,
                     capabilities=dict(supervised_workers=True, persisted_decisions=True, operator_settings_preserved=True,
                                       publication_gates_preserved=True, no_parallel_production_owner=True,
                                       incident_ownership=True, observed_resolution=True, safe_delegate_only=True,
-                                      autonomous_recovery=True, configured_qc_fallback=True))
+                                      autonomous_recovery=True, configured_qc_fallback=True,
+                                      digital_director=True, strategic_directives=True))
 
     def request_check(self):
         if not self.enabled():
@@ -480,6 +524,36 @@ def install(app, api):
         accepted = service.request_check()
         return dict(accepted=accepted, message='Arahan pemeriksaan dikirim ke koordinator.' if accepted else
                     'Koordinator dijeda sesuai setelan server.')
+
+    @app.get('/api/ai-office/yt-skills')
+    def youtube_skills():
+        return yt_skills.snapshot()
+
+    @app.post('/api/ai-office/yt-skills/{skill_id}/run')
+    def run_youtube_skill(skill_id: str, payload: dict | None = None):
+        try:
+            result = yt_skills.run(skill_id, payload)
+        except ValueError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(422, str(exc)) from exc
+        return dict(id=skill_id, result=result)
+
+    @app.post('/api/ai-office/strategy')
+    def set_strategy(payload: dict):
+        """The operator may refine the leader's focus; it cannot bypass worker gates."""
+        try:
+            strategy = ai_office_director.validate_strategy(payload)
+        except ValueError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(422, str(exc)) from exc
+        with service.lock:
+            service.strategy = strategy
+            service.directives = []
+            service.directive_at = None
+            service.dirty = True
+            service._save()
+        service.wakeup.set()
+        return dict(accepted=True, strategy=strategy, revision=ai_office_director.revision(strategy))
 
     app.add_event_handler('startup', service.start)
     app.add_event_handler('shutdown', service.shutdown)

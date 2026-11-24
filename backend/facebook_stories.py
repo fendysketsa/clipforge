@@ -74,6 +74,14 @@ STYLES = {
             dict(label='Pilihan A', caption='Cocok untuk situasi tertentu.', icon='star'),
             dict(label='Pilihan B', caption='Punya batasan yang berbeda.', icon='heart'),
         )),
+    'moral_anak': dict(
+        label='Cerita Moral Anak', layout='compare', title_prefix='Cerita Moral',
+        concept='Satu kebiasaan baik ditunjukkan lewat kejadian sederhana di sekolah atau di rumah.',
+        hashtags=('#CeritaMoral', '#AnakSekolah', '#KebiasaanBaik'), accent='#3E8E6F', accent_soft='#E6F1E8',
+        panels=(
+            dict(label='Keadaan', caption='Situasi sederhana yang mudah dikenali.', icon='people'),
+            dict(label='Pilihan baik', caption='Satu langkah kecil yang bisa ditiru.', icon='heart'),
+        )),
 }
 STYLE_KEYS = tuple(STYLES)
 NARRATION_STAGE_TITLES = {
@@ -87,6 +95,8 @@ STYLE_HINTS = (
     (('masalah', 'solusi', 'atasi', 'mengatasi', 'keluhan'), 'masalah_solusi'),
     (('cara', 'tips', 'trik', 'langkah', 'panduan', 'mulai'), 'tiga_langkah'),
     (('pilih', 'pilihan', 'atau', 'banding', 'beda'), 'pilihan_a_b'),
+    (('moral', 'akhlak', 'jujur', 'sopan', 'sabar', 'berbagi', 'tolong', 'maaf',
+      'terima kasih', 'sekolah', 'guru', 'teman', 'anak'), 'moral_anak'),
 )
 UNSAFE = re.compile(r'\b(?:bokep|porno|judi|slot|narkoba|senjata|bunuh|teroris|pinjol|crypto|investasi|obat terlarang)\b', re.I)
 CLAIMS = re.compile(r'\b(?:dijamin|pasti sembuh|menyembuhkan|100\s*%|menghasilkan uang|password|otp|kode verifikasi|nomor rekening)\b', re.I)
@@ -121,6 +131,17 @@ DEFAULT_TOPICS = (
     dict(text='memilih belajar pagi atau malam', style='pilihan_a_b'),
     dict(text='memilih aplikasi catatan atau buku tulis', style='pilihan_a_b'),
     dict(text='memilih mengatur notifikasi atau mematikan semuanya', style='pilihan_a_b'),
+    dict(text='anak jujur mengembalikan uang kembalian di kantin sekolah', style='moral_anak'),
+    dict(text='meminta maaf setelah tidak sengaja menjatuhkan buku teman', style='moral_anak'),
+    dict(text='berbagi alat tulis dengan teman yang lupa membawa', style='moral_anak'),
+    dict(text='mengucap terima kasih setelah dibantu guru di kelas', style='moral_anak'),
+    dict(text='antre rapi di kantin sekolah saat istirahat', style='moral_anak'),
+    dict(text='menolong teman yang terjatuh di halaman sekolah', style='moral_anak'),
+    dict(text='merapikan meja belajar setelah selesai digunakan', style='moral_anak'),
+    dict(text='mendengarkan penjelasan guru tanpa menyela teman', style='moral_anak'),
+    dict(text='mengakui kesalahan saat lupa mengerjakan PR', style='moral_anak'),
+    dict(text='menyapa tetangga dengan sopan saat pulang sekolah', style='moral_anak'),
+    dict(text='membantu merapikan meja makan di rumah setelah makan', style='moral_anak'),
 )
 _BANK_TEXT = {row['text'].casefold() for row in DEFAULT_TOPICS}
 
@@ -244,6 +265,14 @@ def _fallback_narration(style: str, topic: str) -> list[str]:
             'Tidak ada pilihan yang sempurna untuk semua orang. Coba, perhatikan hasilnya, lalu sesuaikan. '
             'Ini cerita dan contoh, bukan keputusan mutlak.',
         ],
+        'moral_anak': [
+            'Apa yang bisa kita lakukan hari ini?',
+            f'Kita bahas {topic}. Cerita ini bisa terjadi di sekolah atau di rumah.',
+            'Situasinya sederhana. Ada pilihan yang terasa mudah, dan ada pilihan yang lebih baik. '
+            'Kita lihat apa yang terjadi kalau satu langkah kecil dilakukan dengan sengaja.',
+            'Satu kebiasaan baik tidak perlu besar untuk berarti. Coba di rumah atau di sekolah bersama teman. '
+            'Ini cerita dan contoh, bukan aturan yang sama untuk semua orang.',
+        ],
     }
     return rows[style]
 
@@ -345,11 +374,16 @@ def author(source_plan, previous=(), config=None):
                     'Ikon panel hanya dari daftar yang diberikan. '
                     'Judul 8-80 karakter tanpa tautan. Caption 10-220 karakter tanpa hashtag. '
                     'Wajib memuat kata contoh, cerita, pengalaman, kebiasaan, situasi, atau langkah. '
+                    'Jika audiensnya anak sekolah, pakai kalimat pendek dan satu kebiasaan baik yang jelas, '
+                    'beri contoh di sekolah atau di rumah, jangan menakut-nakuti, menghakimi, atau memaksakan '
+                    'keyakinan; biarkan anak melihat akibat dari pilihannya. '
                     'Balas JSON {"title":"...","narration":["...","...","...","..."],'
                     '"panels":[{"label":"...","caption":"...","icon":"..."}],"caption":"..."}.'},
                 {'role': 'user', 'content': json.dumps(dict(
                     topic=plan['story']['topic_text'], style=plan['story']['style'],
                     style_label=STYLES[plan['story']['style']]['label'],
+                    audience=('Anak sekolah dan keluarga' if plan['story']['style'] == 'moral_anak'
+                              else 'Keluarga umum'),
                     layout=plan['story']['layout'], allowed_icons=list(ICONS),
                     panel_count=len(plan['story']['panels'])), ensure_ascii=False)},
             ], temperature=0.7))

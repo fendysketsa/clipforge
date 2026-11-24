@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Activity, ArrowDownLeft, ArrowUpRight, CheckCheck, CirclePause, Clock3, Loader2, Radio, RefreshCw, ShieldCheck, TriangleAlert } from "lucide-react";
 import toast from "react-hot-toast";
 import { getAIOffice, requestAIOfficeCheck } from "../../lib/apiClient";
-import { officeIncidents, officeStateLabel, officeStatus, officeTaskLabel, officeTime, type AIOfficeSnapshot } from "../../lib/aiOffice";
+import { officeDirectives, officeIncidents, officeStateLabel, officeStatus, officeTaskLabel, officeTime, type AIOfficeSnapshot } from "../../lib/aiOffice";
 import { createPollingTask } from "../../lib/pollTask";
 import { OfficeProcessMap } from "./OfficeProcessMap";
 import { OfficeStudioFloor } from "./OfficeStudioFloor";
@@ -35,6 +35,7 @@ export function AIOfficePanel() {
   const departments = new Map(snapshot?.departments.map(item => [item.id, item.name]) || []);
   const tasks = snapshot?.tasks.slice(-8).reverse() || [], incidents = officeIncidents(snapshot, filter, department);
   const observed = snapshot?.control_version === 2 && snapshot.incident_observation_available, stats = snapshot?.director;
+  const strategy = stats?.strategy, directives = officeDirectives(snapshot);
   const metrics = [
     { label: "Produksi aktif", value: observed ? stats?.active_jobs : undefined, icon: Activity, detail: "Video yang sedang diproses" },
     { label: "Distribusi aktif", value: observed ? stats?.active_uploads : undefined, icon: ArrowUpRight, detail: "Antrean & pengiriman platform" },
@@ -46,6 +47,17 @@ export function AIOfficePanel() {
       <h1 id="ai-office-title">Kantor AI<span>Studio dikelola. Kendala ditangani.</span></h1><p>Satu ruang untuk tim produksi, kualitas, distribusi, dan pemulihan studio Anda.</p></div>
       <button className="officeCommand" type="button" disabled={requesting || !snapshot?.enabled} onClick={() => { void check(); }}>{requesting ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}{requesting ? "Mengirim arahan…" : "Koordinasikan sekarang"}</button></header>
     <div className="officeHQStatus" role="status"><StatusIcon size={16} /><strong>{status.label}</strong><span>{snapshot?.last_tick_at ? `Diperiksa ${officeTime(snapshot.last_tick_at)}` : status.detail}</span>{status.stale ? <small>Data terakhir · menunggu pembaruan</small> : snapshot?.enabled ? <small>Pengawasan otomatis</small> : null}</div>
+    {strategy ? <section className="officeLeaderBrief" aria-labelledby="office-leader-title">
+      <header className="officeSectionHead"><div><span className="studioEyebrow">PIMPINAN DIGITAL</span><h2 id="office-leader-title">Arahan Pimpinan Digital</h2></div><span className="officeTotal">{strategy.name}</span></header>
+      <p className="officeLeaderMission">{strategy.mission}</p>
+      <p className="officeLeaderSkills">Kapabilitas konten aktif: {stats?.skills_applied ?? 0}/{stats?.skills_total ?? 0}</p>
+      <div className="officeLeaderTags">{strategy.focus.map(item => <span key={item}>{item}</span>)}<span>{strategy.audience}</span></div>
+      {directives.length ? <ol className="officeDirectiveList">{directives.map(item => <li key={item.id} className={`is-${item.status}`}>
+        <span className="officeDirectiveMark">{item.status === "active" ? <Radio size={14} /> : <Clock3 size={14} />}</span>
+        <div><strong>{item.title}</strong><p>{item.reason}</p><small>{departments.get(item.department) || item.department} · {item.status === "active" ? "Arahan aktif" : "Menunggu syarat"}{item.skills?.length ? ` · ${item.skills.join(", ")}` : ""}</small></div>
+      </li>)}</ol> : null}
+      <p className="officeDirectorNote"><ShieldCheck size={15} />Pimpinan hanya membagi arahan. QC, setelan operator, dan konfirmasi platform tetap menentukan hasil.</p>
+    </section> : null}
     <div className="officeMetrics">{metrics.map(metric => <article key={metric.label}><span><metric.icon size={15} />{metric.label}</span><strong>{metric.value ?? "—"}</strong><small>{status.stale ? "Pengamatan terakhir" : metric.detail}</small></article>)}</div>
     <div className="officeHQColumns"><div className="officeMainColumn">
       {snapshot?.departments.length ? <OfficeStudioFloor snapshot={snapshot} now={now} refreshFailed={refreshFailed} selected={department} onSelect={setDepartment} /> : <div className="officeFloor officeFloorLoading"><Loader2 size={22} className={!refreshFailed ? "spin" : ""} /><h3>{refreshFailed ? "Kantor belum dapat dihubungi" : "Menyiapkan ruang studio…"}</h3><p>{status.detail}</p></div>}

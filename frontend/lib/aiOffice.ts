@@ -8,14 +8,33 @@ export type OfficeIncident = {
   first_seen_at?: string | null; last_seen_at?: string | null; resolved_at?: string | null;
 };
 
+export type OfficeDirective = {
+  id: string; key: string; department: string; title: string; reason: string;
+  action: string; priority: "high" | "normal"; automatic: boolean;
+  status: "active" | "blocked"; destination: string;
+  evidence?: Record<string, number>; skills?: string[];
+};
+
+export type OfficeStrategy = {
+  version: number; name: string; role: string; mission: string; audience: string;
+  focus: string[]; priority_platforms: string[]; content_standard: string[]; model: string;
+};
+
+export type OfficeDirector = {
+  version?: number; name: string; role: string; model?: string; supervision?: string;
+  strategy?: OfficeStrategy; directives?: OfficeDirective[];
+  strategy_revision?: string; directives_at?: string | null;
+  skills_version?: number; skills_applied?: number; skills_total?: number;
+  active_jobs: number; active_uploads: number; open_incidents: number; needs_operator: number;
+};
+
 export type AIOfficeSnapshot = {
   version: 1;
   control_version?: number;
   incident_observation_available?: boolean;
   incidents?: OfficeIncident[];
   resolved_incidents?: OfficeIncident[];
-  director?: { name: string; role: string; active_jobs: number; active_uploads: number;
-    open_incidents: number; needs_operator: number };
+  director?: OfficeDirector;
   enabled: boolean;
   worker_running: boolean;
   state: OfficeState;
@@ -33,6 +52,11 @@ export type AIOfficeSnapshot = {
     started_at: string; finished_at: string | null; summary: string; next_retry_at: string | null;
   }[];
 };
+
+export function officeDirectives(snapshot: AIOfficeSnapshot | null, status?: OfficeDirective["status"]): OfficeDirective[] {
+  const rows = snapshot?.director?.directives || [];
+  return status ? rows.filter(row => row.status === status) : rows;
+}
 
 export function officeStatus(snapshot: AIOfficeSnapshot | null, now: number, refreshFailed = false) {
   if (!snapshot) return { state: "starting", label: refreshFailed ? "Koordinator belum tersedia" : "Membaca status koordinator…",

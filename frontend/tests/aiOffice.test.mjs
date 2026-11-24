@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { officeIncidents, officeMotion, officeStatus, officeTime } from '../lib/aiOffice.ts';
+import { officeDirectives, officeIncidents, officeMotion, officeStatus, officeTime } from '../lib/aiOffice.ts';
 
 const now = Date.parse('2026-11-21T01:00:00Z');
 const snapshot = overrides => ({version:1, enabled:true, worker_running:true, state:'working',
@@ -70,6 +70,22 @@ test('a hidden or manually paused view stops motion while retaining observed wor
   assert.equal(motion.canAnimate,false);
   assert.equal(motion.monitoring,false);
   assert.deepEqual(motion.activeDepartments,['production']);
+});
+
+test('digital leader directives are read-only and never authorize publication',()=>{
+  const directive=(id,status)=>({id,key:id,department:'facebook',title:id,reason:'arahan',action:'recover_facebook',
+    priority:'high',automatic:status==='active',status,destination:'facebook',evidence:{jobs:0}});
+  const value=snapshot({director:{name:'Pimpinan Digital RYUUNDY',role:'Penentu arah',active_jobs:0,
+    active_uploads:0,open_incidents:0,needs_operator:0,model:'digital_leader',
+    strategy:{version:1,name:'Pimpinan Digital RYUUNDY',role:'Penentu arah',mission:'Cerita moral anak sekolah',
+      audience:'Anak sekolah dan keluarga',focus:['pendidikan_moral'],priority_platforms:['facebook','youtube','tiktok'],
+      content_standard:[],model:'supervised_existing_workers'},
+    directives:[directive('a','active'),directive('b','blocked')]}});
+  assert.deepEqual(officeDirectives(value).map(row=>row.id),['a','b']);
+  assert.deepEqual(officeDirectives(value,'active').map(row=>row.id),['a']);
+  assert.deepEqual(officeDirectives(null),[]);
+  assert.equal(value.director.strategy.priority_platforms.length,3);
+  assert.equal('publish' in value.director.strategy,false);
 });
 
 test('incident views keep automatic, operator and department ownership distinct',()=>{

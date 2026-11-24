@@ -12778,26 +12778,46 @@ def social_upload_turn():
 
 
 def execute_social_upload(platform: Literal['youtube', 'tiktok'], upload_id: str) -> None:
-    """Keep browser UI operations serial; queued cards stay queued while waiting."""
-    with social_upload_turn():
-        lock, records = (youtube_uploads_lock, youtube_uploads) if platform == 'youtube' else (tiktok_uploads_lock, tiktok_uploads)
+    """Wait out the cooldown outside the browser turn; serialize only the upload.
+
+    The cooldown is a timer, not a browser action. Holding the shared turn while
+    sleeping it blocked every other platform from taking its turn, so queued
+    cards appeared stuck even though their worker was healthy.
+    """
+    lock, records = ((youtube_uploads_lock, youtube_uploads) if platform == 'youtube'
+                     else (tiktok_uploads_lock, tiktok_uploads))
+    setter = set_youtube_upload if platform == 'youtube' else set_tiktok_upload
+    runner = run_youtube_upload if platform == 'youtube' else run_tiktok_upload
+
+    def queued_row():
         with lock:
-            upload = records.get(upload_id)
-        if upload is None or upload.attention_archived_at or upload.status != 'queued':
+            row = records.get(upload_id)
+        if (row is None or getattr(row, 'attention_archived_at', None)
+                or getattr(row, 'status', None) != 'queued'):
+            return None
+        return row
+
+    with social_upload_turn():
+        row = queued_row()
+        if row is None:
             return
         remaining = social_upload_cooldown_remaining()
         if remaining > 1:
-            setter = set_youtube_upload if platform == 'youtube' else set_tiktok_upload
-            setter(upload_id, logs=[*upload.logs,
+            setter(upload_id, logs=[*row.logs,
                 f'UPLOAD_BROWSER_COOLDOWN: menunggu jeda {math.ceil(remaining)} detik; tidak ada transfer atau Post bersamaan.'][-120:])
+    while True:
         while remaining > 0:
             time.sleep(min(1.0, remaining))
-            with lock:
-                live = records.get(upload_id)
-            if live is None or live.status != 'queued':
+            if queued_row() is None:
                 return
             remaining = social_upload_cooldown_remaining()
-        (run_youtube_upload if platform == 'youtube' else run_tiktok_upload)(upload_id)
+        with social_upload_turn():
+            if queued_row() is None:
+                return
+            remaining = social_upload_cooldown_remaining()
+            if remaining <= 0:
+                runner(upload_id)
+                return
 
 
 def youtube_upload_worker_loop() -> None:

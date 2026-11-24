@@ -123,11 +123,21 @@ def backend_contract(base: str) -> dict:
     if (office.get('version') != 1 or office.get('control_version') != 2 or any(office.get('capabilities', {}).get(key) is not True for key in (
             'supervised_workers', 'persisted_decisions', 'operator_settings_preserved',
             'publication_gates_preserved', 'no_parallel_production_owner',
-            'incident_ownership', 'observed_resolution', 'safe_delegate_only', 'autonomous_recovery', 'configured_qc_fallback'))
+            'incident_ownership', 'observed_resolution', 'safe_delegate_only', 'autonomous_recovery', 'configured_qc_fallback',
+            'digital_director', 'strategic_directives'))
+            or (office.get('director') or {}).get('model') != 'digital_leader'
+            or (office.get('director') or {}).get('skills_applied') != 11
+            or (office.get('director') or {}).get('skills_total') != 11
             or (office.get('enabled') and (office.get('worker_running') is not True
                                            or office.get('journal_ready') is not True
                                            or not -30 <= office_age <= 180))):
         raise RuntimeError('AI office coordinator is not ready')
+    skills = get_json(base + '/api/ai-office/yt-skills')
+    if (skills.get('version') != 1 or skills.get('total') != 11 or skills.get('applied') != 11
+            or {row.get('id') for row in skills.get('skills', [])} != {
+                'yt-script', 'yt-package', 'yt-edit', 'yt-comment', 'yt-plan', 'yt-viral',
+                'yt-retention', 'yt-shorts', 'yt-seo', 'yt-chapters', 'yt-audit'}):
+        raise RuntimeError('YouTube content skills are not ready')
     optimization = get_json(base + '/api/runtime/optimization')
     if (optimization.get('version') != 1 or any(optimization.get(key) is not True for key in (
             'dashboard_upload_view', 'full_upload_evidence_preserved', 'owned_render_sessions',

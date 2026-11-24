@@ -6,6 +6,7 @@ const PALETTE = {
   masalah_solusi:{ink:'#173B45',accent:'#C99433',soft:'#FAF0D9',warm:'#F4E2CD'},
   tiga_langkah:{ink:'#173B45',accent:'#168F85',soft:'#E4EFE5',warm:'#F4E2CD'},
   pilihan_a_b:{ink:'#173B45',accent:'#6C7BA8',soft:'#E9EBF4',warm:'#EDE6F0'},
+  moral_anak:{ink:'#173B45',accent:'#3E8E6F',soft:'#E6F1E8',warm:'#F7E6D2'},
 };
 const MUTED = '#54767B';
 

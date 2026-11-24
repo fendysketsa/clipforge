@@ -1,0 +1,20 @@
+{
+  "command": "backend/.venv/bin/python -m pytest tests -q",
+  "result": "passed",
+  "passed": 3419,
+  "failed": 0,
+  "warnings": 37,
+  "duration_seconds": 546.51,
+  "focused": {
+    "digital_director": 13,
+    "moral_stories": 14,
+    "upload_spacing": 16
+  },
+  "frontend": {
+    "typecheck": "passed",
+    "node_tests": "13 files, 94 assertions",
+    "node_tests_after_directive_helper": "95 assertions in aiOffice.test.mjs",
+    "build": "passed",
+    "deployment_health_build": "passed"
+  }
+}

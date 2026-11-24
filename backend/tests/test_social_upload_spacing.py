@@ -47,6 +47,20 @@ def test_two_platform_workers_never_run_browser_uploads_concurrently(monkeypatch
     assert second.is_set() and not a.is_alive() and not b.is_alive()
 
 
+def test_cooldown_wait_releases_the_shared_browser_turn(monkeypatch):
+    api.youtube_uploads['yt']=row('yt',status='queued')
+    monkeypatch.setattr(api,'save_youtube_uploads_unlocked',lambda:None)
+    values=iter([5,0,0])
+    monkeypatch.setattr(api,'social_upload_cooldown_remaining',lambda:next(values,0))
+    observed=[]
+    monkeypatch.setattr(api.time,'sleep',lambda _:observed.append(api.social_upload_execution_lock.locked()))
+    ran=[]
+    monkeypatch.setattr(api,'run_youtube_upload',lambda upload_id:ran.append(upload_id))
+    api.execute_social_upload('youtube','yt')
+    assert observed==[False]
+    assert ran==['yt']
+
+
 def test_cancelled_or_deleted_queue_entry_never_starts_after_cooldown(monkeypatch):
     api.youtube_uploads['yt']=row('yt',status='queued')
     monkeypatch.setattr(api,'social_upload_cooldown_remaining',lambda:30)
