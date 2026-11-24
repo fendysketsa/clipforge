@@ -22,7 +22,7 @@ const BLOCKED_SPOTS: (OfficePoint & { activity: OfficeActivity })[] = [
   { x: -8.6, z: -5, y: FLOOR_HEIGHT, activity: "game" },
   { x: -5.9, z: -5, y: FLOOR_HEIGHT, activity: "game" },
   { x: 6.6, z: -5.75, y: FLOOR_HEIGHT, activity: "toilet" },
-  { x: 9.2, z: -5.75, y: FLOOR_HEIGHT, activity: "toilet" },
+  { x: -5.9, z: -5, y: FLOOR_HEIGHT, activity: "game" },
 ];
 const IDLE_SPOTS: (OfficePoint & { activity: OfficeActivity })[] = [
   { x: -2.4, z: 3.4, activity: "lounge" },
@@ -30,7 +30,7 @@ const IDLE_SPOTS: (OfficePoint & { activity: OfficeActivity })[] = [
   { x: -8.4, z: 3.6, activity: "reading" },
   { x: 8.4, z: 3.6, activity: "coffee" },
   { x: -7.2, z: -5, y: FLOOR_HEIGHT, activity: "game" },
-  { x: 9.2, z: -5.75, y: FLOOR_HEIGHT, activity: "toilet" },
+  { x: 8.4, z: 3.6, activity: "coffee" },
 ];
 const QUEUE_SPOTS: (OfficePoint & { activity: OfficeActivity })[] = [
   { x: 6.6, z: 4.1, activity: "coffee" },

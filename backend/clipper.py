@@ -29,6 +29,7 @@ import source_download
 import cron_director_effects
 import cron_short_director
 import cron_long_strategy
+import retention_loop
 
 from llm import AIConfig, chat_completion, extract_json, is_llm_unavailable_error
 from islamic_text import (
@@ -19805,12 +19806,15 @@ def export_compilation(
     creator_commentary_file: Path | None = None,
     cron_long_strategy_required: bool = False,
     short_anchor_ranges: list[tuple[float, float]] | None = None,
+    retention_series: str = "",
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     source_candidates = copy.deepcopy(candidates)
+    guidance = retention_loop.load(retention_series)
     candidates, narrative_roles, story_director = build_long_form_story_sequence(
         candidates,
         transcript,
+        teaser_target_seconds=guidance.get('teaser_seconds', 16.0),
     )
     long_review = None
     compilation_review = None
@@ -20208,6 +20212,8 @@ def export_compilation(
             "manual_youtube_chapters_ready": len(candidates) >= 3,
             "filler_padding_added": False,
             "story_quality_gate_passed": bool(story_director.get("quality_gate_passed")),
+            "teaser_target_seconds": float(guidance.get('teaser_seconds', 16.0)),
+            "measured_retention_guidance": dict(guidance) if guidance.get('measured') else None,
         },
         "one_k_long_form_readiness": one_k_long_form_readiness(
             compilation,
@@ -20532,6 +20538,7 @@ def parse_args() -> argparse.Namespace:
         help="Burned caption vertical position",
     )
     parser.add_argument("--cron-long-strategy", action="store_true", help="Require grounded Long-specific story review before cron rendering")
+    parser.add_argument("--retention-series", default="", help="Series key used to load measured retention guidance")
     parser.add_argument("--caption-color", default="#FFFFFF", help="Burned caption text color, hex e.g. #FFFFFF")
     parser.add_argument("--caption-font", default=DEFAULT_FONT, help="Burned caption font family")
     parser.add_argument("--caption-outline", type=float, default=0.5, help="Caption border/outline width (0-8)")
@@ -22266,6 +22273,7 @@ def main() -> int:
                 Path(args.creator_commentary_file) if args.creator_commentary_file else None,
                 cron_long_strategy_required=args.cron_long_strategy,
                 short_anchor_ranges=compilation_anchor_ranges,
+                retention_series=args.retention_series,
             )
         ]
         emit_progress(93, "render", "Render video panjang selesai")

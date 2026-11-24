@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, MessageCircle, Minus, Plus, Radio, RotateCcw, RotateCw, Sun, Moon, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, Crosshair, MessageCircle, Minus, Plus, Radio, RotateCcw, RotateCw, Sun, Moon, Users } from "lucide-react";
 import { officeActivityStatus, officeAgentWork, officeWorkLabel, officeSpeech, type AIOfficeSnapshot } from "../../lib/aiOffice";
 import { OFFICE_PEOPLE, type OfficeActivity } from "../../lib/officeChoreography";
 import type { createOfficeScene, OfficeProjection } from "../../lib/createOfficeScene";
@@ -17,7 +17,12 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
   const scene = useRef<ReturnType<typeof createOfficeScene> | null>(null);
   const elapsed = useRef(0), signature = useRef("");
   const [ready, setReady] = useState(false), [failed, setFailed] = useState(false), [inView, setInView] = useState(true);
-  const [bubbles, setBubbles] = useState(true), [zoom, setZoom] = useState(1), [lighting, setLighting] = useState<"auto" | "day" | "night">("auto");
+  const saved = () => { try { return JSON.parse(localStorage.getItem('office3d-view') || '{}') as Record<string, unknown>; } catch { return {}; } };
+  const initial = saved();
+  const [bubbles, setBubbles] = useState(initial.bubbles !== false), [zoom, setZoom] = useState(typeof initial.zoom === 'number' ? initial.zoom : 1),
+    [lighting, setLighting] = useState<"auto" | "day" | "night">(initial.lighting === 'day' || initial.lighting === 'night' ? initial.lighting : 'auto'),
+    [follow, setFollow] = useState(initial.follow === true);
+  useEffect(() => { try { localStorage.setItem('office3d-view', JSON.stringify({ bubbles, zoom, lighting, follow })); } catch { /* storage unavailable */ } }, [bubbles, zoom, lighting, follow]);
   const [activities, setActivities] = useState<Record<string, OfficeActivity>>({});
   const status = officeActivityStatus(snapshot, now, refreshFailed);
   const hour = new Date(now).getUTCHours();
@@ -79,6 +84,7 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
     return () => cancelAnimationFrame(frame);
   }, [ready, animate, inView, night, zoom]);
   useEffect(() => { scene.current?.render(elapsed.current, night, latest.current.states); }, [selected, bubbles, night, snapshot]);
+  useEffect(() => { if (follow && selected !== 'all') scene.current?.focusOn(selected); }, [follow, selected]);
 
   const chosen = OFFICE_PEOPLE.find(person => person.id === selected);
   const department = snapshot.departments.find(row => row.id === selected);
@@ -112,7 +118,8 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
         <span />
         <button type="button" aria-label="Perkecil kantor" disabled={zoom <= .6} onClick={() => setZoom(value => Math.max(.6, value - .2))}><Minus size={15} /></button>
         <button type="button" aria-label="Perbesar kantor" disabled={zoom >= 2.6} onClick={() => setZoom(value => Math.min(2.6, value + .2))}><Plus size={15} /></button>
-        <span /><button type="button" aria-pressed={bubbles} aria-label="Tampilkan bubble percakapan" onClick={() => setBubbles(value => !value)}><MessageCircle size={15} /></button>
+        <span /><button type="button" aria-pressed={follow} aria-label="Ikuti agen yang dipilih" onClick={() => setFollow(value => !value)}><Crosshair size={15} /></button>
+        <button type="button" aria-pressed={bubbles} aria-label="Tampilkan bubble percakapan" onClick={() => setBubbles(value => !value)}><MessageCircle size={15} /></button>
         <button type="button" aria-label={lighting === "auto" ? "Pencahayaan otomatis, ubah ke siang" : lighting === "day" ? "Pencahayaan siang, ubah ke malam" : "Pencahayaan malam, ubah ke otomatis"} onClick={() => setLighting(value => value === "auto" ? "day" : value === "day" ? "night" : "auto")}>{night ? <Moon size={15} /> : <Sun size={15} />}</button></div>
     </div>
     <div className="officeDioramaFooter"><span><Radio size={13} />{status.fresh ? "Aktivitas mengikuti antrean sistem" : "Menunggu pembaruan aktivitas"}</span></div>

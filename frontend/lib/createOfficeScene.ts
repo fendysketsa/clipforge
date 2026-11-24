@@ -345,17 +345,20 @@ export function createOfficeScene(host: HTMLElement,
     // a lit monitor, so nobody is ever seen sitting in empty space.
     const seat = new THREE.Group(); scene.add(seat);
     box(0, .62, 0, .78, .18, .74, "#4f655f", seat);
-    box(0, 1.06, .34, .8, .68, .14, "#4f655f", seat);
-    cylinder(0, .3, 0, .06, .6, "#485451", seat);
-    for (const dx of [-.28, .28]) for (const dz of [-.26, .26]) box(dx, .06, dz, .07, .1, .07, "#485451", seat);
+    box(0, 1.06, -.34, .8, .68, .14, "#4f655f", seat);
+    const seatLegs = new THREE.Group(); seat.add(seatLegs);
+    for (const dx of [-.28, .28]) for (const dz of [-.26, .26]) {
+      const leg = cylinder(dx, .29, dz, .05, .58, "#485451", seatLegs);
+      leg.rotation.z = dx > 0 ? -.05 : .05;
+    }
     const station = new THREE.Group(); scene.add(station);
-    box(0, 1.02, -1, 2.4, .14, 1.1, "#ead9b8", station);
-    for (const dx of [-1.05, 1.05]) for (const dz of [-1.4, -.62]) box(dx, .48, dz, .08, 1, .08, "#4e5c58", station);
-    box(0, 1.3, -1.35, .08, .42, .08, "#354c48", station);
-    box(0, 1.74, -1.35, 1.15, .72, .09, "#354c48", station);
-    box(0, 1.74, -1.28, 1.02, .6, .02, "#b6d3cc", station);
-    box(0, 1.12, -.86, .72, .03, .25, "#596e67", station);
-    cylinder(.86, 1.16, -.86, .1, .22, "#f6f0de", station);
+    box(0, 1.02, 1, 2.4, .14, 1.1, "#ead9b8", station);
+    for (const dx of [-1.05, 1.05]) for (const dz of [.62, 1.4]) box(dx, .48, dz, .08, 1, .08, "#4e5c58", station);
+    box(0, 1.3, 1.35, .08, .42, .08, "#354c48", station);
+    box(0, 1.74, 1.35, 1.15, .72, .09, "#354c48", station);
+    box(0, 1.74, 1.28, 1.02, .6, .02, "#b6d3cc", station);
+    box(0, 1.12, .86, .72, .03, .25, "#596e67", station);
+    cylinder(.86, 1.16, .86, .1, .22, "#f6f0de", station);
     return { group, body, legs, arms, mug, book, seat, station, point: { ...person.desk } as OfficePoint,
       path: [] as OfficePoint[], destination: "", pendingDestination: "", pendingSince: 0,
       speed: 0, rotation: person.desk.z > 0 ? 0 : Math.PI };
@@ -513,6 +516,12 @@ export function createOfficeScene(host: HTMLElement,
     rotate(delta: number) { azimuth += delta; updateCamera(); render(lastSeconds, night, lastStates); },
     tilt(delta: number) { elevation = Math.min(1.32, Math.max(.12, elevation + delta));
       updateCamera(); render(lastSeconds, night, lastStates); },
+    focusOn(id: string) {
+      const index = OFFICE_PEOPLE.findIndex(row => row.id === id);
+      if (index < 0) return;
+      pan.set(people[index].point.x, 0, people[index].point.z);
+      refreshFocus(); render(lastSeconds, night, lastStates);
+    },
     resetView() { azimuth = BASE_AZIMUTH; elevation = BASE_ELEVATION; zoom = 1; pan.set(0, 0, 0);
       onZoomChange?.(zoom); refreshFocus(); resize(); },
     dispose() {

@@ -65,6 +65,7 @@ from hypit_quick import (
 from article_presenter import is_article_presenter_prompt
 from religious_review import reassess_casual_work_wish
 import long_video_qc
+import retention_loop
 import cron_source_policy
 from cron_activity import summarize_activity
 import daily_cron_plan
@@ -10159,6 +10160,7 @@ def comparable_performance_medians(
         "shown_in_feed",
         "stayed_to_watch_percentage",
         "average_view_percentage",
+        "retention_first_30_seconds",
     ):
         field_values = values(field)
         if field_values:
@@ -10366,6 +10368,23 @@ def record_youtube_performance(
             snapshot,
             list(youtube_uploads.values()),
         )
+        try:
+            medians = comparable_performance_medians(provisional, list(youtube_uploads.values()))
+            row = retention_loop.directive(
+                snapshot.retention_first_30_seconds,
+                medians.get('retention_first_30_seconds'),
+                views=snapshot.views,
+            )
+            row['recorded_at'] = now_iso()
+            if upload.growth_series:
+                retention_loop.save(upload.growth_series, row)
+            if row.get('measured'):
+                diagnosis.append(
+                    f"Arahan retensi terukur: {row['reason']} "
+                    f"Langkah berikutnya: {row['action']}, teaser {row['teaser_seconds']:.0f} detik, {row['beat_hint']}."
+                )
+        except (OSError, ValueError, TypeError):
+            pass
         updated = provisional.model_copy(
             update={
                 "updated_at": now_iso(),
@@ -16211,6 +16230,8 @@ def build_clipper_command(
         )
     if request.clip_mode == "highlight_5m" and request.cron_long_strategy:
         command.append("--cron-long-strategy")
+    if request.clip_mode == "highlight_5m" and request.growth_series:
+        command.extend(["--retention-series", request.growth_series[:80]])
     if request.clip_mode == "long_animate":
         command.extend(
             ["--long-animate-target-duration", str(request.compilation_target_seconds),

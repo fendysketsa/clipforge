@@ -110,6 +110,7 @@ export function createStoryRenderer(ctx, data) {
   const SKIN='#f2c6a2', HAIR='#453a34', SHIRT_A='#3e8e7a', SHIRT_B='#e08a72';
   function person(x,y,t,mood,shirt,scale=1){
     ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);
+    ctx.rotate(Math.sin(t*1.5)*.018+(mood==='cough'?Math.sin(t*17)*.012:0));
     const bob=3*Math.sin(t*2.2), sy=bob;
     ellipse(0,sy+152,74,13,'#cdd8c8');
     path([[-22,sy+62],[-31,sy+126]],'#41524e',13);path([[22,sy+62],[31,sy+126]],'#41524e',13);
@@ -118,7 +119,8 @@ export function createStoryRenderer(ctx, data) {
     const handR=mood==='help'?[-84,sy-10]:[70,sy+28];
     for(const [hx,hy] of [handL,handR]){path([[hx>0?40:-40,sy-2],[hx*0.72,hy+8],[hx,hy]],shirt,14);ellipse(hx,hy,11,11,SKIN);}
     ellipse(0,sy-84,57,62,HAIR);ellipse(0,sy-73,49,51,SKIN);
-    ellipse(-16,sy-78,4,mood==='cough'?1:5,'#33443f');ellipse(16,sy-78,4,mood==='cough'?1:5,'#33443f');
+    const blink=t%4.4<.12?1:5;
+    ellipse(-16,sy-78,4,mood==='cough'?1:blink,'#33443f');ellipse(16,sy-78,4,mood==='cough'?1:blink,'#33443f');
     if(mood==='cough'){
       ellipse(0,sy-50,13,10,'#8f5b5b');
       for(let i=0;i<3;i++){const a=t*5+i*2.1;path([[64+i*15,sy-86+Math.sin(a)*8],[86+i*16,sy-96+Math.sin(a)*12]],'#9fc6cf',4);}
