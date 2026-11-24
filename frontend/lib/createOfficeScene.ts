@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { OFFICE_PEOPLE, FLOOR_HEIGHT, officeDestination, officePath, officeStep, type OfficePoint, type OfficeActivity } from "./officeChoreography";
+import { OFFICE_PEOPLE, officeDestination, officePath, officeStep, type OfficePoint, type OfficeActivity } from "./officeChoreography";
 
 export type OfficeProjection = { id: string; x: number; y: number; activity: OfficeActivity };
 export const OFFICE_AREAS = [
@@ -10,8 +10,6 @@ export const OFFICE_AREAS = [
   { id: "assets", label: "Studio sosial & aset", x: -7.5, z: 5.8, y: 0 },
   { id: "lounge", label: "Lounge", x: 0, z: 5.8, y: 0 },
   { id: "pantry", label: "Coffee bar", x: 7.5, z: 5.8, y: 0 },
-  { id: "game", label: "Lantai 2 · Game room", x: -7.2, z: -5, y: FLOOR_HEIGHT },
-  { id: "toilet", label: "Lantai 2 · Toilet", x: 7.9, z: -5, y: FLOOR_HEIGHT },
 ];
 
 /** Procedural models are bundled with the app: no external models, textures or CDN. */
@@ -232,76 +230,7 @@ export function createOfficeScene(host: HTMLElement,
     }
   }
   [[-10.9, -5.9], [3.5, -5.9], [11, -5.9], [-10.9, 1.6], [11, 2.7]].forEach(([x, z]) => plant(x, z));
-  // Second floor: game room (left), reading nook (centre), toilet (right).
-  const upper = FLOOR_HEIGHT;
-  box(0, upper - .18, -4.5, 24.4, .34, 6.2, "#d9cfb6");
-  box(0, upper - .36, -1.45, 24.4, .14, .18, "#b5a98f");
-  // Upper-storey shell: front, left, right and back walls with door openings
-  // that match the walking routes (stairs, centre, right room).
-  function upperFront(start: number, end: number, door: number) {
-    for (const [a, b] of [[start, door - .9], [door + .9, end]]) {
-      if (b - a < .15) continue;
-      box((a + b) / 2, upper + 1.15, -1.45, b - a, 2.3, .06, "#a9cbc7", fixed, .2);
-      [a, b].forEach(x => box(x, upper + 1.15, -1.45, .07, 2.3, .08, "#6d8883"));
-      box((a + b) / 2, upper + 2.3, -1.45, b - a, .06, .08, "#6d8883");
-    }
-    box(door, upper + 2.3, -1.45, 1.8, .12, .1, "#6d8883");
-  }
-  upperFront(-12.2, -4.3, -11.2);
-  upperFront(-4.3, 4.3, 0);
-  upperFront(4.3, 12.2, 7.8);
-  box(-12.2, upper + 1.15, -6.62, .08, 2.3, 1.85, "#ced8ce", fixed, .2);
-  box(-12.2, upper + 1.15, -2.9, .08, 2.3, 2.9, "#ced8ce", fixed, .2);
-  box(-12.2, upper + 2.3, -5, .12, .12, 1.4, "#6d8883");
-  box(12.2, upper + 1.15, -4.5, .08, 2.3, 6.1, "#ced8ce", fixed, .2);
-  // Stairs climb outside the full-width upper slab, with visible treads,
-  // risers, stringers and landings so nobody appears to walk on thin air.
-  const STAIR_X = -12.3, RUN_START = -1.6, RUN_LENGTH = 3.4;
-  box(STAIR_X, .06, RUN_START + .55, 1.55, .16, 1.4, "#d4c6a9");
-  box(STAIR_X, upper - .1, RUN_START - RUN_LENGTH - .5, 1.55, .2, 1.4, "#d4c6a9");
-  for (let i = 0; i < 11; i++) {
-    const t = (i + 1) / 11;
-    const z = RUN_START - t * RUN_LENGTH;
-    box(STAIR_X, upper * t - .06, z, 1.55, .16, .36, "#c6b594");
-    box(STAIR_X, upper * t - .26, z - .17, 1.55, .3, .07, "#b3a487");
-    box(STAIR_X + .72, upper * t + .38, z, .07, .88, .07, "#8b8069");
-    box(STAIR_X - .72, upper * t + .38, z, .07, .88, .07, "#8b8069");
-  }
-  const slope = Math.hypot(RUN_LENGTH, upper);
-  for (const side of [-.75, .75]) {
-    const stringer = box(STAIR_X + side, upper / 2 - .12, RUN_START - RUN_LENGTH / 2,
-      .16, slope, .16, "#9c8d72");
-    stringer.rotation.x = -Math.atan2(RUN_LENGTH, upper);
-    const rail = box(STAIR_X + side, upper / 2 + .5, RUN_START - RUN_LENGTH / 2,
-      .1, slope, .1, "#b9a888");
-    rail.rotation.x = -Math.atan2(RUN_LENGTH, upper);
-  }
-  box(-11.6, upper - .12, -5, 1.4, .24, 1.5, "#cfc3a6");
-  box(0, upper + 1.05, -7.55, 24.3, 2.1, .1, "#b9c8bd", fixed, .22);
-  // A doorway gap in each glass partition lines up with the upper corridor.
-  for (const x of [-4.3, 4.3]) {
-    box(x, upper + 1.05, -6.43, .1, 2.1, 2.25, "#b9c8bd", fixed, .22);
-    box(x, upper + 1.05, -2.68, .1, 2.1, 2.45, "#b9c8bd", fixed, .22);
-    box(x, upper + 1.95, -4.6, .13, .16, 1.4, "#9cae9f", fixed);
-  }
-  // Arcade cabinets and two stools in the game room.
-  for (const x of [-8.6, -5.9]) {
-    box(x, upper + .72, -6.1, 1, 1.44, .78, "#3b5a50");
-    box(x, upper + 1.02, -5.69, .76, .58, .03, "#9ad0c2");
-    box(x, upper + .62, -5.68, .56, .07, .14, "#263b35");
-    // No fixed stool here: each seated player brings their own chair.
-  }
-  // Toilet stalls with translucent doors and a shared sink.
-  for (const x of [6.6, 9.2]) {
-    box(x - .78, upper + .9, -5.9, .08, 1.8, 1.5, "#d6d0bd");
-    box(x + .78, upper + .9, -5.9, .08, 1.8, 1.5, "#d6d0bd");
-    box(x, upper + .9, -6.65, 1.6, 1.8, .08, "#d6d0bd");
-    box(x, upper + .83, -5.14, 1.5, 1.66, .05, "#c9d8d2", fixed, .45);
-    cylinder(x, upper + .75, -5.02, .12, .16, "#f4f1e6");
-  }
-  box(-1.2, upper + .75, -7, 1.4, 1.5, .34, "#9a7d5c");
-  for (let i = 0; i < 4; i++) box(-1.65 + i * .3, upper + .5 + (i % 2) * .35, -6.8, .22, .5, .28, ["#7d9c8b", "#c69a72", "#7e8fb3", "#b58f76"][i]);
-  for (const x of [-1, 1]) { cylinder(x, upper + .42, -4.5, .42, .12, "#8aa394"); box(x, upper + .6, -4.15, .78, .65, .12, "#8aa394"); }
+  // Ground floor only: all work and movement happens on this single level.
   // Merge static opaque furniture by material: keep the animation inexpensive.
   fixed.updateMatrixWorld(true);
   const buckets = new Map<THREE.Material, THREE.BufferGeometry[]>();
@@ -318,7 +247,6 @@ export function createOfficeScene(host: HTMLElement,
     geometries.add(geometry); const object = new THREE.Mesh(geometry, mat); object.castShadow = true; object.receiveShadow = true; scene.add(object);
   }
   for (const x of [-8, 0, 8]) pendant(x, -4);
-  for (const x of [-5.6, 6.6]) pendant(x, -4.6, FLOOR_HEIGHT);
   for (const x of [-7.5, 7.5]) pendant(x, 4.2);
   // Six distinct articulated employees, with feet, eyes, hair and a small work badge.
   const people = OFFICE_PEOPLE.map((person, index) => {
@@ -436,7 +364,7 @@ export function createOfficeScene(host: HTMLElement,
       }
       if (!person.path.length) {
         const desired = target.activity === "desk" ? (profile.desk.z > 0 ? 0 : Math.PI)
-          : target.activity === "game" || target.activity === "toilet" || target.activity === "reading" ? Math.PI
+          : target.activity === "reading" ? Math.PI
             : target.activity === "meeting" ? Math.PI / 2 : 0;
         let turn = desired - person.rotation;
         turn = Math.atan2(Math.sin(turn), Math.cos(turn));
@@ -444,7 +372,7 @@ export function createOfficeScene(host: HTMLElement,
       }
       const pose = { ...person.point, rotation: person.rotation, activity: person.path.length && state !== "unavailable" ? "walk" as const : target.activity };
       person.group.position.set(pose.x, pose.y ?? 0, pose.z); person.group.rotation.y = pose.rotation;
-      const seated = ["desk", "meeting", "reading", "game", "cards", "write", "snack"].includes(pose.activity);
+      const seated = ["desk", "meeting", "reading", "cards", "write", "snack"].includes(pose.activity);
       person.seat.visible = seated;
       person.seat.position.set(pose.x, pose.y ?? 0, pose.z);
       person.seat.rotation.y = pose.rotation;
@@ -474,10 +402,8 @@ export function createOfficeScene(host: HTMLElement,
           case "walk": arm.rotation.x = Math.sin(seconds * 8 + side * Math.PI + Math.PI) * .4; break;
           case "meeting": arm.rotation.x = -.5 + Math.sin(seconds * 2.5 + side) * .25; break;
           case "desk": arm.rotation.x = state === "running" ? -.55 + Math.sin(seconds * 5 + side) * .08 : -.2; break;
-          case "game": arm.rotation.x = -.62 + Math.sin(seconds * 7 + side * 1.7) * .12; break;
           case "coffee": arm.rotation.x = side ? -.78 + Math.sin(seconds * 1.6) * .1 : -.18; break;
           case "reading": arm.rotation.x = -.72 + side * .04; break;
-          case "toilet": arm.rotation.x = -.12; break;
           case "lounge": case "sofa": arm.rotation.x = side ? -.42 + quiet * 2 : -.14; break;
           case "write": case "cards": case "copy": case "call": case "snack":
             arm.rotation.x = side ? -.72 + Math.sin(seconds * 2 + side) * .06 : -.4; break;

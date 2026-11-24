@@ -5,9 +5,9 @@ import { officeActivityStatus, officeAgentWork, officeWorkLabel, officeSpeech, t
 import { OFFICE_PEOPLE, type OfficeActivity } from "../../lib/officeChoreography";
 import type { createOfficeScene, OfficeProjection } from "../../lib/createOfficeScene";
 
-const areaLabels = ["Ruang rapat", "Produksi & QC", "Distribusi & pemulihan", "Studio sosial & aset", "Lounge", "Coffee bar", "Game room", "Toilet"];
-const areaIds = ["meeting", "creative", "media", "assets", "lounge", "pantry", "game", "toilet"];
-const activityLabel: Record<OfficeActivity, string> = { desk: "Di meja kerja", walk: "Berjalan", meeting: "Diskusi tim", coffee: "Di coffee bar", lounge: "Di lounge", game: "Bermain di game room", toilet: "Ke toilet", stairs: "Naik tangga", reading: "Membaca", sofa: "Beristirahat di sofa", cards: "Main kartu", copy: "Menyalin dokumen", write: "Menulis catatan", call: "Sedang menelepon", snack: "Ngopi dan ngemil" };
+const areaLabels = ["Ruang rapat", "Produksi & QC", "Distribusi & pemulihan", "Studio sosial & aset", "Lounge", "Coffee bar"];
+const areaIds = ["meeting", "creative", "media", "assets", "lounge", "pantry"];
+const activityLabel: Record<OfficeActivity, string> = { desk: "Di meja kerja", walk: "Berjalan", meeting: "Diskusi tim", coffee: "Di coffee bar", lounge: "Di lounge", reading: "Membaca", sofa: "Beristirahat sebentar", cards: "Menyusun ide", copy: "Menyiapkan bahan", write: "Menyiapkan langkah", call: "Menghubungi tim", snack: "Ngopi sebentar" };
 
 export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect, animate }: {
   snapshot: AIOfficeSnapshot; now: number; refreshFailed: boolean; selected: string; onSelect: (value: string) => void; animate: boolean;
@@ -90,7 +90,7 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
   const department = snapshot.departments.find(row => row.id === selected);
   const chosenWork = officeAgentWork(snapshot,selected,now,refreshFailed);
   return <div className={`officeDiorama${night ? " is-night" : ""}`}>
-    <div className="officeDioramaBar"><div><span className="officeDioramaMark"><Users size={14} /></span><strong>RYUUNDY HQ <span>/ LANTAI 01 + 02</span></strong></div>
+    <div className="officeDioramaBar"><div><span className="officeDioramaMark"><Users size={14} /></span><strong>RYUUNDY HQ <span>/ LANTAI 01</span></strong></div>
       <span className={`officeConnection${!status.fresh ? " is-stale" : ""}`}><i />{!status.fresh ? "Data terakhir" : "Antrean langsung"}</span></div>
     <div className="office3dFloor officeDioramaStage" data-ready={ready} data-animated={animate && inView} aria-label="AI Office 3D: ruangan kantor, karyawan berjalan, dan bubble percakapan">
       <div ref={host} className="officeCanvas" aria-hidden="true" />

@@ -2,57 +2,38 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { OFFICE_PEOPLE, officeDestination, officePath, officeStep } from '../lib/officeChoreography.ts';
 
-const DOORS = [-11.2, 0, 7.8];
 const STATES = ['running', 'queued', 'blocked', 'idle', 'running'];
 
-function walk(index, state) {
-  let point = { ...OFFICE_PEOPLE[index].desk };
-  const target = officeDestination(index, state);
-  let path = officePath(point, target), steps = 0;
-  while (path.length && steps++ < 3000) {
-    const previous = { ...point };
-    const next = officeStep(point, path, .05);
-    point = { x: next.x, z: next.z, y: next.y };
-    path = next.path;
-    const level = point.y ?? 0;
-    if (level < .5) {
-      if ((previous.z + 1.4) * (point.z + 1.4) < 0) {
-        assert.ok(DOORS.some(door => Math.abs(point.x - door) < .95),
-          `${OFFICE_PEOPLE[index].id}/${state}: tembus kaca depan di x=${point.x}`);
+test('setiap agen bekerja di lantai 1, tidak melintas dinding, dan sampai tujuan', () => {
+  for (let i = 0; i < OFFICE_PEOPLE.length; i++) {
+    let point = { ...OFFICE_PEOPLE[i].desk };
+    for (const state of STATES) {
+      const target = officeDestination(i, state);
+      let path = officePath(point, target), steps = 0;
+      assert.ok(target.z > -1.4, `${OFFICE_PEOPLE[i].id}/${state}: tujuan di belakang kaca`);
+      while (path.length && steps++ < 3000) {
+        const previous = { ...point };
+        const next = officeStep(point, path, .05);
+        point = { x: next.x, z: next.z };
+        path = next.path;
+        assert.ok(point.z > -1.4,
+          `${OFFICE_PEOPLE[i].id}/${state}: menembus kaca depan di z=${point.z.toFixed(2)}`);
+        assert.ok(point.x > -12.3 && point.x < 12.3 && point.z < 7,
+          `${OFFICE_PEOPLE[i].id}/${state}: keluar area`);
+        assert.ok(Math.hypot(point.x - previous.x, point.z - previous.z) <= .09,
+          `${OFFICE_PEOPLE[i].id}/${state}: gerakan melompat`);
       }
-      for (const wall of [-4.25, 4.25]) {
-        if ((previous.x - wall) * (point.x - wall) < 0 && point.z < -1.6 && Math.abs(point.z + 2.4) > 1) {
-          assert.fail(`${OFFICE_PEOPLE[index].id}/${state}: tembus partisi lantai 1 x=${wall}`);
-        }
-      }
-    } else {
-      for (const wall of [-4.3, 4.3]) {
-        if ((previous.x - wall) * (point.x - wall) < 0 && point.z < -1.6 && Math.abs(point.z + 4.6) > .85) {
-          assert.fail(`${OFFICE_PEOPLE[index].id}/${state}: tembus partisi lantai 2 x=${wall}`);
-        }
-      }
+      assert.equal(path.length, 0, `${OFFICE_PEOPLE[i].id}/${state}: rute tidak selesai`);
+      assert.ok(Math.hypot(point.x - target.x, point.z - target.z) < .01,
+        `${OFFICE_PEOPLE[i].id}/${state}: tidak sampai tujuan`);
     }
-    assert.ok(point.x > -13.6 && point.x < 12.4 && point.z > -7.5 && point.z < 7,
-      `${OFFICE_PEOPLE[index].id}/${state}: keluar area`);
   }
-  assert.equal(path.length, 0, `${OFFICE_PEOPLE[index].id}/${state}: rute tidak selesai`);
-  assert.ok(Math.hypot(point.x - target.x, point.z - target.z,
-    (point.y ?? 0) - (target.y ?? 0)) < .01, `${OFFICE_PEOPLE[index].id}/${state}: tidak sampai tujuan`);
-}
-
-test('setiap agen mencapai tujuan tanpa menembus dinding atau partisi', () => {
-  for (let i = 0; i < OFFICE_PEOPLE.length; i++) for (const state of STATES) walk(i, state);
 });
 
-test('tidak ada agen yang selalu dikirim ke toilet', () => {
-  const venues = new Map();
+test('tidak ada agen yang selalu dikirim ke istirahat', () => {
   for (let i = 0; i < OFFICE_PEOPLE.length; i++) {
-    for (const state of ['queued', 'blocked', 'idle']) venues.set(OFFICE_PEOPLE[i].id,
-      [...(venues.get(OFFICE_PEOPLE[i].id) || []), officeDestination(i, state).activity]);
-  }
-  for (const [id, list] of venues) {
-    if (list.filter(row => row === 'toilet').length >= 2) {
-      assert.fail(`${id} terlalu sering ke toilet: ${list.join(',')}`);
-    }
+    const activities = ['queued', 'blocked', 'idle'].map(state => officeDestination(i, state).activity);
+    assert.ok(activities.filter(row => row === 'coffee' || row === 'sofa' || row === 'snack').length < 2,
+      `${OFFICE_PEOPLE[i].id}: terlalu sering istirahat`);
   }
 });
