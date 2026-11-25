@@ -123,6 +123,14 @@ export function createOfficeScene(host: HTMLElement,
     const x = -11 + col * 2, z = -6.75 + row * .5;
     box(x, .04, z, 1.97, .06, .48, woods[(row * 3 + col) % woods.length]);
   }
+  // Distinct floor zones give each department its own room identity. They are
+  // thin inlays on the slab: no new obstacle on any walking route.
+  box(-8.05, .082, -4.25, 7.4, .02, 5.2, "#3c6a61");
+  box(-8.05, .094, -4.25, 7.1, .008, 4.9, "#47796f");
+  box(.5, .082, -4.5, 4.6, .02, 4.8, "#756349");
+  box(.5, .094, -4.5, 4.3, .008, 4.5, "#8a7452");
+  box(8.1, .082, -4.25, 7.4, .02, 5.2, "#36586e");
+  box(8.1, .094, -4.25, 7.1, .008, 4.9, "#426a82");
   box(0, 1.55, -7, 24.3, 3.1, .18, "#f0ecdf");
   // Left wall has a real opening at z=-1.6 so the staircase has an exit.
   box(-12, 1.55, -4.65, .18, 3.1, 4.7, "#e2ded0");
@@ -136,6 +144,22 @@ export function createOfficeScene(host: HTMLElement,
     box(-4.2 + i * 1.7, 1.95, -6.8, .055, 2, .08, "#53676a");
     box(-3.65 + i * 1.7, 1.46, -6.82, .6, .75 + (i % 3) * .22, .015, "#9bbbc4");
   }
+  // Per-room wainscot, vertical slats and signage: a real interior redesign,
+  // all behind the desks so no route or collision test is affected.
+  for (const [x, width, wall, accent] of [
+    [-8.05, 7.3, "#2d5a52", "#79b6a5"],
+    [.5, 4.3, "#6a5638", "#e0bd72"],
+    [8.1, 7.3, "#2f5067", "#8fbcd6"],
+  ] as const) {
+    box(x, .48, -6.68, width, .96, .1, wall);
+    for (let i = 0; i < Math.floor(width / .62); i++) {
+      box(x - width / 2 + .36 + i * .62, 1.02, -6.62, .035, 1.35, .035, accent);
+    }
+    box(x, 3.06, -4.3, width - .3, .05, .12, accent);
+  }
+  signMaterials.push(board("PRODUKSI & QC", -8.05, 2.32, -6.58, 4.4, "#23463f", "#f4efe0"));
+  signMaterials.push(board("RUANG PIMPINAN", .5, 2.32, -6.58, 3.6, "#54432a", "#ffe6ad"));
+  signMaterials.push(board("DISTRIBUSI & PEMULIHAN", 8.1, 2.32, -6.58, 5.2, "#234055", "#ecf4ff"));
   signMaterials.push(board("RYUUNDY / CREATIVE STUDIO", -8, 2.55, -6.86, 6));
   // Glass partitions; corridor-facing walls have a real 1.8m door opening.
   function glassX(x: number, z1: number, z2: number) {
@@ -159,6 +183,9 @@ export function createOfficeScene(host: HTMLElement,
   }
   glassX(-4.25, -6.8, -1.4); glassX(4.25, -6.8, -1.4);
   glassFront(-12.2, -4.25, -11.2); glassFront(-4.25, 4.25, 0); glassFront(4.25, 11.8, 7.8);
+  signMaterials.push(board("RAPAT / ASET", -11.2, 2.62, -1.32, 2.4, "#2d5a4e", "#ffeccb"));
+  signMaterials.push(board("STUDIO SOSIAL", 0, 2.62, -1.32, 2.8, "#4a3f2f", "#ffe6ad"));
+  signMaterials.push(board("DISTRIBUSI", 7.8, 2.62, -1.32, 2.4, "#234055", "#ecf4ff"));
   // Meeting room: a clearly marked open area in front-left of the ground floor.
   box(-8, .09, 2, 9, .1, 6, "#d8b98d");
   box(-8, .16, 2, 8.4, .06, 5.4, "#8daba1");
@@ -178,6 +205,11 @@ export function createOfficeScene(host: HTMLElement,
   chair(-8, .1, Math.PI); chair(-8, 3.9, 0);
   box(-11.84, 2.1, 1.9, .07, 1.7, 3.1, "#faf9f1");
   for (let i = 0; i < 6; i++) box(-11.79, 1.9 + (i % 2) * .5, .8 + Math.floor(i / 2) * .8, .03, .32, .45, ["#eacb79", "#91b6a2", "#d4a18f"][i % 3]);
+  // The meeting room is now a defined zone with its own feature wall and light.
+  box(-11.72, 2.1, 1.9, .05, 1.8, 3.2, "#2d5a4e");
+  box(-8, .105, .15, 8.2, .02, .08, "#79b6a5");
+  box(-8, .105, 3.85, 8.2, .02, .08, "#79b6a5");
+  pendant(-8, 2, .3);
   signMaterials.push(board("RUANG RAPAT", -8, 3.15, 1.9, 4.6, "#2d5a4e", "#ffeccb"));
   signMaterials.push(board("RYUUNDY / RUANG PIMPINAN", 0.4, 2.95, -6.75, 6, "#4a3f2f", "#ffe6ad"));
   // Task board: everyone takes a turn checking that work is on track.
