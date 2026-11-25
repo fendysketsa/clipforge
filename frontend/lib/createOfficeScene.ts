@@ -395,7 +395,8 @@ export function createOfficeScene(host: HTMLElement,
           : target.activity === "desk" ? (profile.desk.z > 0 ? 0 : Math.PI)
             : target.activity === "observing" || target.activity === "reading" || target.activity === "sofa" ? Math.PI
               : target.activity === "meeting" ? -Math.PI / 2
-                : target.activity === "briefing" ? Math.atan2(-8 - person.point.x, 2 - person.point.z) : 0;
+                : target.activity === "briefing" || target.activity === "call"
+                  ? Math.atan2(-8 - person.point.x, 2 - person.point.z) : 0;
         let turn = desired - person.rotation;
         turn = Math.atan2(Math.sin(turn), Math.cos(turn));
         person.rotation += turn * Math.min(1, delta * 5);
