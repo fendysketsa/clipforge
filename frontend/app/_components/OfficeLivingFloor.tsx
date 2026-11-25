@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Crosshair, MessageCircle, Minus, Plus, Radio, RotateCcw, RotateCw, Sun, Moon, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, Crosshair, LocateFixed, Maximize2, MessageCircle, Minus, Plus, Radio, RotateCcw, RotateCw, Sun, Moon, Users } from "lucide-react";
 import { officeActivityStatus, officeAgentWork, officeRepairAction, officeWorkLabel, officeSpeech, type AIOfficeSnapshot } from "../../lib/aiOffice";
 import { OFFICE_PEOPLE, type OfficeActivity, type OfficeWorkCue } from "../../lib/officeChoreography";
 import type { createOfficeScene, OfficeProjection } from "../../lib/createOfficeScene";
@@ -23,8 +23,9 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
   const initial = saved();
   const [bubbles, setBubbles] = useState(initial.bubbles !== false), [zoom, setZoom] = useState(typeof initial.zoom === 'number' ? initial.zoom : 1),
     [lighting, setLighting] = useState<"auto" | "day" | "night">(initial.lighting === 'day' || initial.lighting === 'night' ? initial.lighting : 'auto'),
-    [follow, setFollow] = useState(initial.follow === true);
-  useEffect(() => { try { localStorage.setItem('office3d-view', JSON.stringify({ bubbles, zoom, lighting, follow })); } catch { /* storage unavailable */ } }, [bubbles, zoom, lighting, follow]);
+    [follow, setFollow] = useState(initial.follow === true), [autoFocus, setAutoFocus] = useState(initial.autoFocus !== false),
+    [wide, setWide] = useState(initial.wide === true);
+  useEffect(() => { try { localStorage.setItem('office3d-view', JSON.stringify({ bubbles, zoom, lighting, follow, autoFocus, wide })); } catch { /* storage unavailable */ } }, [bubbles, zoom, lighting, follow, autoFocus, wide]);
   const [activities, setActivities] = useState<Record<string, OfficeActivity>>({});
   const [chats, setChats] = useState<Record<string, string>>({});
   const status = officeActivityStatus(snapshot, now, refreshFailed);
@@ -40,6 +41,13 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
   const attentionSeat = repairSeat[activeRepair?.department || leadIncident?.department || ""] ?? null;
   const repairBrief = activeRepair ? activeRepair.summary
     : leadIncident ? `Kendala: ${leadIncident.title} · ${officeRepairAction[leadIncident.action] || "memeriksa"}` : "";
+  const prominentSeat = attentionSeat ?? (() => {
+    const active = workRows.filter(row => row.id !== 'director' && row.state === 'running');
+    const top = active.sort((a, b) => (b.work[0]?.progress_percent ?? -1) - (a.work[0]?.progress_percent ?? -1))[0];
+    return top ? repairSeat[top.id] ?? null : null;
+  })();
+  const spotlight = prominentSeat === null ? null : OFFICE_PEOPLE[prominentSeat];
+  const spotlightWork = spotlight ? workRows.find(row => row.id === spotlight.id)?.work[0] : null;
   const latest = useRef({ selected, bubbles, states, repairing: Boolean(repairBrief) });
   latest.current = { selected, bubbles, states, repairing: Boolean(repairBrief) };
   useEffect(() => {
@@ -104,13 +112,18 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
   useEffect(() => { scene.current?.render(elapsed.current, night, latest.current.states, workCues); }, [selected, bubbles, night, snapshot]);
   useEffect(() => { if (follow && selected !== 'all') scene.current?.focusOn(selected); }, [follow, selected]);
   useEffect(() => { scene.current?.setAttention(attentionSeat); }, [ready, attentionSeat]);
+  useEffect(() => {
+    if (!ready || !scene.current) return;
+    if (autoFocus) scene.current.autoFocus(prominentSeat);
+    else scene.current.cancelAutoFocus();
+  }, [ready, autoFocus, prominentSeat]);
 
   const chosen = OFFICE_PEOPLE.find(person => person.id === selected);
   const department = snapshot.departments.find(row => row.id === selected);
   const chosenWork = officeAgentWork(snapshot,selected,now,refreshFailed);
   const activeCount = workRows.filter(row => row.state === "running").length;
   const blockedCount = workRows.filter(row => row.state === "blocked").length;
-  return <div className={`officeDiorama${night ? " is-night" : ""}`} data-live={status.fresh ? "true" : "false"}>
+  return <div className={`officeDiorama${night ? " is-night" : ""}${wide ? " is-wide" : ""}`} data-live={status.fresh ? "true" : "false"}>
     <div className="officeDioramaBar"><div><span className="officeDioramaMark"><Users size={14} /></span><strong>RYUUNDY HQ <span>/ LANTAI 01</span></strong></div>
       <span className={`officeConnection${!status.fresh ? " is-stale" : ""}`}><i />{!status.fresh ? "Data terakhir" : "Antrean langsung"}</span></div>
     <div className="office3dFloor officeDioramaStage" data-ready={ready} data-animated={animate && inView} aria-label="AI Office 3D: ruangan kantor, karyawan berjalan, dan bubble percakapan">
@@ -123,6 +136,11 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
           className={`officeDockPill is-${states[row.id] || "unavailable"}${selected === row.id ? " is-selected" : ""}`}
           data-department={row.id} aria-pressed={selected === row.id} onClick={() => onSelect(selected === row.id ? "all" : row.id)}>
           <i />{dockNames[row.id] || row.name}</button>)}</div>
+        {autoFocus && spotlight && spotlightWork ? <div className="officeSceneSpotlight" data-state={spotlightWork.state}>
+          <span>FOKUS TUGAS · {spotlight.name.toUpperCase()}</span>
+          <strong>{spotlightWork.title}</strong>
+          <small>{spotlightWork.stage}{spotlightWork.state === 'running' && spotlightWork.progress_percent != null ? ` · ${Math.round(spotlightWork.progress_percent)}%` : ''}</small>
+        </div> : null}
       </> : null}
       {ready ? <div className="officeSceneLabels" data-bubbles={bubbles}>{areaIds.map((id, index) => <span className={`officeAreaLabel is-${id}`} key={id} ref={element => { if (element) areas.current.set(id, element); else areas.current.delete(id); }}>{areaLabels[index]}</span>)}
         {OFFICE_PEOPLE.map(person => {
@@ -157,7 +175,9 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
         <span />
         <button type="button" aria-label="Perkecil kantor" disabled={zoom <= .6} onClick={() => setZoom(value => Math.max(.6, value - .2))}><Minus size={15} /></button>
         <button type="button" aria-label="Perbesar kantor" disabled={zoom >= 2.6} onClick={() => setZoom(value => Math.min(2.6, value + .2))}><Plus size={15} /></button>
-        <span /><button type="button" aria-pressed={follow} aria-label="Ikuti agen yang dipilih" onClick={() => setFollow(value => !value)}><Crosshair size={15} /></button>
+        <span /><button type="button" aria-pressed={autoFocus} aria-label="Auto fokus ke tugas penting" title="Auto fokus ke tugas penting" onClick={() => setAutoFocus(value => !value)}><LocateFixed size={15} /></button>
+        <button type="button" aria-pressed={wide} aria-label="Perluas panggung kantor" title="Perluas panggung" onClick={() => setWide(value => !value)}><Maximize2 size={15} /></button>
+        <button type="button" aria-pressed={follow} aria-label="Ikuti agen yang dipilih" onClick={() => setFollow(value => !value)}><Crosshair size={15} /></button>
         <button type="button" aria-pressed={bubbles} aria-label="Tampilkan bubble percakapan" onClick={() => setBubbles(value => !value)}><MessageCircle size={15} /></button>
         <button type="button" aria-label={lighting === "auto" ? "Pencahayaan otomatis, ubah ke siang" : lighting === "day" ? "Pencahayaan siang, ubah ke malam" : "Pencahayaan malam, ubah ke otomatis"} onClick={() => setLighting(value => value === "auto" ? "day" : value === "day" ? "night" : "auto")}>{night ? <Moon size={15} /> : <Sun size={15} />}</button></div>
     </div>

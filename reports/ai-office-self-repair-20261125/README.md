@@ -48,6 +48,11 @@ they survive `docker-compose --force-recreate`.
   (live hero, activity bars, room dock), a subtle grid, and a floor glow under
   the colleague whose real worker stage is active. Every value comes from the
   observed snapshot; stale or unavailable data is labelled honestly.
+- Larger redesign: redesigned character models (tailored silhouettes, faces,
+  badges, role accessories), an optional wide stage, and automatic smooth
+  zoom/centre on the most prominent live task (highest real progress, or a
+  repair/incident). Auto-focus yields to any manual drag or wheel zoom and can
+  be toggled off.
 
 ## Safety boundaries
 

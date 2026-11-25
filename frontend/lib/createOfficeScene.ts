@@ -266,24 +266,58 @@ export function createOfficeScene(host: HTMLElement,
   }
   for (const x of [-8, 0, 8]) pendant(x, -4);
   for (const x of [-7.5, 7.5]) pendant(x, 4.2);
-  // Six distinct articulated employees, with feet, eyes, hair and a small work badge.
+  // Six articulated colleagues with tailored silhouettes, faces, badges and
+  // role details. Every part is local geometry; no external model or texture.
   const people = OFFICE_PEOPLE.map((person, index) => {
     const group = new THREE.Group(); scene.add(group);
     const body = new THREE.Group(); group.add(body);
-    box(0, .91, 0, .43, .56, .27, person.color, body);
-    box(0, 1.17, .15, .1, .14, .015, "#eee5cc", body);
-    const skin = ["#d6a17f", "#ba8769", "#e2b894"][index % 3];
-    const head = sphere(0, 1.46, 0, .23, skin, body); head.scale.y = 1.12;
-    const hair = sphere(0, 1.58, -.035, .235, index % 3 ? "#403b32" : "#66513e", body); hair.scale.set(1, .65, 1);
-    if (index % 2) box(0, 1.4, -.16, .42, .38, .15, "#403b32", body);
-    for (const x of [-.085, .085]) sphere(x, 1.47, .205, .022, "#29362f", body);
+    const lead = person.id === 'director';
+    const skin = ["#d9a57f", "#bd8b69", "#e3ba94", "#c99570"][index % 4];
+    const hairTone = ["#3c342c", "#54402f", "#2f2b29", "#6a4f37"][index % 4];
+    // Tailored torso, shoulder line, lanyard and a small visible work badge.
+    box(0, .92, 0, .42, .54, .26, person.color, body);
+    box(0, 1.13, .005, .5, .13, .3, person.color, body);
+    box(0, 1.13, .16, .17, .07, .02, "#f5eedc", body);
+    box(.02, .97, .155, .026, .27, .016, lead ? "#d8a82f" : "#dbe5d2", body);
+    box(.1, .85, .17, .13, .11, .016, "#fffaf0", body);
+    if (lead) box(0, 1.04, .165, .06, .3, .012, "#d8a82f", body);
+    // Head pivot keeps face, hair and accessories together during head turns.
+    const head = new THREE.Group(); head.position.set(0, 1.44, 0); body.add(head);
+    sphere(0, .02, 0, .215, skin, head).scale.y = 1.12;
+    const cap = sphere(0, .14, -.025, .225, hairTone, head); cap.scale.set(1.02, .58, 1.04);
+    if (index % 3 === 0) { const bun = sphere(0, .2, -.19, .105, hairTone, head); bun.scale.set(1, .85, 1); }
+    else if (index % 3 === 1) box(-.11, .1, -.16, .2, .16, .12, hairTone, head);
+    else box(0, .11, -.19, .38, .22, .1, hairTone, head);
+    for (const side of [-1, 1]) {
+      sphere(side * .075, .04, .192, .019, "#2c392f", head);
+      box(side * .075, .087, .194, .06, .012, .008, hairTone, head);
+    }
+    sphere(0, -.018, .208, .016, skin, head);
+    box(0, -.076, .192, .072, .009, .008, "#8c5d50", head);
+    if (lead) {
+      const lens = new THREE.TorusGeometry(.055, .008, 6, 14); geometries.add(lens);
+      for (const side of [-1, 1]) {
+        const frame = new THREE.Mesh(lens, material("#5a5340"));
+        frame.position.set(side * .078, .04, .208); head.add(frame);
+      }
+      box(0, .04, .209, .05, .008, .008, "#5a5340", head);
+    }
+    if (index === 2 || index === 3) {
+      const band = new THREE.TorusGeometry(.24, .018, 6, 18, Math.PI); geometries.add(band);
+      const headset = new THREE.Mesh(band, material("#34463f"));
+      headset.rotation.z = Math.PI; headset.position.set(0, .08, 0); head.add(headset);
+      sphere(-.2, -.04, .14, .035, "#34463f", head);
+    }
     const legs = [-1, 1].map(side => {
       const limb = new THREE.Group(); limb.position.set(side * .12, .67, 0); body.add(limb);
-      box(0, -.24, 0, .14, .48, .16, "#465650", limb); box(0, -.47, .055, .18, .13, .27, "#303f37", limb); return limb;
+      box(0, -.24, 0, .14, .48, .16, "#465650", limb);
+      box(0, -.47, .055, .19, .13, .29, "#2f3f37", limb); return limb;
     });
     const arms = [-1, 1].map(side => {
-      const limb = new THREE.Group(); limb.position.set(side * .28, 1.13, 0); body.add(limb);
-      box(0, -.18, 0, .14, .39, .16, person.color, limb); sphere(0, -.4, 0, .085, skin, limb); return limb;
+      const limb = new THREE.Group(); limb.position.set(side * .29, 1.12, 0); body.add(limb);
+      box(0, -.18, 0, .13, .38, .15, person.color, limb);
+      box(0, -.36, 0, .14, .07, .16, "#40514a", limb);
+      sphere(0, -.42, 0, .078, skin, limb); return limb;
     });
     const mug = cylinder(.31, .76, .13, .075, .17, "#f7e8d0", body); mug.visible = false;
     const book = box(.1, .98, .3, .34, .05, .25, "#d8c9a6", body); book.visible = false;
@@ -330,14 +364,18 @@ export function createOfficeScene(host: HTMLElement,
   // When the director sees a real blocker, he walks to that department
   // instead of continuing his routine round.
   let attentionIndex: number | null = null;
+  let autoTarget: { x: number; z: number; zoom: number } | null = null;
   const projected = new THREE.Vector3();
-  function resize() {
-    width = Math.max(host.clientWidth, 1); height = Math.max(host.clientHeight, 1);
-    renderer.setSize(width, height);
-    const aspect = width / height;
+  function updateProjection() {
+    const aspect = Math.max(width, 1) / Math.max(height, 1);
     const vertical = Math.max(11.6, 17.4 / aspect) / zoom;
     camera.left = -vertical * aspect; camera.right = vertical * aspect;
     camera.top = vertical; camera.bottom = -vertical; camera.updateProjectionMatrix();
+  }
+  function resize() {
+    width = Math.max(host.clientWidth, 1); height = Math.max(host.clientHeight, 1);
+    renderer.setSize(width, height);
+    updateProjection();
     render(lastSeconds, night, lastStates, lastWork);
   }
   function point(x: number, y: number, z: number) {
@@ -357,6 +395,20 @@ export function createOfficeScene(host: HTMLElement,
         lamp.shade.emissiveIntensity = night ? 3.2 : .04;
         lamp.light.intensity = night ? 4.2 : 0;
         lamp.pool.opacity = night ? .16 : 0;
+      }
+    }
+    if (autoTarget && delta > 0) {
+      const ease = Math.min(1, delta * 2.6);
+      pan.x += (autoTarget.x - pan.x) * ease;
+      pan.z += (autoTarget.z - pan.z) * ease;
+      const before = zoom;
+      zoom += (autoTarget.zoom - zoom) * ease;
+      if (Math.abs(zoom - before) > .0005) { updateProjection(); onZoomChange?.(zoom); }
+      refreshFocus();
+      if (Math.abs(autoTarget.x - pan.x) < .02 && Math.abs(autoTarget.z - pan.z) < .02
+          && Math.abs(autoTarget.zoom - zoom) < .02) {
+        pan.x = autoTarget.x; pan.z = autoTarget.z; zoom = autoTarget.zoom;
+        updateProjection(); refreshFocus(); autoTarget = null;
       }
     }
     const directorRound = directorState(seconds, attentionIndex ?? -1);
@@ -514,7 +566,7 @@ export function createOfficeScene(host: HTMLElement,
   canvas.style.cursor = "grab";
   canvas.style.touchAction = "none";
   canvas.addEventListener("pointerdown", event => {
-    dragging = true; dragX = event.clientX; dragY = event.clientY;
+    dragging = true; dragX = event.clientX; dragY = event.clientY; autoTarget = null;
     canvas.setPointerCapture(event.pointerId); canvas.style.cursor = "grabbing";
   });
   canvas.addEventListener("pointermove", event => {
@@ -541,6 +593,7 @@ export function createOfficeScene(host: HTMLElement,
   canvas.addEventListener("pointercancel", endDrag);
   canvas.addEventListener("wheel", event => {
     event.preventDefault();
+    autoTarget = null;
     zoom = Math.min(2.6, Math.max(.6, zoom * (event.deltaY > 0 ? .9 : 1.1)));
     onZoomChange?.(zoom); refreshFocus(); resize();
   }, { passive: false });
@@ -562,7 +615,13 @@ export function createOfficeScene(host: HTMLElement,
         && OFFICE_PEOPLE[index].id !== 'director' ? index : null;
       render(lastSeconds, night, lastStates, lastWork);
     },
-    resetView() { azimuth = BASE_AZIMUTH; elevation = BASE_ELEVATION; zoom = 1; pan.set(0, 0, 0);
+    autoFocus(index: number | null, level = 1.45) {
+      const safe = index !== null && index >= 0 && index < OFFICE_PEOPLE.length ? index : null;
+      autoTarget = safe === null ? { x: 0, z: 0, zoom: 1 }
+        : { x: people[safe].point.x, z: people[safe].point.z, zoom: level };
+    },
+    cancelAutoFocus() { autoTarget = null; },
+    resetView() { azimuth = BASE_AZIMUTH; elevation = BASE_ELEVATION; zoom = 1; pan.set(0, 0, 0); autoTarget = null;
       onZoomChange?.(zoom); refreshFocus(); resize(); },
     dispose() {
       observer.disconnect(); geometries.forEach(geometry => geometry.dispose());
