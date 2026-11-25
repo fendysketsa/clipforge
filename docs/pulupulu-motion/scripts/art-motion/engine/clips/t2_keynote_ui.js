@@ -1,0 +1,347 @@
+// Clip · keynote-style interface (t2) — the handiest grammar for tutorials, features and specs: one thing per screen. With a screenshot, the screenshot is the main image: spread to full frame, and when the narration calls out a region, push in to it.
+// Camera: spec-level data.camera 'smooth' (default — gentle push 0.9s, block change 0.7s, pull back 0.6s, sineInOut) | 'snap' (accent: fast push 0.28s, lateral truck 0.30s, small slam on entry).
+//   In a single film give snap only to the passages that need an accent hit; see references/camera-language.md.
+// data: { eyebrow? (small line above the title), title?, subtitle?, accent?:'#3d6bff', frame?: 'full' (default) | 'glass' }
+// cues: title (on this frame the title starts to surface out of blur; text/sub override data)
+//       card | step | image (one card: text = card title, sub = caption, image = screenshot path (or frames = recorded frame sequence); appears on this frame; step numbers follow appearance order 01, 02…, data.step overrides)
+//         · with an image, frame defaults to 'full': the screenshot goes full-frame (scaled to fit the content box, never cropped; only data.fit:'cover' crops to fill, around the focal point data.focus=[fx,fy]),
+//           padded on all four sides by a darkened, blurred, enlarged copy of the same image so there is no dead background; text / sub become a black torn-edge label in the bottom-left (typed in at 12fps). On this frame it hard-cuts in (0.17s small slam),
+//           or, if the previous screen was also a full-frame screenshot, changes over by a same-magnification lateral truck. A highlight at this moment pushes to that region (box ends up about 42% of the frame, pushing in at least 18% and at most 2.6×), and consecutive highlights truck across; duration follows data.camera.
+//         · data.frame:'glass' (or spec-level data.frame): the old frosted-glass card — the screenshot fits inside the card, wide image into a wide card; a tall image in landscape becomes 'text left, image right'. Light blobs and glass are optional wrapping — use sparingly
+//         · no image: a feature card. Consecutive ones (3 at most) stand side by side on one screen, and when a new card arrives the old ones make room (like the three-card row in the demo film);
+//           a card carries an icon (data.icon: wave memory agent clock phone layers chart code check play bolt lock; without it the step number is drawn),
+//           a big title, a caption, and optionally one big number (data.value / prefix / suffix / decimals plus data.label, counted up once the card settles)
+//       highlight (box a region of the current screenshot: data.rect = [x, y, w, h] relative to the screenshot, 0..1; text = optional label; in full-frame mode the camera pushes in at the same time, data.fill sets the box's share of the frame after the push)
+//       number (a big number on its own screen: data {value, prefix, suffix, decimals, label? (small line above the number)}; at = the moment the number settles, counting starts 0.9s earlier,
+//               the previous screen starts leaving at that point rather than piling up behind the card; the caption may be given as text or sub)
+//               · data.over: true and the previous screen is a full-frame screenshot: don't open a new screen, stay inside the screenshot's world — pull the camera back to the whole screenshot, dim it, and slam the number onto it counting up,
+//                 with the caption as a black torn-edge label. Use this when the number is about what's in that screenshot (a ratio of two timings, this page's conclusion); numbers unrelated to the screenshot still get their own screen
+// Portrait: when the first card comes in the title shrinks into a header and stays at the top (so there aren't big empty bands above and below); cards then scale to the remaining height. safe: layout sits only between top..H−bottom.
+// alpha: no blob background; cards get a dark backing and the text a drop shadow so it stays legible over bright footage.
+// Without a theme: four slow-drifting blobs (amber / teal / pale cyan / coral) on a near-black ground (no more blue-purple blobs).
+// spec.theme (film-wide palette, ctx.pal): flat bg ground (only a very light vignette — no blobs, no frosted glass, no light sweep), cards in solid surface, title and card titles in ink, captions in sub,
+//   the accent colour (step numbers, boxes, sub-labels) in accent (data.accent overrides when written), boxes don't glow; in full-frame mode the blurred surround is washed with bg, and the torn-edge label is ink text on a bg ground.
+CLIPS.t2_keynote_ui = (() => {
+const { clamp, lerp } = U;
+const SANS = '"Inter", "PuHui-Medium"', SANSB = '"Inter", "PuHui-Bold"', ZH = '"PuHui-Medium"', ZHB = '"PuHui-Bold"';
+let BL, slides, scr = {}, G, T;
+// Colours for text and small parts: one set for the default (white on a dark blob ground), one derived from 6 palette keys when a film-wide palette is used
+const T0 = { title: '#f5f3ff', eyebrow: '#a7a7b4', subtitle: '#c9c9d4', head: '#f5f5f7', body: 'rgba(235,235,245,0.66)', body2: 'rgba(235,235,245,0.62)', tile: 'rgba(255,255,255,0.10)', icon: '#f2f2f7',
+  num: '#fff', numLabel: 'rgba(235,235,245,0.6)', rule: 'rgba(255,255,255,0.12)', frame: 'rgba(255,255,255,0.22)', bigLabel: '#a7a7b4', bigCap: 'rgba(235,235,245,0.78)', fullBg: '#0b0b0f', accent: '#3d6bff' };
+const fromPal = p => ({ pal: p, title: p.ink, eyebrow: p.sub, subtitle: p.sub, head: p.ink, body: p.sub, body2: p.sub, tile: PAL.alpha(p.ink, 0.07), icon: p.ink,
+  num: p.ink, numLabel: p.sub, rule: PAL.alpha(p.ink, 0.14), frame: PAL.alpha(p.sub, 0.35), bigLabel: p.sub, bigCap: PAL.alpha(p.ink, 0.78), fullBg: p.bg, accent: p.accent,
+  labBg: p.ink, labFg: p.bg, vig: PAL.dark(p) ? '0,0,0' : PAL.rgb(p.ink).join(',') });
+const onAcc = acc => T.pal ? PAL.on(acc, [T.pal.surface, T.pal.ink, T.pal.bg]) : '#fff';
+const track = (c, size, em = -0.02) => { c.letterSpacing = (size * em).toFixed(2) + 'px'; };
+// The few line icons this grammar ships with (UI.icon only has wave/memory/agent): unit box ±0.5, round caps, uniform stroke width
+const ICON = {
+  clock: c => { c.beginPath(); c.arc(0, 0, 0.42, 0, 7); c.stroke(); c.beginPath(); c.moveTo(0, -0.24); c.lineTo(0, 0); c.lineTo(0.18, 0.1); c.stroke(); },
+  phone: c => { c.beginPath(); c.roundRect(-0.25, -0.45, 0.5, 0.9, 0.1); c.stroke(); c.beginPath(); c.moveTo(-0.08, 0.32); c.lineTo(0.08, 0.32); c.stroke(); },
+  layers: c => { for (let k = 0; k < 3; k++) { const y = -0.22 + k * 0.22; c.globalAlpha = k ? 0.6 : 1; c.beginPath(); c.moveTo(-0.45, y); c.lineTo(0, y - 0.18); c.lineTo(0.45, y); c.lineTo(0, y + 0.18); c.closePath(); c.stroke(); } c.globalAlpha = 1; },
+  chart: c => { c.beginPath(); c.moveTo(-0.42, -0.42); c.lineTo(-0.42, 0.4); c.lineTo(0.44, 0.4); c.stroke(); c.beginPath(); c.moveTo(-0.28, 0.18); c.lineTo(-0.06, -0.04); c.lineTo(0.1, 0.06); c.lineTo(0.36, -0.26); c.stroke(); },
+  code: c => { c.beginPath(); c.moveTo(-0.18, -0.28); c.lineTo(-0.42, 0); c.lineTo(-0.18, 0.28); c.moveTo(0.18, -0.28); c.lineTo(0.42, 0); c.lineTo(0.18, 0.28); c.moveTo(0.08, -0.38); c.lineTo(-0.08, 0.38); c.stroke(); },
+  check: c => { c.beginPath(); c.arc(0, 0, 0.42, 0, 7); c.stroke(); c.beginPath(); c.moveTo(-0.2, 0); c.lineTo(-0.05, 0.16); c.lineTo(0.22, -0.16); c.stroke(); },
+  play: c => { c.beginPath(); c.moveTo(-0.22, -0.34); c.lineTo(0.34, 0); c.lineTo(-0.22, 0.34); c.closePath(); c.fill(); },
+  bolt: c => { c.beginPath(); c.moveTo(0.08, -0.46); c.lineTo(-0.28, 0.06); c.lineTo(0, 0.06); c.lineTo(-0.08, 0.46); c.lineTo(0.28, -0.06); c.lineTo(0, -0.06); c.closePath(); c.fill(); },
+  lock: c => { c.beginPath(); c.roundRect(-0.32, -0.04, 0.64, 0.46, 0.08); c.stroke(); c.beginPath(); c.arc(0, -0.04, 0.2, Math.PI, 0); c.stroke(); },
+};
+const icon = (g, kind, x, y, s, col, t) => {
+  if (['wave', 'memory', 'agent'].includes(kind)) return UI.icon(g, kind, x, y, s, col, t);
+  const f = ICON[kind]; if (!f) return false;
+  g.save(); g.translate(x, y); g.scale(s, s); g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 0.075; g.lineCap = 'round'; g.lineJoin = 'round'; f(g); g.restore();
+};
+// Fits or it doesn't: TY.fit measures each line's width and balances multi-line text to equal lengths (a caption never leaves one word stranded on the next line)
+const fitB = (g, text, maxW, size, fam, o = {}) => TY.fit(g, text, maxW, size, fam, { ...o, balance: true });
+const fmtNum = (d, k) => (d.prefix || '') + TY.fmt((+d.value || 0) * k, d.decimals ?? 0) + (d.suffix || '');
+return {
+  fonts: ['PuHui-Medium', 'PuHui-Bold'],
+  safe: true,
+  init(ctx) {
+    const { W, H, u, safe } = ctx;
+    T = ctx.pal ? fromPal(ctx.pal) : T0;
+    BL = [{ x: .22 * W, y: .28 * H, r: .4 * Math.max(W, H), col: [214, 140, 52], a: .7, ax: .11 * W, ay: .11 * H, period: 11, ph: 0 },
+      { x: .79 * W, y: .24 * H, r: .37 * Math.max(W, H), col: [38, 150, 136], a: .7, ax: .1 * W, ay: .15 * H, period: 13, ph: 2.1 },
+      { x: .69 * W, y: .86 * H, r: .3 * Math.max(W, H), col: [120, 214, 255], a: .5, ax: .13 * W, ay: .09 * H, period: 9.5, ph: 4 },
+      { x: .27 * W, y: .89 * H, r: .27 * Math.max(W, H), col: [255, 96, 84], a: .42, ax: .09 * W, ay: .08 * H, period: 12, ph: 1.3 }];
+    const hasTitle = ctx.of('title').length > 0, hdr = ctx.portrait && hasTitle;
+    G = { y0: safe.top + (hdr ? 250 * u : 40 * u), y1: H - safe.bottom - 40 * u, hdrY: safe.top + 150 * u, hdr };
+    G.cy = (G.y0 + G.y1) / 2; G.bh = G.y1 - G.y0;
+    // Screens: a screenshot card gets a screen to itself; consecutive image-less cards share one screen, 3 at most; number gets its own screen
+    slides = []; let k = 0;
+    for (const q of ctx.cues) {
+      if (['card', 'step', 'image'].includes(q.kind)) {
+        const n = q.data && q.data.step != null ? q.data.step : ++k, im = ctx.still(q), cd = { q, n, im };
+        const last = slides[slides.length - 1], full = im && ((q.data && q.data.frame) || ctx.data.frame || 'full') !== 'glass';
+        if (!im && last && last.type === 'cards' && last.cards.length < 3) last.cards.push(cd);
+        else slides.push({ type: im ? 'img' : 'cards', cards: [cd], start: q.at, full });
+      } else if (q.kind === 'number') {
+        const last = slides[slides.length - 1];
+        if (q.data && q.data.over && last && last.full) (last.nums = last.nums || []).push(q);   // slam onto the current screenshot instead of opening a new screen
+        else slides.push({ type: 'num', q, start: q.at - 0.9 });
+      }
+    }
+    slides.forEach((s, i) => { s.next = slides[i + 1] ? slides[i + 1].start : 1e9; s.panIn = s.full && i > 0 && slides[i - 1].full; s.panOut = s.full && !!slides[i + 1] && slides[i + 1].full; });
+    // Full-frame screenshot: content box (clear of safe, a little inset on every side), the screenshot's geometry, this screen's camera (highlight push / block change; snap uses the accent durations)
+    const snap = (ctx.data && ctx.data.camera) === 'snap', MV = snap ? { in: MO.PULSE.punch, next: MO.PULSE.pan, back: MO.PULSE.punch, ease: MO.cubicInOut } : { in: MO.PULSE.push, next: MO.PULSE.glide, back: 0.6, ease: MO.sineInOut };
+    slides.forEach(s => { s.snap = snap; s.panDur = snap ? MO.PULSE.pan : MO.PULSE.glide; });
+    for (const s of slides) if (s.full) {
+      const cd = s.cards[0], q = cd.q, m = 24 * u, bx = { x: ctx.box.x + m, y: ctx.box.y + m, w: ctx.box.w - 2 * m, h: ctx.box.h - 2 * m };
+      const fit = (q.data && q.data.fit) === 'cover' ? 'cover' : 'contain', fo = (q.data && q.data.focus) || [0.5, 0.5];
+      s.geo = { box: bx, fit, fx: fo[0], fy: fo[1] };
+      const [iw, ih] = MD.size(cd.im), s0 = (fit === 'cover' ? Math.max : Math.min)(bx.w / iw, bx.h / ih), dw = iw * s0, dh = ih * s0;
+      const ix = fit === 'cover' ? clamp(bx.x + bx.w * fo[0] - dw * fo[0], bx.x + bx.w - dw, bx.x) : bx.x + (bx.w - dw) / 2, iy = fit === 'cover' ? clamp(bx.y + bx.h * fo[1] - dh * fo[1], bx.y + bx.h - dh, bx.y) : bx.y + (bx.h - dh) / 2;
+      s.f = { x: ix, y: iy, w: dw, h: dh };
+      const bcx = bx.x + bx.w / 2, bcy = bx.y + bx.h / 2; s.base = { x: W / 2, y: H / 2, z: 1 }; s.events = []; let zoomed = false;
+      for (const qh of ctx.of('highlight')) {
+        if (qh.at < s.start || qh.at >= s.next || !qh.data || !qh.data.rect) continue;
+        const R = CLIP.sub(qh.data.rect, s.f), fill = qh.data.fill || 0.42, z = clamp(Math.min(bx.w * fill / R.w, bx.h * fill / R.h), 1.18, 2.6);   // 18% floor; very small boxes push in at most 2.6×
+        const tx = R.x + R.w / 2 - (bcx - W / 2) / z, ty = R.y + R.h / 2 - (bcy - H / 2) / z;   // land the box centre on the content-box centre (clear of safe)
+        s.events.push({ at: qh.at, kind: 'to', x: tx, y: ty, z, dur: Math.min(zoomed ? MV.next : MV.in, Math.max(MO.PULSE.punch, s.next - qh.at - 0.05)), ease: MV.ease });   // too close to the next screen: push faster so a hard cut doesn't catch it mid-move
+        zoomed = true;
+      }
+      for (const qn of s.nums || []) {                                       // if we pushed in, pull back to the whole screenshot first; the number lands once it's back
+        qn.t1 = qn.at - 0.9 + (zoomed ? MV.back : 0);
+        if (zoomed) s.events.push({ at: qn.at - 0.9, kind: 'to', ...s.base, dur: MV.back, ease: MV.ease });
+      }
+    }
+      // Screenshot card layout: title row + screenshot area, sized from the screenshot's aspect. A tall image in landscape becomes 'text left, image right'
+    const maxW = W * (ctx.portrait ? 0.9 : 0.8), maxH = G.bh * (ctx.portrait ? 0.92 : 0.86), head = (ctx.portrait ? 230 : 130) * u, pad = 36 * u;
+    for (const s of slides) if (s.type === 'img' && !s.full) {
+      const cd = s.cards[0], [iw0, ih0] = MD.size(cd.im), ar = iw0 / ih0;
+      if (!ctx.portrait && ar < 0.9) {                                         // tall image in landscape: text left, image right, image fills the card height
+        const ih = maxH - 2 * pad, iw = ih * ar, tw = 560 * u;
+        cd.box = { w: tw + iw + 3 * pad, h: maxH, img: { x: tw + 2 * pad, y: pad, w: iw, h: ih }, side: tw };
+      } else {
+        let iw = maxW - 2 * pad, ih = iw / ar; if (ih > maxH - head - 2 * pad) { ih = maxH - head - 2 * pad; iw = ih * ar; }
+        const cw = Math.max(iw + 2 * pad, Math.min(maxW, 760 * u)), ch = ih + head + 2 * pad;
+        cd.box = { w: cw, h: ch, img: { x: (cw - iw) / 2, y: head + pad, w: iw, h: ih } };
+      }
+    }
+  },
+  draw(c, t, ctx) {
+    const { W, H, u, data: d } = ctx, acc = d.accent || T.accent;
+    // ---- ground: blobs (a function of clip time only, so they stay continuous) ----
+    let bd = null;
+    const covered = slides.some(s => s.full && t >= s.start + (s.panIn ? s.panDur || MO.PULSE.pan : 0) - 1e-6 && t < s.next - 1e-6);   // don't draw the blob ground while a full-frame screenshot covers the screen (saves 2/3 of the render time)
+    if (!ctx.alpha && !covered && T.pal) {                              // film-wide palette: flat ground plus a very light vignette
+      c.drawImage(PAINT.cached('clip_t2flat_' + T.pal.bg + W + 'x' + H, W, H, g => { g.fillStyle = T.pal.bg; g.fillRect(0, 0, W, H);
+        const vg = g.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.45, W / 2, H / 2, Math.max(W, H) * 0.7); vg.addColorStop(0, `rgba(${T.vig},0)`); vg.addColorStop(1, `rgba(${T.vig},0.08)`); g.fillStyle = vg; g.fillRect(0, 0, W, H); }), 0, 0);
+    } else if (!ctx.alpha && !covered) {
+      const bgc = UI.scratch('clip_t2bg', W, H), g = bgc.getContext('2d'); g.clearRect(0, 0, W, H);   // clear first: leftovers from the previous frame bleed through translucent edges, so the same moment rendered twice differs by one level (qa determinism ✗)
+      UI.mesh(g, t, { base: '#050508', blobs: BL, blur: 90, scale: 0.25, grain: 0.035, key: 'clip_t2mesh' });
+      const vg = g.createRadialGradient(W / 2, H / 2, 100 * u, W / 2, H / 2, Math.max(W, H) * 0.55); vg.addColorStop(0, 'rgba(0,0,0,0.38)'); vg.addColorStop(1, 'rgba(0,0,0,0.1)');
+      g.fillStyle = vg; g.fillRect(0, 0, W, H); c.drawImage(bgc, 0, 0); bd = UI.backdrop(bgc, { blur: 40, key: 'clip_t2bd' });
+    }
+    const shadowText = g => { if (ctx.alpha) { g.shadowColor = 'rgba(0,0,0,0.75)'; g.shadowBlur = 18 * u; g.shadowOffsetY = 3 * u; } };
+    // ---- title: eyebrow → main title (blur → sharp, plus a rise) → subtitle; when the first screen comes in: landscape pushes it back, portrait shrinks it into a header that stays on top ----
+    const qt = ctx.of('title')[0], first = slides[0] ? slides[0].start : 1e9;
+    if (qt) {
+      const out = MO.appleOut(MO.seg(t, first - 0.15, first + 0.5));
+      const keep = G.hdr, title = qt.text ?? d.title ?? '', eb = (qt.data && qt.data.eyebrow) ?? d.eyebrow, sub = qt.sub ?? d.subtitle;
+      if (out < 1 || keep) {
+        c.save(); c.textAlign = 'center'; c.textBaseline = 'alphabetic'; shadowText(c);
+        let sz = TY.fit(c, title, W * 0.86, (ctx.portrait ? 150 : 190) * u, 'Inter', { maxLines: 1, min: 0.55, weight: '600 ', soft: true });   // shrink to one line first, wrap to two only if it doesn't fit
+        if (!sz.ok) sz = fitB(c, title, W * 0.86, (ctx.portrait ? 150 : 190) * u, 'Inter', { maxLines: 2, weight: '600 ' });
+        const cy = G.cy - (sz.lines.length - 1) * sz.size * 0.55;
+        // portrait: shrink the block into a header (main title → about 64px), eyebrow and subtitle fade out
+        const hs = keep ? Math.min(1, 68 * u / sz.size) : 1, sc = keep ? lerp(1, hs, out) : lerp(1, 0.92, out), ty = keep ? lerp(0, G.hdrY - cy, out) : 0;
+        c.translate(W / 2, cy + ty); c.scale(sc, sc); c.translate(-W / 2, -cy);
+        const aSide = 1 - out;
+        if (!keep) { c.globalAlpha = 1 - out; if (out > 0) c.filter = `blur(${(20 * out * u).toFixed(1)}px)`; }
+        if (eb && aSide > 0) { c.save(); c.globalAlpha *= keep ? aSide : 1; c.font = `500 ${34 * u}px ${ZH}`; c.fillStyle = T.eyebrow; c.letterSpacing = `${6 * u}px`; TY.blurIn(c, eb, W / 2, cy - sz.size * 0.95, MO.appleOut(ctx.p(t, qt.at, 0.7)), { blur: 10 * u, dy: 16 * u }); c.restore(); }
+        c.font = `600 ${sz.size}px ${SANSB}`; track(c, sz.size); c.fillStyle = T.title;
+        sz.lines.forEach((ln, i) => TY.blurIn(c, ln, W / 2, cy + i * sz.size * 1.1, MO.appleOut(ctx.p(t, qt.at + 0.15 + i * 0.12, 1.0)), { blur: 26 * u, dy: 40 * u }));
+        if (sub && aSide > 0) { c.save(); c.globalAlpha *= keep ? aSide : 1; c.letterSpacing = '0px'; c.font = `400 ${46 * u}px ${ZH}`; c.fillStyle = T.subtitle;
+          TY.wrap(c, sub, W * 0.84).forEach((ln, i) => TY.blurIn(c, ln, W / 2, cy + (sz.lines.length - 1) * sz.size * 1.1 + 110 * u + i * 62 * u, MO.appleOut(ctx.p(t, qt.at + 0.5, 0.9)), { blur: 12 * u, dy: 22 * u })); c.restore(); }
+        c.restore();
+      }
+    }
+    // ---- each screen: as the next one starts, back away to the left rear (0.65s) so it never overlaps the next screen's content ----
+    slides.forEach((s, si) => {
+      if (t < s.start - 1e-6) return;
+      const nx = slides[si + 1], leave = MO.appleOut(MO.seg(t, s.next - 0.15, s.next + (nx && nx.type === 'num' ? 0.3 : Math.max(0.5, s.panOut ? s.panDur || 0 : 0)))); if (leave >= 1) return;   // a full-frame truck-out has to wait for the truck to finish
+      if (s.full) return drawFull(c, s, t, ctx, acc);
+      if (s.type === 'num') return drawNumber(c, s, t, leave, ctx, shadowText);
+      if (s.type === 'img') return drawCard(c, s.cards[0], 0, t, leave, ctx, bd, cardGeoImg(s.cards[0], ctx), 'i' + si);
+      // image-less cards side by side: position for n cards; when a new one arrives the old ones spring to their new slots
+      const vis = s.cards.filter(cd => t >= cd.q.at - 1e-6), n = vis.length, last = vis[n - 1]; ctx._stat = s.cards.some(cd => cd.q.data && cd.q.data.value != null);
+      const rf = n > 1 ? MO.spring(t - last.q.at, { duration: 0.7, bounce: 0.12 }) : 1;
+      vis.forEach((cd, j) => { const A = rowGeo(j, n, ctx, s.cards.length), Bp = j < n - 1 ? rowGeo(j, n - 1, ctx, s.cards.length) : A;
+        const geo = { cx: lerp(Bp.cx, A.cx, rf), cy: lerp(Bp.cy, A.cy, rf), w: lerp(Bp.w, A.w, rf), h: lerp(Bp.h, A.h, rf), focus: j === n - 1 ? 1 : 1 - 0.25 * rf };
+        drawCard(c, cd, j, t, leave, ctx, bd, geo, 'c' + si + '_' + j); });
+    });
+  },
+};
+// One full-frame screenshot screen: the ground is a darkened, blurred, enlarged copy of the same image (cached once), the screenshot fills the content box at aspect, the camera pulses per s.events; a black torn-edge label top-left.
+// Entry: the previous screen was also a full-frame screenshot → same-magnification truck (0.7s default, 0.30s for snap; on this frame the first edge shows); otherwise a hard cut (snap adds a 0.17s small slam). Exit: if the next screen is a full-frame screenshot let it truck over the top, otherwise hard-cut at the start of the next screen
+function drawFull(c, s, t, ctx, acc) {
+  const { W, H, u } = ctx, cd = s.cards[0], q = cd.q;
+  if (t < s.start - 1e-6) return;
+  const nx = slides[slides.indexOf(s) + 1], P = MO.PULSE;
+  if (nx && t >= s.next + (s.panOut ? s.panDur || P.pan : 0) - 1e-6) return;
+  const pd = s.panDur || P.pan, pe = s.snap ? MO.cubicInOut : MO.sineInOut;
+  const panIn = s.panIn ? MO.pulse(ctx.lt(t, s.start), 0, pd, pe) : 1, panOut = s.panOut ? MO.pulse(ctx.lt(t, s.next), 0, pd, pe) : 0;
+  const dx = (1 - panIn) * W - panOut * W;
+  const slam = s.panIn || !s.snap ? 1 : MO.slamK(ctx.lt(t, s.start) / P.slam, 1.06, 0.985);   // the entry slam is snap-only; the default hard cut comes in without scaling
+  const cam = CAM.track(s.base, s.events, t), im = ctx.frame(q, t);
+  c.save(); c.translate(dx, 0); c.beginPath(); c.rect(0, 0, W, H); c.clip();   // draw only inside this screen: the blurred ground is 2× too big and would bleed onto the neighbouring screen during a truck
+  if (!ctx.alpha) { c.fillStyle = T.fullBg; c.fillRect(0, 0, W, H); }
+  CAM.with(c, { x: cam.x, y: cam.y, z: cam.z * slam }, g => {
+    if (!ctx.alpha) { const bg = PAINT.cached('t2full_bg_' + slides.indexOf(s) + '_' + W + 'x' + H + (T.pal ? T.pal.bg : ''), W, H, gg => { gg.filter = T.pal ? 'blur(48px) saturate(0.5)' : 'blur(48px) brightness(0.42) saturate(0.8)'; MD.cover(gg, cd.im, { x: -80, y: -80, w: W + 160, h: H + 160, clip: false }); gg.filter = 'none';
+        if (T.pal) { gg.fillStyle = PAL.alpha(T.pal.bg, 0.8); gg.fillRect(0, 0, W, H); } });   // film-wide palette: wash 80% ground over the blurred copy so the surround matches the shots before and after, letting only a hint of the screenshot through
+      g.drawImage(bg, -W * 0.5, -H * 0.5, W * 2, H * 2); }
+    const f = s.f;
+    g.save(); g.shadowColor = 'rgba(0,0,0,.5)'; g.shadowBlur = 40 * u; g.shadowOffsetY = 14 * u; g.fillStyle = '#000'; g.fillRect(f.x, f.y, f.w, f.h); g.restore();
+    if (s.geo.fit === 'cover') MD.cover(g, im, { ...s.geo.box, fx: s.geo.fx, fy: s.geo.fy });
+    else g.drawImage(im, f.x, f.y, f.w, f.h);
+    hlOn(g, cd, f, t, ctx, acc, u, s.next, cam.z * slam);
+  });
+  // label: screen space, not attached to the camera; pinned to the content box's bottom-left (a screenshot's own title usually sits at the top, so it isn't covered); appears on this frame, typed in at 12fps
+  const size = (ctx.portrait ? 54 : 46) * u, ss = size * 0.66, lx = ctx.box.x + 56 * u, yb = ctx.box.y + ctx.box.h - (ctx.portrait ? 110 : 60) * u;
+  const ySub = yb - ss * 0.75, yMain = q.sub ? ySub - ss * 0.75 - 12 * u - size * 0.75 : yb - size * 0.75;
+  if (q.text) MD.label(c, q.text, lx, yMain, { t, at: q.at, size, maxW: ctx.box.w - 112 * u, bg: T.labBg, fg: T.labFg });
+  if (q.sub) MD.label(c, q.sub, lx, q.text ? ySub : yb - ss * 0.75, { t, at: q.at + (q.text ? 0.25 : 0), size: ss, maxW: ctx.box.w - 112 * u, fam: 'PuHui-Bold', bg: acc, fg: onAcc(acc) });
+  for (const qn of s.nums || []) overNumber(c, qn, t, ctx);
+  c.restore();
+}
+// data.over big number: (after pulling back to the whole screenshot) dim the screenshot → the number slams in over 0.17s and counts up to settle at → the caption is a black torn-edge label. Drawn in screen space, not attached to the camera
+function overNumber(c, q, t, ctx) {
+  const { W, u } = ctx, t0 = q.t1; if (t < t0 - 1e-6) return;
+  const nd = q.data || {}, k = MO.expoOut(clamp((t - t0) / Math.max(0.3, q.at - t0))), cap = q.text ?? q.sub, bx = ctx.box;
+  c.save(); c.fillStyle = `rgba(0,0,0,${(0.62 * clamp(ctx.lt(t, t0) / 0.17)).toFixed(3)})`; c.fillRect(0, 0, W, ctx.H); c.restore();
+  let size = (ctx.portrait ? 200 : 240) * u; c.font = `600 ${size}px ${SANSB}`; track(c, size, -0.03);
+  const fw = c.measureText(fmtNum(nd, 1)).width; if (fw > bx.w * 0.86) size *= bx.w * 0.86 / fw;
+  const cx = bx.x + bx.w / 2, cy = bx.y + bx.h / 2 + size * 0.3 - (cap ? 40 * u : 0), my = cy - size * 0.3, z = MO.slamK(ctx.lt(t, t0) / MO.PULSE.slam, 1.35, 0.96);
+  c.save(); c.translate(cx, my); c.scale(z, z); c.translate(-cx, -my);
+  c.font = `600 ${size}px ${SANSB}`; track(c, size, -0.03); c.fillStyle = T.pal ? (PAL.dark(T.pal) ? T.pal.ink : T.pal.surface) : '#ffffff'; c.shadowColor = 'rgba(0,0,0,0.6)'; c.shadowBlur = 30 * u;
+  TY.tabular(c, fmtNum(nd, k), cx, cy, { align: 'center' }); c.restore();
+  if (cap) MD.label(c, cap, cx, cy + 110 * u, { t, at: t0 + 0.2, size: (ctx.portrait ? 54 : 48) * u, maxW: bx.w * 0.92, align: 'center', bg: T.labBg, fg: T.labFg });
+}
+// highlight on a screenshot: on this frame the box starts to pop, everything else dims, and a light sweep runs inside the box; only highlights that fall inside this screen's on-screen window are honoured
+function hlOn(g, cd, f, t, ctx, acc, u, until, z = 1) {   // z: the camera's magnification at this moment (full-frame mode draws inside the zoomed world, so labels must be counter-scaled or long ones get magnified off frame)
+  const q = cd.q;
+  for (const qh of ctx.of('highlight')) {
+    if (qh.at < q.at || qh.at >= until || !qh.data || !qh.data.rect) continue;
+    const hl = ctx.lt(t, qh.at); if (hl <= 0) continue;
+    const R = CLIP.sub(qh.data.rect, f), s = MO.spring(hl, { duration: 0.45, bounce: 0.25 }), e = 8 * u * (1 - s);
+    g.save(); g.fillStyle = 'rgba(0,0,0,0.38)'; g.beginPath(); g.rect(f.x, f.y, f.w, f.h); g.roundRect(R.x - e, R.y - e, R.w + 2 * e, R.h + 2 * e, 10 * u); g.globalAlpha = clamp(hl / 0.3); g.fill('evenodd'); g.restore();
+    g.save(); g.strokeStyle = acc; g.lineWidth = 5 * u; if (!T.pal) { g.shadowColor = acc; g.shadowBlur = 18 * u * 0.85; } g.globalAlpha = clamp(hl / 0.15);   // film-wide palette: boxes don't glow
+    g.beginPath(); g.roundRect(R.x - e, R.y - e, R.w + 2 * e, R.h + 2 * e, 10 * u); g.stroke(); g.restore();
+    UI.sheen(g, UI.rrPath(R.x, R.y, R.w, R.h, 10 * u), MO.seg(hl, 0.25, 1.0), { x0: R.x, x1: R.x + R.w, width: Math.max(60 * u, R.w * 0.2), alpha: 0.35 });
+    if (qh.text) {
+      const k = clamp(30 * u * z, 30 * u, 52 * u) / z, sz = k, lh = 48 * u * k / (30 * u), pd = 18 * u * k / (30 * u);   // on-screen type size is clamped to 30–52u so it doesn't keep growing after a push-in
+      const fl = TY.fitFloor(g, qh.text, Math.min(f.w * 0.9, ctx.W * 0.84 / z) - 2 * pd, sz, 'PuHui-Bold', { maxLines: 1, floor: sz * 0.62 }), txt = fl.lines[0] || '';
+      g.font = `600 ${fl.size}px ${ZHB}`; const lw = g.measureText(txt).width + 2 * pd, ly = R.y + R.h + 16 * u / z + lh > f.y + f.h ? R.y - lh - 16 * u / z : R.y + R.h + 16 * u / z, lx = clamp(R.x, f.x, Math.max(f.x, f.x + f.w - lw));
+      g.save(); g.globalAlpha = clamp((hl - 0.15) / 0.25); g.fillStyle = acc; g.beginPath(); g.roundRect(lx, ly, lw, lh, lh / 2); g.fill(); g.fillStyle = onAcc(acc); g.textBaseline = 'middle'; g.fillText(txt, lx + pd, ly + lh / 2 + 1); g.restore(); }
+  }
+}
+// Screen geometry of a screenshot card
+function cardGeoImg(cd, ctx) { return { cx: ctx.W / 2, cy: G.cy, w: cd.box.w, h: cd.box.h, focus: 1 }; }
+// Image-less cards: one row in landscape (wider when there's only 1), a column in portrait; total = how many this screen ends up with (layout uses the current count, but size caps use the final count, so nothing resizes while they shift)
+function rowGeo(j, n, ctx, total) {
+  const { W, u } = ctx, gap = 44 * u;
+  if (ctx.portrait) { const w = W * 0.86, h = Math.min(400 * u, (G.bh - (total - 1) * gap) / total), y0 = G.cy - (n * h + (n - 1) * gap) / 2; return { cx: W / 2, cy: y0 + j * (h + gap) + h / 2, w, h }; }
+  const w = total === 1 ? 760 * u : Math.min(540 * u, (W * 0.9 - (total - 1) * gap) / total), h = Math.min((ctx._stat ? 660 : 540) * u, G.bh * 0.9), x0 = W / 2 - (n * w + (n - 1) * gap) / 2;
+  return { cx: x0 + j * (w + gap) + w / 2, cy: G.cy, w, h };
+}
+// One card: springs up from below and rotates to face front about the Y axis; contents are drawn into an offscreen texture (frosted glass samples at the card's screen position), then mapped back in pseudo-3D
+function drawCard(c, cd, i, t, leave, ctx, bd, geo, key) {
+  const { u, data: d } = ctx, q = cd.q, lt = ctx.lt(t, q.at); if (lt <= 0) return;
+  const sp = MO.spring(lt, { duration: 0.7, bounce: 0.15 }), acc = d.accent || T.accent;
+  const Bw = geo.w, Bh = geo.h, cx = geo.cx - leave * ctx.W * 0.35, cy = geo.cy + (1 - sp) * 170 * u;   // once settled it holds still: no float, no sway
+  const sc = (0.9 + 0.1 * sp) * (1 - 0.12 * leave) * lerp(0.97, 1, geo.focus), ry = (1 - sp) * -0.45 - 0.35 * leave, a = clamp(lt / 0.2) * (1 - leave) * lerp(0.6, 1, geo.focus);
+  const pad = 60, tex = scr[key] || (scr[key] = document.createElement('canvas')); tex.width = Math.ceil(Bw + 2 * pad); tex.height = Math.ceil(Bh + 2 * pad);
+  const g = tex.getContext('2d'); g.reset();
+  const sw = Bw * sc, sh = Bh * sc;
+  if (ctx.alpha) { g.fillStyle = 'rgba(12,12,22,0.62)'; g.beginPath(); g.roundRect(pad, pad, Bw, Bh, 34 * u); g.fill(); }
+  if (T.pal && !ctx.alpha) { g.fillStyle = T.pal.surface; g.beginPath(); g.roundRect(pad, pad, Bw, Bh, 34 * u); g.fill(); g.strokeStyle = PAL.alpha(T.pal.sub, 0.3); g.lineWidth = 1.5; g.stroke(); }   // film-wide palette: a solid card, not frosted glass
+  else UI.glass(g, { x: pad, y: pad, w: Bw, h: Bh, r: 34 * u, bd, sample: { x: cx - sw / 2, y: cy - sh / 2, w: sw, h: sh }, tint: ctx.alpha ? 0.08 : 0.075, stroke: 0.22, light: 0.14, shadow: false });
+  g.save(); g.translate(pad, pad);
+  if (cd.im) imgContent(g, cd, Bw, Bh, t, ctx, acc); else featContent(g, cd, Bw, Bh, lt, t, ctx, acc);
+  if (!T.pal) UI.sheen(g, UI.rrPath(0, 0, Bw, Bh, 34 * u), MO.seg(lt, 0.4, 1.2), { x0: 0, x1: Bw, width: 120 * u, angle: -0.35, alpha: 0.16 });   // a sheen sweeps across the whole card (0.4s after entry)
+  g.restore();
+  c.save(); c.globalAlpha = a;
+  UI.shadow(c, cx - sw / 2 + 10 * u, cy - sh / 2 + 20 * u, sw - 20 * u, sh - 20 * u, 34 * u, { blur: 80 * u, oy: 40 * u, alpha: T.pal && !PAL.dark(T.pal) ? 0.16 : 0.55 });
+  UI.persp(c, tex, { cx, cy, w: tex.width * sc, h: tex.height * sc, ry, persp: 1800 * u, strip: 3, shade: 0.35 });
+  c.restore();
+}
+// Step-number badge
+function badge(g, x, y, s, n, acc, u) { g.fillStyle = acc; g.beginPath(); g.roundRect(x, y, s, s, s * 0.28); g.fill();
+  g.fillStyle = onAcc(acc); g.font = `700 ${s * 0.5}px ${SANSB}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(n).padStart(2, '0'), x + s / 2, y + s / 2 + 2 * u); g.textAlign = 'left'; g.textBaseline = 'alphabetic'; }
+// Screenshot card contents: step number + title + caption, screenshot contained; a highlight boxes a region
+function imgContent(g, cd, Bw, Bh, t, ctx, acc) {
+  const { u } = ctx, q = cd.q, B = cd.box, I = B.img, hp = 40 * u, bs = 70 * u;
+  badge(g, hp, hp, bs, cd.n, acc, u);
+  if (B.side) {                                                           // text left, image right: title and caption stack down the left column
+    const tw = B.side - hp, tl = fitB(g, q.text || '', tw, 58 * u, 'PuHui-Bold', { maxLines: 3, weight: '600 ' });
+    g.font = `600 ${tl.size}px ${ZHB}`; g.fillStyle = T.head; tl.lines.forEach((ln, k) => g.fillText(ln, hp, hp + bs + 70 * u + k * tl.size * 1.25));
+    if (q.sub) { const sl = fitB(g, q.sub, tw, 34 * u, 'PuHui-Medium', { maxLines: 5 }); g.font = `400 ${sl.size}px ${ZH}`; g.fillStyle = T.body;
+      sl.lines.forEach((ln, k) => g.fillText(ln, hp, hp + bs + 70 * u + tl.lines.length * tl.size * 1.25 + 30 * u + k * sl.size * 1.4)); }
+  } else {
+    const tx = hp + bs + 26 * u, tw = Bw - tx - hp;
+    if (ctx.portrait) {                                                    // portrait: a taller card header, title and caption one size up
+      const tl = fitB(g, q.text || '', tw, 56 * u, 'PuHui-Bold', { maxLines: 2, weight: '600 ', min: 0.7 }); g.font = `600 ${tl.size}px ${ZHB}`; g.fillStyle = T.head;
+      tl.lines.forEach((ln, k) => g.fillText(ln, tx, hp + tl.size * 0.85 + k * tl.size * 1.2));
+      // with a two-line title the caption gets a single line, so the card header still fits
+      if (q.sub) { const sl = fitB(g, q.sub, tw, 34 * u, 'PuHui-Medium', { maxLines: tl.lines.length > 1 ? 1 : 2, min: 0.75 }); g.font = `400 ${sl.size}px ${ZH}`; g.fillStyle = T.body;
+        sl.lines.forEach((ln, k) => g.fillText(ln, tx, hp + tl.size * 0.85 + (tl.lines.length - 1) * tl.size * 1.2 + 24 * u + sl.size + k * sl.size * 1.35)); }
+    } else {
+    const tl = TY.fitFloor(g, q.text || '', tw, 46 * u, 'PuHui-Bold', { maxLines: 1, weight: '600 ', floor: 30 * u });
+    g.font = `600 ${tl.size}px ${ZHB}`; g.fillStyle = T.head; g.fillText(tl.lines[0] || '', tx, hp + (q.sub ? 32 * u : 48 * u));
+    if (q.sub) { const sl = TY.fitFloor(g, q.sub, tw, 28 * u, 'PuHui-Medium', { maxLines: 1, floor: 20 * u }); g.font = `400 ${sl.size}px ${ZH}`; g.fillStyle = T.body2; g.fillText(sl.lines[0] || '', tx, hp + 74 * u); }
+    }
+  }
+  const [iw, ih] = MD.size(cd.im), f = CLIP.fit(iw, ih, I.x, I.y, I.w, I.h);
+  g.save(); g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = 30 * u; g.shadowOffsetY = 12 * u; g.fillStyle = '#000'; g.beginPath(); g.roundRect(f.x, f.y, f.w, f.h, 10 * u); g.fill(); g.restore();
+  g.save(); g.beginPath(); g.roundRect(f.x, f.y, f.w, f.h, 10 * u); g.clip(); g.drawImage(ctx.frame(q, t), f.x, f.y, f.w, f.h); g.restore();
+  g.strokeStyle = T.frame; g.lineWidth = 1.5; g.beginPath(); g.roundRect(f.x + .75, f.y + .75, f.w - 1.5, f.h - 1.5, 10 * u); g.stroke();
+  // box the key point (same system as full-frame mode): only highlights that fall inside this card's on-screen window are honoured
+  const nxAt = (() => { const i = ctx.cues.indexOf(q); const n = ctx.cues.slice(i + 1).find(z => ['card', 'step', 'image', 'number'].includes(z.kind)); return n ? (n.kind === 'number' ? n.at - 0.9 : n.at) : 1e9; })();
+  hlOn(g, cd, f, t, ctx, acc, u, nxAt);
+}
+// Image-less feature card contents: icon (or step number) → big title → caption → (optional) big number counting up. Tall card in landscape stacks vertically, wide card in portrait goes left-right
+function featContent(g, cd, Bw, Bh, lt, t, ctx, acc) {
+  const { u } = ctx, q = cd.q, dd = q.data || {}, hasNum = dd.value != null, pad = 48 * u, tile = (ctx.portrait ? 110 : 120) * u;
+  const drawTile = (x, y) => { g.fillStyle = T.tile; g.beginPath(); g.roundRect(x, y, tile, tile, 26 * u); g.fill();
+    if (!dd.icon || icon(g, dd.icon, x + tile / 2, y + tile / 2, tile * 0.6, T.icon, t) === false) {
+      g.fillStyle = acc; g.beginPath(); g.roundRect(x, y, tile, tile, 26 * u); g.fill(); g.fillStyle = onAcc(acc); g.font = `700 ${tile * 0.46}px ${SANSB}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(String(cd.n).padStart(2, '0'), x + tile / 2, y + tile / 2 + 3 * u); g.textAlign = 'left'; g.textBaseline = 'alphabetic'; } };
+  const num = (x, y, size, align) => { const v = MO.expoOut(clamp((lt - 0.35) / 0.9)); g.save(); g.font = `600 ${size}px ${SANSB}`; track(g, size, -0.03); g.fillStyle = T.num;
+    TY.tabular(g, fmtNum(dd, v), x, y, { align }); g.restore(); if (dd.label) { g.font = `400 ${28 * u}px ${ZH}`; g.fillStyle = T.numLabel; g.textAlign = align; g.fillText(dd.label, x, y + 46 * u); g.textAlign = 'left'; } };
+  g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+  if (!ctx.portrait) {
+    drawTile(pad, pad);
+    const tl = fitB(g, q.text || '', Bw - 2 * pad, 64 * u, 'PuHui-Bold', { maxLines: 2, weight: '600 ', min: 0.6 });
+    let y = pad + tile + 40 * u + tl.size; g.font = `600 ${tl.size}px ${ZHB}`; g.fillStyle = T.head; tl.lines.forEach((ln, k) => g.fillText(ln, pad, y + k * tl.size * 1.2)); y += (tl.lines.length - 1) * tl.size * 1.2;
+    if (q.sub) { const sl = fitB(g, q.sub, Bw - 2 * pad, (hasNum ? 32 : 38) * u, 'PuHui-Medium', { maxLines: hasNum ? 2 : 4, min: 0.75 }); g.font = `400 ${sl.size}px ${ZH}`; g.fillStyle = T.body;
+      sl.lines.forEach((ln, k) => g.fillText(ln, pad, y + 26 * u + sl.size + k * sl.size * 1.45)); }
+    if (hasNum) { g.fillStyle = T.rule; g.fillRect(pad, Bh - pad - 200 * u, Bw - 2 * pad, 1.5); num(pad, Bh - pad - 66 * u, Math.min(128 * u, (Bw - 2 * pad) / Math.max(3, fmtNum(dd, 1).length) * 1.6), 'left'); }
+  } else {
+    drawTile(pad, (Bh - tile) / 2);
+    const tx = pad + tile + 34 * u, nw = hasNum ? Math.min(340 * u, Bw * 0.36) : 0, tw = Bw - tx - pad - nw;
+    const tl = fitB(g, q.text || '', tw, 62 * u, 'PuHui-Bold', { maxLines: 2, weight: '600 ', min: 0.6 });   // if the title doesn't fit, wrap to two lines rather than truncating the second half
+    const sl = q.sub ? fitB(g, q.sub, tw, 38 * u, 'PuHui-Medium', { maxLines: tl.lines.length > 1 ? 1 : 2, min: 0.75 }) : { lines: [], size: 0 };
+    const tH = tl.size + (tl.lines.length - 1) * tl.size * 1.15, blk = tH + (sl.lines.length ? 22 * u + sl.lines.length * sl.size * 1.4 : 0), y0 = (Bh - blk) / 2 + tl.size * 0.85;
+    g.font = `600 ${tl.size}px ${ZHB}`; g.fillStyle = T.head; tl.lines.forEach((ln, k) => g.fillText(ln, tx, y0 + k * tl.size * 1.15));
+    const ys = y0 + (tl.lines.length - 1) * tl.size * 1.15;
+    g.font = `400 ${sl.size}px ${ZH}`; g.fillStyle = T.body; sl.lines.forEach((ln, k) => g.fillText(ln, tx, ys + 22 * u + sl.size + k * sl.size * 1.4));
+    if (hasNum) num(Bw - pad, Bh / 2 + 20 * u, Math.min(96 * u, nw / Math.max(3, fmtNum(dd, 1).length) * 1.7), 'right');
+  }
+}
+// Big-number screen: settles at (counting starts 0.9s early); an optional small label above the number, the caption below (text or sub)
+function drawNumber(c, s, t, leave, ctx, shadowText) {
+  const { W, u } = ctx, q = s.q, nd = q.data || {}, k = MO.expoOut(clamp((t - s.start) / 0.9)), a = MO.appleOut(clamp((t - s.start - 0.12) / 0.3)) * (1 - leave);
+  const cap = q.text ?? q.sub;
+  c.save(); c.globalAlpha = a; shadowText(c); c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+  if (leave > 0) { c.filter = `blur(${(16 * leave * u).toFixed(1)}px)`; }
+  const str = fmtNum(nd, k), full = fmtNum(nd, 1);
+  c.font = `600 ${220 * u}px ${SANSB}`; track(c, 220 * u, -0.03); let size = 220 * u; const fw = c.measureText(full).width; if (fw > W * 0.88) size *= W * 0.88 / fw;
+  c.font = `600 ${size}px ${SANSB}`; track(c, size, -0.03); c.fillStyle = T.num;
+  const y = G.cy + size * 0.32 - (cap ? 30 * u : 0);
+  TY.tabular(c, str, W / 2, y, { align: 'center' });
+  c.letterSpacing = '0px';
+  if (nd.label) { c.font = `500 ${34 * u}px ${ZH}`; c.fillStyle = T.bigLabel; c.fillText(nd.label, W / 2, y - size * 0.85); }
+  if (cap) { c.font = `400 ${(ctx.portrait ? 46 : 44) * u}px ${ZH}`; c.fillStyle = T.bigCap; TY.wrap(c, cap, W * 0.84).forEach((ln, i) => c.fillText(ln, W / 2, y + 100 * u + i * 60 * u)); }
+  c.restore();
+}
+})();

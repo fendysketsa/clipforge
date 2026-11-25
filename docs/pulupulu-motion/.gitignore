@@ -1,0 +1,42 @@
+# project state produced by the CLI
+.om/
+out/
+assets/mix.wav
+assets/voice.wav
+.tts-cache/
+__pycache__/
+*.pyc
+
+# merged engine sample films: the code ships, the heavy media does not
+scripts/art-motion/engine/demos/**/*.png
+scripts/art-motion/engine/demos/**/*.jpg
+scripts/art-motion/engine/demos/**/*.jpeg
+scripts/art-motion/engine/demos/**/*.webp
+scripts/art-motion/engine/demos/**/*.wav
+scripts/art-motion/engine/demos/**/*.mp3
+scripts/art-motion/engine/reference_films/**/*.png
+scripts/art-motion/engine/reference_films/**/*.jpg
+scripts/art-motion/engine/reference_films/**/*.jpeg
+scripts/art-motion/engine/reference_films/**/*.webp
+scripts/art-motion/engine/reference_films/**/*.wav
+scripts/art-motion/engine/reference_films/**/*.mp3
+
+# nothing rendered belongs in git
+*.mp4
+*.mov
+*.webm
+*.gif
+
+# os noise
+Thumbs.db
+.DS_Store
+
+# art-motion engine is fetched by scripts/install_art_motion.py, never committed (37 MB vendored)
+scripts/art-motion/engine/lib/
+scripts/art-motion/engine/demos/
+scripts/art-motion/engine/scenes/
+scripts/art-motion/engine/reference_films/
+scripts/art-motion/.installed-*
+
+# compile artifacts from syntax checks must never reach the tree
+*.tmpc

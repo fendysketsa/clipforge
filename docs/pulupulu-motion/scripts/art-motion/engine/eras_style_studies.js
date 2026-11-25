@@ -1,0 +1,20 @@
+window.SCENE_LIBS=['lib/three.min.js'];window.PUNCH=0;window.ERAS=[
+{id:"38_giotto",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Giotto",50,1034);c.restore();}}},
+{id:"39_piero",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Piero",50,1034);c.restore();}}},
+{id:"40_raphael",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Raphael",50,1034);c.restore();}}},
+{id:"41_michelangelo",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Michelangelo",50,1034);c.restore();}}},
+{id:"42_guardi",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Guardi",50,1034);c.restore();}}},
+{id:"43_lorenzetti",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Lorenzetti",50,1034);c.restore();}}},
+{id:"44_cortona",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Cortona",50,1034);c.restore();}}},
+{id:"45_renoir",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Renoir",50,1034);c.restore();}}},
+{id:"46_pissarro",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Pissarro",50,1034);c.restore();}}},
+{id:"47_sisley",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Sisley",50,1034);c.restore();}}},
+{id:"48_gauguin",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Gauguin",50,1034);c.restore();}}},
+{id:"49_chagall",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Chagall",50,1034);c.restore();}}},
+{id:"50_ma_yuan",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Ma Yuan",50,1034);c.restore();}}},
+{id:"51_persian_miniature",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Persian miniature",50,1034);c.restore();}}},
+{id:"52_south_park",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("South Park",50,1034);c.restore();}}},
+{id:"54_ghibli_lab",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Ghibli direction",50,1034);c.restore();}}},
+{id:"53_pixar",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Pixar direction",50,1034);c.restore();}}},
+{id:"55_dunhuang",dur:6,counter:{draw(c){c.save();c.font='25px sans-serif';c.textAlign='left';c.fillStyle='rgba(25,28,23,.75)';c.fillRect(34,1002,230,46);c.fillStyle='#fff9e9';c.fillText("Dunhuang mural",50,1034);c.restore();}}}
+];

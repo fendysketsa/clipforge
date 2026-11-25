@@ -1,0 +1,15 @@
+{
+  "grammar": "t2_keynote_ui",
+  "duration": 10,
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+  "theme": "navy",
+  "cues": [
+    { "at": 0.0, "kind": "card", "text": "A chart straight out of one JSON file", "sub": "Data: NVIDIA 10-K annual report", "image": "assets/finance-chart_landscape.png" },
+    { "at": 1.8, "kind": "highlight", "data": { "rect": [0.648, 0.245, 0.104, 0.105] } },
+    { "at": 4.0, "kind": "card", "text": "Portrait: a whole new layout", "sub": "The same data", "image": "assets/revenue-chart_portrait.png" },
+    { "at": 6.6, "kind": "number", "text": "Interchangeable motion grammars", "data": { "value": 8, "suffix": " types" } },
+    { "at": 8.0, "kind": "card", "text": "Timing precise to the frame", "sub": "frames = duration × fps", "data": { "icon": "clock" } }
+  ]
+}

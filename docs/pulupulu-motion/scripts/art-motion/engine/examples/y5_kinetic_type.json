@@ -1,0 +1,14 @@
+{
+  "grammar": "y5_kinetic_type",
+  "duration": 7.5,
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+  "theme": "poster",
+  "cues": [
+    { "at": 0.7, "kind": "number", "text": "Code from a single sentence", "data": { "value": 3000, "suffix": " lines" } },
+    { "at": 2.6, "kind": "point", "text": "Completion", "sub": "It used to complete one line", "data": { "label": "Before", "key": "one line" } },
+    { "at": 4.3, "kind": "point", "text": "Agent", "sub": "Now it does the whole job", "data": { "label": "Now", "key": "the whole job" } },
+    { "at": 5.6, "kind": "highlight", "data": { "word": "Agent" } }
+  ]
+}
