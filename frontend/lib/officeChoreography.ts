@@ -21,7 +21,12 @@ export const DIRECTOR_PATROL_SECONDS = 36;
 // the left and right rooms on every stop.
 export const DIRECTOR_ROUTE = [0, 1, 4, 5, 2, 3];
 
-export function directorState(seconds: number): string {
+export function directorState(seconds: number, attention = -1): string {
+  // A live blocker overrides the routine: the director goes straight to that
+  // department and stays there until the repair is no longer observed.
+  if (attention >= 0 && OFFICE_PEOPLE[attention] && OFFICE_PEOPLE[attention].id !== 'director') {
+    return `patrol:${attention}`;
+  }
   const observe = 24, briefing = 24;
   const cycle = observe + DIRECTOR_ROUTE.length * DIRECTOR_PATROL_SECONDS + briefing;
   const time = ((seconds % cycle) + cycle) % cycle;
@@ -75,6 +80,26 @@ const CHAT_SPOTS: OfficePoint[] = [
   { x: 1.4, z: 4.4 }, { x: 3.2, z: 4.4 },
   { x: 5, z: 4.4 }, { x: 6.8, z: 4.4 },
 ];
+
+export type OfficeWorkCue = { state: string; stage: string; title?: string };
+
+// Turn the worker's real queue state and stage into a visible work pose.
+// This only changes where the avatar stands; QC, rights and publication are
+// still decided by the backend owner that produced the cue.
+export function officeMotionFromWork(cue: OfficeWorkCue | undefined, fallback: string): string {
+  if (!cue) return fallback;
+  if (cue.state === 'unavailable') return 'unavailable';
+  if (cue.state === 'paused') return fallback;
+  if (cue.state === 'blocked') return 'blocked';
+  if (cue.state === 'queued') return 'queued';
+  if (cue.state === 'idle') return 'idle';
+  const stage = (cue.stage || '').toLocaleLowerCase();
+  if (/qc|kualitas|audit|review|periksa|mencari sumber|penemuan/.test(stage)) return 'notice';
+  if (/unggah|upload|distribusi|mengirim|kirim/.test(stage)) return 'chat';
+  if (/transkrip|transcri|analisis|menganalisis|memilih klip|selection/.test(stage)) return 'reading';
+  if (/perbaikan|memperbaiki|repair/.test(stage)) return 'write';
+  return 'desk';
+}
 
 export function officeDestination(index: number, state: string): OfficePoint & { activity: OfficeActivity } {
   if (state === 'chat') return { ...CHAT_SPOTS[index % CHAT_SPOTS.length], activity: 'chat' };

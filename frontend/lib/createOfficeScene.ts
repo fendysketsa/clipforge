@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { OFFICE_PEOPLE, directorState, officeAvoidStep, officeDestination, officePath, officeStep, patrolIndex, type OfficePoint, type OfficeActivity } from "./officeChoreography";
+import { OFFICE_PEOPLE, directorState, officeAvoidStep, officeDestination, officeMotionFromWork, officePath, officeStep, patrolIndex, type OfficePoint, type OfficeActivity, type OfficeWorkCue } from "./officeChoreography";
 
 export type OfficeProjection = { id: string; x: number; y: number; activity: OfficeActivity; chatWith?: string };
 export const OFFICE_AREAS = [
@@ -317,7 +317,10 @@ export function createOfficeScene(host: HTMLElement,
       speed: 0, rotation: person.desk.z > 0 ? 0 : Math.PI, greetUntil: 0 };
   });
   let width = 1, height = 1, zoom = 1, night = false;
-  let lastSeconds = 0, lastStates: Record<string, string> = {};
+  let lastSeconds = 0, lastStates: Record<string, string> = {}, lastWork: Record<string, OfficeWorkCue> = {};
+  // When the director sees a real blocker, he walks to that department
+  // instead of continuing his routine round.
+  let attentionIndex: number | null = null;
   const projected = new THREE.Vector3();
   function resize() {
     width = Math.max(host.clientWidth, 1); height = Math.max(host.clientHeight, 1);
@@ -326,15 +329,15 @@ export function createOfficeScene(host: HTMLElement,
     const vertical = Math.max(11.6, 17.4 / aspect) / zoom;
     camera.left = -vertical * aspect; camera.right = vertical * aspect;
     camera.top = vertical; camera.bottom = -vertical; camera.updateProjectionMatrix();
-    render(lastSeconds, night, lastStates);
+    render(lastSeconds, night, lastStates, lastWork);
   }
   function point(x: number, y: number, z: number) {
     projected.set(x, y, z).project(camera);
     return { x: (projected.x * .5 + .5) * width, y: (-projected.y * .5 + .5) * height };
   }
-  function render(seconds: number, isNight: boolean, states: Record<string, string> = {}) {
+  function render(seconds: number, isNight: boolean, states: Record<string, string> = {}, work: Record<string, OfficeWorkCue> = {}) {
     const delta = Math.min(Math.max(seconds - lastSeconds, 0), .12);
-    lastSeconds = seconds; lastStates = states;
+    lastSeconds = seconds; lastStates = states; lastWork = work;
     camera.updateMatrixWorld();
     if (night !== isNight) {
       night = isNight;
@@ -347,21 +350,21 @@ export function createOfficeScene(host: HTMLElement,
         lamp.pool.opacity = night ? .16 : 0;
       }
     }
-    const directorRound = directorState(seconds);
+    const directorRound = directorState(seconds, attentionIndex ?? -1);
     const visit = patrolIndex(directorRound);
     const projections = people.map((person, index) => {
       const profile = OFFICE_PEOPLE[index];
       const observedState = states[profile.id] || "unavailable";
       const state = profile.id === 'director' ? directorRound : observedState;
-      // A visible work routine: people move between desk, task board and
-      // coordination on a staggered cycle. Status bubbles still use real data.
+      // Motion follows the worker's real state and stage. The staggered
+      // routine is only a fallback when a department has no live work yet.
       const routine = ['desk', 'desk', 'chat', 'desk', 'notice', 'desk', 'sofa', 'desk', 'queued', 'desk', 'blocked', 'desk'];
       // Whoever the director is visiting stays at their desk, so the check-in
       // is about their real work instead of an empty chair.
       const motionState = profile.id === 'director' ? state
         : visit === index && observedState !== 'unavailable' ? 'desk'
           : (observedState === 'unavailable'
-            ? observedState : routine[(Math.floor(seconds / 55) + index) % routine.length]);
+            ? observedState : officeMotionFromWork(work[profile.id], routine[(Math.floor(seconds / 55) + index) % routine.length]));
       const target = officeDestination(index, motionState);
       const destination = `${target.x}:${target.z}:${target.y ?? 0}`;
       if (state === "unavailable") {
@@ -433,10 +436,10 @@ export function createOfficeScene(host: HTMLElement,
       person.station.position.set(pose.x, pose.y ?? 0, pose.z);
       person.station.rotation.y = pose.rotation;
       const propKind = pose.activity;
-      person.prop.visible = ["write", "cards", "copy", "call", "snack"].includes(propKind);
+      person.prop.visible = ["write", "cards", "copy", "call", "snack", "notice"].includes(propKind);
       person.prop.position.set(pose.x, pose.y ?? 0, pose.z);
       person.prop.rotation.y = pose.rotation;
-      person.notebook.visible = propKind === "write" || propKind === "cards";
+      person.notebook.visible = propKind === "write" || propKind === "cards" || propKind === "notice";
       person.cards.visible = propKind === "cards";
       person.phone.visible = propKind === "call";
       person.copier.visible = propKind === "copy";
@@ -461,6 +464,8 @@ export function createOfficeScene(host: HTMLElement,
           case "coffee": arm.rotation.x = side ? -.78 + Math.sin(seconds * 1.6) * .1 : -.18; break;
           case "reading": arm.rotation.x = -.72 + side * .04; break;
           case "observing": arm.rotation.x = -.18 + Math.sin(seconds * .8 + side) * .06; break;
+          case "notice": arm.rotation.x = side ? -.58 + Math.sin(seconds * 2 + side) * .12 : -.18; break;
+          case "chat": arm.rotation.x = side ? -.45 + Math.sin(seconds * 2.6 + side) * .18 : -.15; break;
           case "patrol": arm.rotation.x = side ? -.58 + Math.sin(seconds * 1.3) * .07 : -.16; break;
           case "briefing": arm.rotation.x = side ? -.7 + Math.sin(seconds * 2.4 + side) * .22 : -.3; break;
           case "lounge": case "sofa": arm.rotation.x = side ? -.42 + quiet * 2 : -.14; break;
@@ -512,7 +517,7 @@ export function createOfficeScene(host: HTMLElement,
       updateCamera();
     }
     dragX = event.clientX; dragY = event.clientY;
-    render(lastSeconds, night, lastStates);
+    render(lastSeconds, night, lastStates, lastWork);
   });
   canvas.addEventListener("contextmenu", event => event.preventDefault());
   const endDrag = () => { dragging = false; canvas.style.cursor = "grab"; };
@@ -527,14 +532,19 @@ export function createOfficeScene(host: HTMLElement,
   return {
     render,
     zoom(value: number) { zoom = value; onZoomChange?.(zoom); refreshFocus(); resize(); },
-    rotate(delta: number) { azimuth += delta; updateCamera(); render(lastSeconds, night, lastStates); },
+    rotate(delta: number) { azimuth += delta; updateCamera(); render(lastSeconds, night, lastStates, lastWork); },
     tilt(delta: number) { elevation = Math.min(1.32, Math.max(.12, elevation + delta));
-      updateCamera(); render(lastSeconds, night, lastStates); },
+      updateCamera(); render(lastSeconds, night, lastStates, lastWork); },
     focusOn(id: string) {
       const index = OFFICE_PEOPLE.findIndex(row => row.id === id);
       if (index < 0) return;
       pan.set(people[index].point.x, 0, people[index].point.z);
-      refreshFocus(); render(lastSeconds, night, lastStates);
+      refreshFocus(); render(lastSeconds, night, lastStates, lastWork);
+    },
+    setAttention(index: number | null) {
+      attentionIndex = index !== null && index >= 0 && index < OFFICE_PEOPLE.length - 1
+        && OFFICE_PEOPLE[index].id !== 'director' ? index : null;
+      render(lastSeconds, night, lastStates, lastWork);
     },
     resetView() { azimuth = BASE_AZIMUTH; elevation = BASE_ELEVATION; zoom = 1; pan.set(0, 0, 0);
       onZoomChange?.(zoom); refreshFocus(); resize(); },

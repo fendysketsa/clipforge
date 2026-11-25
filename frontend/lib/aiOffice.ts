@@ -20,6 +20,12 @@ export type OfficeStrategy = {
   focus: string[]; priority_platforms: string[]; content_standard: string[]; model: string;
 };
 
+export type OfficeRepair = {
+  id: string; incident_id?: string | null; incident_action?: string | null;
+  department: string; action: string; status: "running" | "completed" | "deferred" | "failed";
+  summary: string; started_at: string; finished_at: string | null;
+};
+
 export type OfficeDirector = {
   version?: number; name: string; role: string; model?: string; supervision?: string;
   strategy?: OfficeStrategy; directives?: OfficeDirective[];
@@ -27,7 +33,19 @@ export type OfficeDirector = {
   skills_version?: number; skills_applied?: number; skills_total?: number;
   learning?: { version: number; total: number; last_recorded_at: string | null;
     index_fresh: boolean; rules: string[] };
+  repairs?: OfficeRepair[]; active_repair?: OfficeRepair | null;
+  repair_count?: number; autonomous_repair?: boolean;
   active_jobs: number; active_uploads: number; open_incidents: number; needs_operator: number;
+};
+
+export const officeRepairAction: Record<string, string> = {
+  verify_upload: "Mencocokkan bukti pengiriman",
+  retry_tiktok: "Mengulang sebelum Post",
+  recover_scheduled_uploads: "Menyambung antrean upload",
+  recover_facebook: "Memulihkan Facebook",
+  cleanup_history: "Mengarsipkan hasil gagal",
+  use_supported_cron: "Memakai sumber cron yang didukung",
+  worker_supervision: "Memulihkan worker",
 };
 
 export type AIOfficeSnapshot = {

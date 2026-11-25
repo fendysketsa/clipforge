@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { officeDirectives, officeIncidents, officeMotion, officeStatus, officeTime } from '../lib/aiOffice.ts';
+import { officeDirectives, officeIncidents, officeMotion, officeRepairAction, officeStatus, officeTime } from '../lib/aiOffice.ts';
 
 const now = Date.parse('2026-11-21T01:00:00Z');
 const snapshot = overrides => ({version:1, enabled:true, worker_running:true, state:'working',
@@ -86,6 +86,17 @@ test('digital leader directives are read-only and never authorize publication',(
   assert.deepEqual(officeDirectives(null),[]);
   assert.equal(value.director.strategy.priority_platforms.length,3);
   assert.equal('publish' in value.director.strategy,false);
+});
+
+test('repair receipts stay read-only and name the real owner action',()=>{
+  const repair={id:'r1',incident_action:'verify_upload',department:'recovery',action:'Koordinasi: verifikasi',
+    status:'completed',summary:'Worker mencocokkan identitas remote',started_at:'2026-11-25T00:00:00Z',finished_at:'2026-11-25T00:00:01Z'};
+  const value=snapshot({director:{name:'Pimpinan',role:'Direktur',active_jobs:0,active_uploads:0,
+    open_incidents:0,needs_operator:0,autonomous_repair:true,repairs:[repair],active_repair:null}});
+  assert.equal(value.director.autonomous_repair,true);
+  assert.deepEqual(value.director.repairs,[repair]);
+  assert.equal(officeRepairAction.verify_upload,'Mencocokkan bukti pengiriman');
+  assert.equal('publish' in value.director,false);
 });
 
 test('incident views keep automatic, operator and department ownership distinct',()=>{

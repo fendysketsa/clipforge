@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Crosshair, MessageCircle, Minus, Plus, Radio, RotateCcw, RotateCw, Sun, Moon, Users } from "lucide-react";
-import { officeActivityStatus, officeAgentWork, officeWorkLabel, officeSpeech, type AIOfficeSnapshot } from "../../lib/aiOffice";
-import { OFFICE_PEOPLE, type OfficeActivity } from "../../lib/officeChoreography";
+import { officeActivityStatus, officeAgentWork, officeRepairAction, officeWorkLabel, officeSpeech, type AIOfficeSnapshot } from "../../lib/aiOffice";
+import { OFFICE_PEOPLE, type OfficeActivity, type OfficeWorkCue } from "../../lib/officeChoreography";
 import type { createOfficeScene, OfficeProjection } from "../../lib/createOfficeScene";
 
 const areaLabels = ["Ruang rapat", "Produksi & QC", "Distribusi & pemulihan", "Studio sosial & aset", "Lounge", "Coffee bar"];
 const areaIds = ["meeting", "creative", "media", "assets", "lounge", "pantry"];
+const repairSeat: Record<string, number> = { production: 0, quality: 1, distribution: 2, recovery: 3, cleanup: 4, facebook: 5 };
 const activityLabel: Record<OfficeActivity, string> = { desk: "Di meja kerja", walk: "Berjalan", greet: "Salaman saat papasan", patrol: "Keliling mengecek tim", meeting: "Diskusi tim", briefing: "Menerima arahan pimpinan", observing: "Memantau tim", notice: "Mengecek papan tugas", chat: "Berbincang dengan tim", coffee: "Di coffee bar", lounge: "Di lounge", reading: "Membaca", sofa: "Beristirahat sebentar", cards: "Menyusun ide", copy: "Menyiapkan bahan", write: "Menyiapkan langkah", call: "Menghubungi tim", snack: "Ngopi sebentar" };
 
 export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect, animate }: {
@@ -28,9 +29,17 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
   const status = officeActivityStatus(snapshot, now, refreshFailed);
   const hour = new Date(now).getUTCHours();
   const night = lighting === "night" || lighting === "auto" && hour >= 12 && hour < 22;
-  const states = Object.fromEntries(snapshot.departments.map(row => [row.id,officeAgentWork(snapshot,row.id,now,refreshFailed).state]));
-  const latest = useRef({ selected, bubbles, states });
-  latest.current = { selected, bubbles, states };
+  const workRows = OFFICE_PEOPLE.map(person => officeAgentWork(snapshot, person.id, now, refreshFailed));
+  const states = Object.fromEntries(workRows.map(row => [row.id, row.state]));
+  const workCues: Record<string, OfficeWorkCue> = Object.fromEntries(workRows.map(row => [row.id, {
+    state: row.state, stage: row.work[0]?.stage || "", title: row.work[0]?.title || "" }]));
+  const activeRepair = snapshot.director?.active_repair || null;
+  const leadIncident = (snapshot.incidents || []).find(row => row.state !== "needs_operator" && row.automatic) || null;
+  const attentionSeat = repairSeat[activeRepair?.department || leadIncident?.department || ""] ?? null;
+  const repairBrief = activeRepair ? activeRepair.summary
+    : leadIncident ? `Kendala: ${leadIncident.title} · ${officeRepairAction[leadIncident.action] || "memeriksa"}` : "";
+  const latest = useRef({ selected, bubbles, states, repairing: Boolean(repairBrief) });
+  latest.current = { selected, bubbles, states, repairing: Boolean(repairBrief) };
   useEffect(() => {
     if (!host.current) return;
     const element = host.current;
@@ -46,7 +55,9 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
         if (!label) continue;
         label.style.left = `${person.x}px`; label.style.top = `${person.y}px`;
         const focus = latest.current.selected;
-        const talking = latest.current.bubbles && (Boolean(person.chatWith) || focus === person.id || focus === "all" && (person.id === lead?.id || person.id === second?.id));
+        const talking = latest.current.bubbles && (Boolean(person.chatWith)
+          || (person.id === "director" && latest.current.repairing)
+          || focus === person.id || focus === "all" && (person.id === lead?.id || person.id === second?.id));
         label.dataset.bubble = String(talking);
         label.style.zIndex = focus === person.id ? "9" : talking ? "6" : "3";
         const half = element.clientWidth < 640 ? 57.5 : 76.5;
@@ -81,15 +92,16 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
     const tick = (time: number) => {
       if (time - previous >= 32) {
         elapsed.current += Math.min((time - previous) / 1000, .1); previous = time;
-        scene.current?.render(elapsed.current, night, latest.current.states);
+        scene.current?.render(elapsed.current, night, latest.current.states, workCues);
       }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [ready, animate, inView, night, zoom]);
-  useEffect(() => { scene.current?.render(elapsed.current, night, latest.current.states); }, [selected, bubbles, night, snapshot]);
+  useEffect(() => { scene.current?.render(elapsed.current, night, latest.current.states, workCues); }, [selected, bubbles, night, snapshot]);
   useEffect(() => { if (follow && selected !== 'all') scene.current?.focusOn(selected); }, [follow, selected]);
+  useEffect(() => { scene.current?.setAttention(attentionSeat); }, [ready, attentionSeat]);
 
   const chosen = OFFICE_PEOPLE.find(person => person.id === selected);
   const department = snapshot.departments.find(row => row.id === selected);
@@ -108,15 +120,17 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
           const chatWith = chats[person.id];
           const chatName = OFFICE_PEOPLE.find(row => row.id === chatWith)?.name || chatWith;
           // The answer is always the colleague's real queue status; no made-up work.
-          const bubble = chatWith
-            ? person.id === "director" ? `Cek progres ${chatName}: apa yang sedang dikerjakan?` : `Menjawab pimpinan: ${speech.text}`
-            : speech.text;
+          const repairing = person.id === "director" && Boolean(repairBrief);
+          const bubble = repairing ? repairBrief
+            : chatWith
+              ? person.id === "director" ? `Cek progres ${chatName}: apa yang sedang dikerjakan?` : `Menjawab pimpinan: ${speech.text}`
+              : speech.text;
           return <button type="button" key={person.id} ref={element => { if (element) labels.current.set(person.id, element); else labels.current.delete(person.id); }}
             className={`officeWalker officePersonLabel${selected === person.id ? " is-selected" : ""}`} style={{ ["--person-color" as string]: person.color }}
             data-person={person.id} data-work-state={work.state} data-job-id={work.work[0]?.job_id || undefined} data-bubble="false" data-chat={chatWith || undefined} aria-pressed={selected === person.id}
             aria-label={`${person.name}, ${person.role}. ${activityLabel[activity]}. ${bubble}`}
             onClick={() => onSelect(selected === person.id ? "all" : person.id)}>
-            <span className="officeSpeech"><span>{chatWith ? <MessageCircle size={10} /> : <Radio size={10} />}{chatWith ? "Obrolan" : officeWorkLabel[work.state]}</span><strong>{bubble}</strong></span>
+            <span className="officeSpeech"><span>{chatWith || repairing ? <MessageCircle size={10} /> : <Radio size={10} />}{repairing ? "Perbaikan" : chatWith ? "Obrolan" : officeWorkLabel[work.state]}</span><strong>{bubble}</strong></span>
             <span className="officePersonName"><i />{person.name}<small>{person.role}</small></span>
           </button>;
         })}</div> : null}

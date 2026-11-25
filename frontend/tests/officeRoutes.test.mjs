@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DIRECTOR_PATROL_SECONDS, DIRECTOR_ROUTE, OFFICE_PEOPLE, PERSONAL_RADIUS, directorState, officeAvoidStep, officeBlocked, officeDestination, officePath, officeStep, patrolIndex } from '../lib/officeChoreography.ts';
+import { DIRECTOR_PATROL_SECONDS, DIRECTOR_ROUTE, OFFICE_PEOPLE, PERSONAL_RADIUS, directorState, officeAvoidStep, officeBlocked, officeDestination, officeMotionFromWork, officePath, officeStep, patrolIndex } from '../lib/officeChoreography.ts';
 
 const DOORS = [-11.2, 0, 7.8];
 const PARTITION_GAP = [-3.25, -1.55];
@@ -97,6 +97,34 @@ test('pimpinan keliling ke setiap karyawan lalu kembali ke meja dan ruang rapat'
   assert.equal(visited.size, DIRECTOR_ROUTE.length, 'tidak semua karyawan dikunjungi');
   assert.equal(directorState(24 + DIRECTOR_ROUTE.length * DIRECTOR_PATROL_SECONDS + 1), 'briefing');
   assert.equal(patrolIndex('observing'), -1);
+});
+
+test('gerakan karyawan mengikuti state dan tahap worker nyata', () => {
+  const fallback = 'desk';
+  assert.equal(officeMotionFromWork({ state: 'running', stage: 'Mentranskripsi' }, fallback), 'reading');
+  assert.equal(officeMotionFromWork({ state: 'running', stage: 'Memeriksa kualitas' }, fallback), 'notice');
+  assert.equal(officeMotionFromWork({ state: 'running', stage: 'Mengirim ke YouTube' }, fallback), 'chat');
+  assert.equal(officeMotionFromWork({ state: 'running', stage: 'Mencari sumber' }, fallback), 'notice');
+  assert.equal(officeMotionFromWork({ state: 'running', stage: 'Memperbaiki hasil' }, fallback), 'write');
+  assert.equal(officeMotionFromWork({ state: 'queued', stage: 'Menunggu giliran' }, fallback), 'queued');
+  assert.equal(officeMotionFromWork({ state: 'blocked', stage: 'Menunggu review' }, fallback), 'blocked');
+  assert.equal(officeMotionFromWork({ state: 'idle', stage: '' }, fallback), 'idle');
+  assert.equal(officeMotionFromWork({ state: 'unavailable', stage: '' }, fallback), 'unavailable');
+  assert.equal(officeMotionFromWork({ state: 'paused', stage: '' }, 'sofa'), 'sofa');
+  assert.equal(officeMotionFromWork(undefined, 'desk'), 'desk');
+  for (const state of ['reading', 'notice', 'chat', 'write', 'queued', 'blocked', 'idle']) {
+    assert.ok(officeDestination(1, state).activity, `tahap ${state} tidak punya pose kerja`);
+  }
+});
+
+test('kendala nyata mengalihkan pimpinan ke departemen terkait', () => {
+  assert.equal(directorState(0, 3), 'patrol:3');
+  assert.equal(patrolIndex(directorState(120, 5)), 5);
+  assert.equal(directorState(0, -1), 'observing');
+  assert.equal(directorState(0, 6), 'observing', 'pimpinan tidak mengawasi dirinya sendiri');
+  const target = officeDestination(6, directorState(0, 3));
+  assert.equal(target.activity, 'patrol');
+  assert.ok(Math.hypot(target.x - OFFICE_PEOPLE[3].desk.x, target.z - OFFICE_PEOPLE[3].desk.z) < 1.3);
 });
 
 test('pimpinan punya ruang sendiri dan turun ke ruang rapat saat memberi arahan', () => {

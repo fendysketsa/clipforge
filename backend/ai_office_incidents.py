@@ -83,14 +83,18 @@ def detect(api, context):
             retry = platform == 'tiktok' and not exhausted and tiktok_retry_reason(error, logs,
                 started=getattr(row, 'submission_started', False), accepted=getattr(row, 'submission_accepted', False))
             access = any(word in error.casefold() for word in ('login', 'captcha', 'session tidak valid'))
+            # An unconfirmed upload is never assumed published. The attention
+            # owner may still reconcile remote identity locally; it does not
+            # replay a Post or change the upload record.
+            reconcile = not access and bool(context['attention_enabled'])
             add(platform + ':' + identity, 'recovery', platform.title() + ' · ' + str(getattr(row, 'clip_name', '') or identity[:8]),
                 'Posting mungkin sudah dikirim. Worker mencocokkan identitas remote sebelum memutuskan langkah berikutnya.' if possible else
                 'Koneksi atau form upload terhenti sebelum Post. Percobaan yang sama mengikuti batas retry dan pemeriksaan file.' if retry else
                 'Akses akun perlu dipulihkan. Sesi dan catatan upload tetap dipertahankan.' if access else
                 'Batas retry transfer tercapai atau draf yang sama harus dipulihkan. Percobaan baru tidak dibuat otomatis.' if exhausted else
                 'Upload belum terkonfirmasi. Bukti percobaan diperiksa; pengiriman baru tidak diasumsikan aman.',
-                'verify_upload' if possible else 'retry_tiktok' if retry else 'restore_access' if access else 'inspect_upload',
-                automatic=bool(context['attention_enabled'] if possible else context['retry_enabled'] if retry else False),
+                'retry_tiktok' if retry else 'verify_upload' if possible or reconcile else 'restore_access' if access else 'inspect_upload',
+                automatic=bool(context['retry_enabled'] if retry else context['attention_enabled'] if possible or reconcile else False),
                 state='needs_operator' if access and not possible else 'waiting',
                 job_id=getattr(row, 'source_job_id', None), upload_id=identity)
     for key, department, enabled, running in (

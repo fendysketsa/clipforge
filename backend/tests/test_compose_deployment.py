@@ -148,7 +148,7 @@ def test_backend_contract_does_not_resume_disabled_cron(monkeypatch):
     payloads['/api/ai-office']['control_version'] = 2
     payloads['/api/ai-office']['capabilities'].update(incident_ownership=True, observed_resolution=True, safe_delegate_only=True,
         autonomous_recovery=True,configured_qc_fallback=True,digital_director=True,strategic_directives=True,
-        organizational_learning=True,observed_queue_activity=True)
+        organizational_learning=True,observed_queue_activity=True,autonomous_repair=True)
     payloads['/api/ai-office']['activity']={'version':1,'available':True}
     payloads['/api/facebook/config']['autonomous_recovery_version']=1
     payloads['/api/facebook/config']['terminal_cleanup_version']=1

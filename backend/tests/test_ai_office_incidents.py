@@ -72,6 +72,58 @@ def test_unknown_tiktok_post_only_wakes_verification_without_touching_upload_ide
     assert not api.tiktok_retry_sweeper_wakeup.is_set()
 
 
+def test_unknown_upload_is_reconciled_by_existing_owner_without_reposting(office):
+    service, api = office
+    api.flags['UPLOAD_ATTENTION_AUTOMATIC_ENABLED'] = True
+    api.upload_attention_service.thread = Worker()
+    record = upload(status='failed')
+    record.logs = []
+    record.error = 'network problem'
+    record.id = 'unknown-upload'
+    record.source_job_id = 'source'
+    api.youtube_uploads[record.id] = record
+    before = dict(vars(record))
+    assert service.run_once() == 1
+    assert api.upload_attention_service.wakeup.is_set()
+    assert not api.tiktok_retry_sweeper_wakeup.is_set()
+    assert vars(api.youtube_uploads[record.id]) == before
+    result = service.snapshot()
+    row = result['incidents'][0]
+    assert row['action'] == 'verify_upload' and row['automatic'] is True
+    director = result['director']
+    assert director['autonomous_repair'] is True
+    assert director['repair_count'] >= 1
+    assert any(item.get('incident_action') == 'verify_upload' for item in director['repairs'])
+
+
+def test_access_failure_never_becomes_an_automatic_repair(office):
+    service, api = office
+    api.flags['UPLOAD_ATTENTION_AUTOMATIC_ENABLED'] = True
+    api.upload_attention_service.thread = Worker()
+    record = upload(status='failed')
+    record.error = 'login diperlukan; sesi tidak valid'
+    record.id = 'access'
+    api.tiktok_uploads[record.id] = record
+    assert service.run_once() == 0
+    assert not api.upload_attention_service.wakeup.is_set()
+    row = service.snapshot()['incidents'][0]
+    assert row['state'] == 'needs_operator' and row['automatic'] is False
+
+
+def test_repair_receipts_are_persistent_and_bounded(office):
+    import ai_office
+    service, api = office
+    for index in range(ai_office.REPAIR_LIMIT + 4):
+        assert service._assign('repair:' + str(index), 'recovery', 'Memeriksa bukti', lambda: True)
+    assert len(service.repairs) == ai_office.REPAIR_LIMIT
+    result = service.snapshot()
+    assert len(result['director']['repairs']) == 12
+    assert all(item['status'] == 'completed' and item['finished_at'] for item in result['director']['repairs'])
+    restored = OfficeService(api)
+    restored._load()
+    assert restored.repairs == service.repairs
+
+
 def test_director_requests_pre_file_retry_through_original_owner_only(office):
     service, api=office
     api.flags['TIKTOK_AUTOMATIC_RETRY_ENABLED']=True;api.tiktok_retry_sweeper_thread=Worker()

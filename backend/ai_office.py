@@ -19,6 +19,7 @@ import yt_skills
 VERSION = 1
 INTERVAL = 30
 HISTORY_LIMIT = 60
+REPAIR_LIMIT = 24
 BACKOFF = (60, 300, 900, 3600)
 
 
@@ -45,6 +46,7 @@ class OfficeService:
         self.tasks = []
         self.assignments = {}
         self.incidents = {}
+        self.repairs = []
         self.last_tick_at = None
         self.next_tick_at = None
         self.error = None
@@ -92,6 +94,14 @@ class OfficeService:
                     or row.get('state') not in {'waiting', 'needs_operator', 'resolved'} for row in incidents.values())):
                 raise ValueError('Invalid office incident journal')
             self.incidents = incidents
+            repairs = data.get('repairs', [])
+            if (not isinstance(repairs, list) or len(repairs) > REPAIR_LIMIT
+                    or any(not isinstance(row, dict) or not isinstance(row.get('id'), str)
+                           or not isinstance(row.get('department'), str) or not isinstance(row.get('action'), str)
+                           or row.get('status') not in {'running', 'completed', 'deferred', 'failed'}
+                           or not isinstance(row.get('started_at'), str) for row in repairs)):
+                repairs = []
+            self.repairs = repairs
             self.strategy = (ai_office_director.validate_strategy(data['strategy'])
                              if isinstance(data.get('strategy'), dict)
                              else dict(ai_office_director.DEFAULT_STRATEGY))
@@ -120,7 +130,7 @@ class OfficeService:
             with os.fdopen(descriptor, 'w') as stream:
                 os.fchmod(stream.fileno(), 0o600)
                 json.dump(dict(version=VERSION, tasks=self.tasks[-HISTORY_LIMIT:],
-                               assignments=self.assignments, incidents=self.incidents,
+                               assignments=self.assignments, incidents=self.incidents, repairs=self.repairs,
                                strategy=self.strategy, directives=self.directives,
                                directive_at=self.directive_at), stream, ensure_ascii=False)
             os.replace(temporary, self.path)
@@ -276,6 +286,14 @@ class OfficeService:
                         next_retry_at=stamp(next_retry) if next_retry else None)
             self.assignments[key] = dict(attempts=attempts, next_retry=next_retry, last_dispatch=now,
                                          department=department, status=status)
+            # A bounded, durable repair receipt: the director can see what it
+            # delegated and what the owner reported, without claiming an outcome.
+            self.repairs = [dict(id=task['id'],
+                incident_id=key[len('incident:'):] if key.startswith('incident:') else None,
+                incident_action=key[len('incident:'):] if key.startswith('incident:') else None,
+                department=department, action=action, status=status, summary=summary,
+                started_at=task['started_at'], finished_at=task['finished_at'])] + self.repairs
+            self.repairs = self.repairs[:REPAIR_LIMIT]
             self.dirty = True
             self._save()
         return status == 'completed'
@@ -402,6 +420,7 @@ class OfficeService:
             context = None
         with self.lock:
             tasks = [dict(task) for task in self.tasks]
+            repairs = [dict(row) for row in self.repairs]
             saved_incidents = {k:dict(v) for k,v in self.incidents.items()}
             failed_departments = {row.get('department') for row in self.assignments.values()
                                   if row.get('status') == 'failed' and row.get('next_retry', 0) > time.time()}
@@ -486,6 +505,8 @@ class OfficeService:
                         learning=learning,
                         active_jobs=(context or {}).get('jobs', 0),
                         active_uploads=(context or {}).get('uploads', 0),
+                        repairs=repairs[:12], active_repair=next((row for row in repairs if row['status'] == 'running'), None),
+                        repair_count=len(repairs), autonomous_repair=True,
                         open_incidents=len(live_incidents), needs_operator=sum(r['state'] == 'needs_operator' for r in live_incidents)),
                     journal_ready=self.loaded and error is None,
                     capabilities=dict(supervised_workers=True, persisted_decisions=True, operator_settings_preserved=True,
@@ -493,7 +514,8 @@ class OfficeService:
                                       incident_ownership=True, observed_resolution=True, safe_delegate_only=True,
                                       autonomous_recovery=True, configured_qc_fallback=True,
                                       digital_director=True, strategic_directives=True,
-                                      organizational_learning=True, observed_queue_activity=True))
+                                      organizational_learning=True, observed_queue_activity=True,
+                                      autonomous_repair=True))
 
     def request_check(self):
         if not self.enabled():

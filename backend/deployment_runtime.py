@@ -124,7 +124,7 @@ def backend_contract(base: str) -> dict:
             'supervised_workers', 'persisted_decisions', 'operator_settings_preserved',
             'publication_gates_preserved', 'no_parallel_production_owner',
             'incident_ownership', 'observed_resolution', 'safe_delegate_only', 'autonomous_recovery', 'configured_qc_fallback',
-            'digital_director', 'strategic_directives', 'organizational_learning', 'observed_queue_activity'))
+            'digital_director', 'strategic_directives', 'organizational_learning', 'observed_queue_activity', 'autonomous_repair'))
             or (office.get('activity') or {}).get('version') != 1
             or (office.get('activity') or {}).get('available') is not True
             or (office.get('director') or {}).get('model') != 'digital_leader'
