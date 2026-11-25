@@ -47,6 +47,20 @@ export const requestAIOfficeCheck = async (): Promise<{ accepted: boolean; messa
   return response.json();
 };
 
+export const retryAIOfficeReview = async (jobId: string): Promise<{ status: string; message: string }> => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/ai-office/review/${encodeURIComponent(jobId)}/retry`,
+    { method: "POST", signal: AbortSignal.timeout(20_000) });
+  if (!response.ok) throw new Error(await responseErrorMessage(response, "Perbaikan ulang belum dapat dimulai"));
+  return response.json();
+};
+
+export const deleteAIOfficeReview = async (jobId: string): Promise<{ status: string }> => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/ai-office/review/${encodeURIComponent(jobId)}`,
+    { method: "DELETE", signal: AbortSignal.timeout(20_000) });
+  if (!response.ok) throw new Error(await responseErrorMessage(response, "Pekerjaan belum dapat dihapus"));
+  return response.json();
+};
+
 export const getLongProductionStatus = async (): Promise<LongProductionSnapshot> => {
   const response = await fetch(`${CLIENT_API_BASE}/api/automation/viral-cc/long-production`, {
     cache: "no-store", signal: AbortSignal.timeout(10_000),

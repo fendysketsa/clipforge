@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
-import { ArrowUpRight, CheckCheck, Clock3, Loader2, Radio, RefreshCw, TriangleAlert } from "lucide-react";
+import { ArrowUpRight, CheckCheck, Clock3, Loader2, Radio, RefreshCw, RotateCcw, Trash2, TriangleAlert } from "lucide-react";
 import toast from "react-hot-toast";
-import { getAIOffice, requestAIOfficeCheck } from "../../lib/apiClient";
+import { deleteAIOfficeReview, getAIOffice, requestAIOfficeCheck, retryAIOfficeReview } from "../../lib/apiClient";
 import { officeActivityStatus, officeAgentWork, officeIncidents, officeTime, officeWorkLabel, type AIOfficeSnapshot } from "../../lib/aiOffice";
 import { createPollingTask } from "../../lib/pollTask";
 import { OfficeLiveDesk } from "./OfficeLiveDesk";
@@ -11,6 +11,7 @@ import { OfficeStudioFloor } from "./OfficeStudioFloor";
 export function AIOfficePanel() {
   const [snapshot, setSnapshot] = useState<AIOfficeSnapshot | null>(null);
   const [refreshFailed, setRefreshFailed] = useState(false), [requesting, setRequesting] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState("");
   const [now, setNow] = useState(Date.now), [department, setDepartment] = useState("all");
   useEffect(() => {
     const poll = createPollingTask(async current => {
@@ -31,6 +32,16 @@ export function AIOfficePanel() {
       setSnapshot(await getAIOffice()); setRefreshFailed(false); setNow(Date.now());
     } catch (error) { toast.error(error instanceof Error ? error.message : "Pemeriksaan belum dapat dijalankan."); }
     finally { setRequesting(false); }
+  };
+  const actOnReview = async (jobId: string, action: "retry" | "delete") => {
+    if (reviewBusy) return;
+    setReviewBusy(jobId + action);
+    try {
+      const result = action === "retry" ? await retryAIOfficeReview(jobId) : await deleteAIOfficeReview(jobId);
+      toast.success(action === "retry" && "message" in result ? String(result.message) : "Pekerjaan dihapus dari antrean.");
+      setSnapshot(await getAIOffice()); setNow(Date.now());
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Aksi review belum berhasil."); }
+    finally { setReviewBusy(""); }
   };
   const status = officeActivityStatus(snapshot, now, refreshFailed);
   const departments = snapshot?.departments || [];
@@ -56,6 +67,6 @@ export function AIOfficePanel() {
       </li>)}</ol>}
       {work.length > 12 ? <a className="officeWorkMore" href="/#history">Lihat pekerjaan lainnya <ArrowUpRight size={13} /></a> : null}
     </section>
-    {incidents.length || !observed && snapshot ? <details className="officeIncidentBoard"><summary><TriangleAlert size={14} />{observed ? `${incidents.length} kendala${incidents.some(row=>row.state==="needs_operator") ? " · perlu diperiksa" : ""}${snapshot?.director?.active_repair ? " · pimpinan memperbaiki" : ""}` : "Status kendala belum tersedia"}</summary><ol className="officeIncidentList">{incidents.map(item => <li key={item.id}><div><div className="officeIncidentMeta">{names.get(item.department)} · {item.state === "needs_operator" ? "Perlu keputusan Anda" : "Menunggu pemulihan"}</div><h4>{item.title}</h4><p>{item.reason}</p><a href={`/#${item.destination}`}>{item.destination === "settings" ? "Kelola koneksi" : "Lihat pekerjaan"}<ArrowUpRight size={12} /></a></div></li>)}</ol></details> : null}
+    {incidents.length || !observed && snapshot ? <details className="officeIncidentBoard"><summary><TriangleAlert size={14} />{observed ? `${incidents.length} kendala${incidents.some(row=>row.state==="needs_operator") ? " · perlu diperiksa" : ""}${snapshot?.director?.active_repair ? " · pimpinan memperbaiki" : ""}` : "Status kendala belum tersedia"}</summary><ol className="officeIncidentList">{incidents.map(item => <li key={item.id}><div><div className="officeIncidentMeta">{names.get(item.department)} · {item.state === "needs_operator" ? "Perlu keputusan Anda" : "Menunggu pemulihan"}</div><h4>{item.title}</h4><p>{item.reason}</p><a href={`/#${item.destination}`}>{item.destination === "settings" ? "Kelola koneksi" : "Lihat pekerjaan"}<ArrowUpRight size={12} /></a>{item.job_id && ["review_quality", "defer_manual_review"].includes(item.action) ? <span className="officeReviewActions"><button type="button" disabled={Boolean(reviewBusy)} onClick={() => void actOnReview(item.job_id!, "retry")}><RotateCcw size={12} />Ulangi beda pendekatan</button><button type="button" disabled={Boolean(reviewBusy)} onClick={() => void actOnReview(item.job_id!, "delete")}><Trash2 size={12} />Hapus dari antrean</button></span> : null}</div></li>)}</ol></details> : null}
   </section>;
 }

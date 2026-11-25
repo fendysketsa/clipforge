@@ -1134,6 +1134,7 @@ class ClipStatusUpdate(BaseModel):
 
 class ClipRepairRequest(BaseModel):
     url: str
+    variant: str = Field(default="", max_length=40)
 
 
 class ClipSelectionDeleteRequest(BaseModel):
@@ -27326,6 +27327,44 @@ def runtime_optimization() -> dict[str, Any]:
             "native_checkpoint_json": True, "daily_plan_projection": True}
 
 
+@app.post("/api/ai-office/review/{job_id}/retry")
+def ai_office_retry_review(job_id: str) -> dict[str, Any]:
+    """Human decision: retry one clip with a genuinely different approach."""
+    with jobs_lock:
+        job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Pekerjaan tidak ditemukan")
+    clips = list(job.clips or [])
+    if not clips:
+        raise HTTPException(status_code=409, detail="Tidak ada clip untuk diulang; buat topik baru")
+    clip = next((row for row in clips if getattr(row, 'render_qc_blocking', False)), clips[0])
+    variant = 'alternate_' + uuid.uuid4().hex[:8]
+    repaired = repair_job_clip_context(job_id, ClipRepairRequest(url=clip.url, variant=variant))
+    return dict(status='ok', job_id=repaired.id, variant=variant,
+                message='Perbaikan ulang dibuat dengan pendekatan render dan naskah berbeda.')
+
+
+@app.delete("/api/ai-office/review/{job_id}")
+def ai_office_delete_review(job_id: str) -> dict[str, Any]:
+    """Human decision: remove a held job from the queue, preserving its receipt."""
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Pekerjaan tidak ditemukan")
+        if job.status in {'queued', 'running'}:
+            raise HTTPException(status_code=409, detail="Pekerjaan masih berjalan; hentikan dulu")
+        jobs.pop(job_id, None)
+        job_secrets.pop(job_id, None)
+        save_jobs_unlocked()
+    receipt = JOBS_PATH.parent / 'review_decisions' / (job_id + '.json')
+    receipt.parent.mkdir(parents=True, exist_ok=True)
+    receipt.write_text(json.dumps(dict(
+        version=1, decision='operator_removed', job_id=job_id,
+        status=job.status, reason=str(job.error or 'manual_review_hold')[:500],
+        remote_action='none', output_files_preserved=True), ensure_ascii=False), encoding='utf-8')
+    return dict(status='ok', removed=1, receipt=str(receipt))
+
+
 @app.get("/api/runtime/visual-style")
 def runtime_visual_style() -> dict[str, Any]:
     """Prompt-only art direction catalogue; no renderer or rights claim."""
@@ -29286,20 +29325,33 @@ def repair_job_clip_context(job_id: str, repair: ClipRepairRequest) -> ClipJob:
         max(float(SHORT_GROWTH_MIN_SECONDS + 1), float(clip_duration or job.request.max_duration)),
     )
 
-    next_request = job.request.model_copy(
-        update={
-            # Keep the original URL only as rights/attribution provenance. The
-            # worker input is this one rendered clip, never the full source.
-            "source_file": str(clip_path),
-            "top": 1,
-            "min_duration": float(SHORT_GROWTH_MIN_SECONDS),
-            "max_duration": target_max,
-            "analyze_seconds": None,
-            "allow_reprocess_source": True,
-            "auto_upload_youtube": False,
-            "enhanced_edit": True,
-        }
-    )
+    update = {
+        # Keep the original URL only as rights/attribution provenance. The
+        # worker input is this one rendered clip, never the full source.
+        "source_file": str(clip_path),
+        "top": 1,
+        "min_duration": float(SHORT_GROWTH_MIN_SECONDS),
+        "max_duration": target_max,
+        "analyze_seconds": None,
+        "allow_reprocess_source": True,
+        "auto_upload_youtube": False,
+        "enhanced_edit": True,
+    }
+    variant = str(repair.variant or '').strip()[:40]
+    if variant:
+        # A retry must genuinely differ from the failed attempt: new render
+        # cohort, switched visual treatment and a different editorial brief.
+        update.update({
+            "render_experiment_id": "manual_alternate_retry",
+            "render_experiment_variant": variant,
+            "visual_mode": "cinematic" if job.request.visual_mode == "auto_fyp" else "auto_fyp",
+            "director_bible": (
+                f"Pendekatan berbeda dari percobaan sebelumnya: {variant}. "
+                "Tokoh, naskah, dan sudut pandang orisinal RYUUNDY; jangan mengulang "
+                "pilihan narasi atau komposisi yang gagal."
+            )[:1200],
+        })
+    next_request = job.request.model_copy(update=update)
     next_request = normalize_job_request(next_request)
     repair_job_id = uuid.uuid4().hex
     now = now_iso()

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Crosshair, LocateFixed, Maximize2, MessageCircle, Minus, Plus, Radio, RotateCcw, RotateCw, Sun, Moon, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, Crosshair, ExternalLink, LocateFixed, Maximize2, MessageCircle, Minimize2, Minus, Plus, Radio, RotateCcw, RotateCw, Sun, Moon, Users } from "lucide-react";
 import { officeActivityStatus, officeAgentWork, officeRepairAction, officeWorkLabel, officeSpeech, type AIOfficeSnapshot } from "../../lib/aiOffice";
 import { OFFICE_PEOPLE, type OfficeActivity, type OfficeWorkCue } from "../../lib/officeChoreography";
 import type { createOfficeScene, OfficeProjection } from "../../lib/createOfficeScene";
@@ -15,6 +15,17 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
   snapshot: AIOfficeSnapshot; now: number; refreshFailed: boolean; selected: string; onSelect: (value: string) => void; animate: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const stage = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    const change = () => setFullscreen(Boolean(document.fullscreenElement && document.fullscreenElement === stage.current));
+    document.addEventListener("fullscreenchange", change);
+    return () => document.removeEventListener("fullscreenchange", change);
+  }, []);
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void stage.current?.requestFullscreen?.();
+  };
   const labels = useRef(new Map<string, HTMLButtonElement>()), areas = useRef(new Map<string, HTMLSpanElement>());
   const scene = useRef<ReturnType<typeof createOfficeScene> | null>(null);
   const elapsed = useRef(0), signature = useRef("");
@@ -125,8 +136,9 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
   const blockedCount = workRows.filter(row => row.state === "blocked").length;
   return <div className={`officeDiorama${night ? " is-night" : ""}${wide ? " is-wide" : ""}`} data-live={status.fresh ? "true" : "false"}>
     <div className="officeDioramaBar"><div><span className="officeDioramaMark"><Users size={14} /></span><strong>RYUUNDY HQ <span>/ LANTAI 01</span></strong></div>
-      <span className={`officeConnection${!status.fresh ? " is-stale" : ""}`}><i />{!status.fresh ? "Data terakhir" : "Antrean langsung"}</span></div>
-    <div className="office3dFloor officeDioramaStage" data-ready={ready} data-animated={animate && inView} aria-label="AI Office 3D: ruangan kantor, karyawan berjalan, dan bubble percakapan">
+      <div className="officeDioramaBarActions"><span className={`officeConnection${!status.fresh ? " is-stale" : ""}`}><i />{!status.fresh ? "Data terakhir" : "Antrean langsung"}</span>
+        <a className="officeFullPageLink" href="/office" title="Buka halaman penuh Kantor AI"><ExternalLink size={13} />Halaman penuh</a></div></div>
+    <div ref={stage} className="office3dFloor officeDioramaStage" data-ready={ready} data-animated={animate && inView} data-fullscreen={fullscreen} aria-label="AI Office 3D: ruangan kantor, karyawan berjalan, dan bubble percakapan">
       <div ref={host} className="officeCanvas" aria-hidden="true" />
       {!ready ? <div className="officeSceneLoading" role="status"><Users size={28} /><strong>{failed ? "Tampilan 3D tidak tersedia" : "Membuka pintu studio…"}</strong><span>{failed ? "Gunakan daftar tim di bawah untuk melihat aktivitas." : "Menyiapkan ruangan & tim Anda"}</span></div> : null}
       {ready ? <>
@@ -177,6 +189,7 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
         <button type="button" aria-label="Perbesar kantor" disabled={zoom >= 2.6} onClick={() => setZoom(value => Math.min(2.6, value + .2))}><Plus size={15} /></button>
         <span /><button type="button" aria-pressed={autoFocus} aria-label="Auto fokus ke tugas penting" title="Auto fokus ke tugas penting" onClick={() => setAutoFocus(value => !value)}><LocateFixed size={15} /></button>
         <button type="button" aria-pressed={wide} aria-label="Perluas panggung kantor" title="Perluas panggung" onClick={() => setWide(value => !value)}><Maximize2 size={15} /></button>
+        <button type="button" aria-pressed={fullscreen} aria-label="Layar penuh kantor 3D" title="Layar penuh (F11 / tombol ini)" onClick={toggleFullscreen}>{fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
         <button type="button" aria-pressed={follow} aria-label="Ikuti agen yang dipilih" onClick={() => setFollow(value => !value)}><Crosshair size={15} /></button>
         <button type="button" aria-pressed={bubbles} aria-label="Tampilkan bubble percakapan" onClick={() => setBubbles(value => !value)}><MessageCircle size={15} /></button>
         <button type="button" aria-label={lighting === "auto" ? "Pencahayaan otomatis, ubah ke siang" : lighting === "day" ? "Pencahayaan siang, ubah ke malam" : "Pencahayaan malam, ubah ke otomatis"} onClick={() => setLighting(value => value === "auto" ? "day" : value === "day" ? "night" : "auto")}>{night ? <Moon size={15} /> : <Sun size={15} />}</button></div>
