@@ -507,6 +507,7 @@ class OfficeService:
                         active_uploads=(context or {}).get('uploads', 0),
                         repairs=repairs[:12], active_repair=next((row for row in repairs if row['status'] == 'running'), None),
                         repair_count=len(repairs), autonomous_repair=True,
+                        goal=ai_office_director.goal_checklist(self.strategy, context or {}),
                         open_incidents=len(live_incidents), needs_operator=sum(r['state'] == 'needs_operator' for r in live_incidents)),
                     journal_ready=self.loaded and error is None,
                     capabilities=dict(supervised_workers=True, persisted_decisions=True, operator_settings_preserved=True,
@@ -515,7 +516,8 @@ class OfficeService:
                                       autonomous_recovery=True, configured_qc_fallback=True,
                                       digital_director=True, strategic_directives=True,
                                       organizational_learning=True, observed_queue_activity=True,
-                                      autonomous_repair=True))
+                                      autonomous_repair=True, bounded_repair_permissions=True,
+                                      observed_goal_checklist=True))
 
     def request_check(self):
         if not self.enabled():

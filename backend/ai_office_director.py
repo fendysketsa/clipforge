@@ -72,6 +72,56 @@ def validate_strategy(value):
     return strategy
 
 
+# Loopra-style fail-closed permission classes, narrowed to this studio.
+# Unknown actions always require an operator; only existing guarded owners may
+# be woken automatically. This never grants a new capability to the director.
+REPAIR_PERMISSIONS = {
+    'cleanup_history': 'owner_wake',
+    'recover_scheduled_uploads': 'owner_wake',
+    'verify_upload': 'owner_wake',
+    'retry_tiktok': 'owner_wake',
+    'recover_facebook': 'owner_wake',
+    'use_supported_cron': 'owner_wake',
+    'worker_supervision': 'owner_wake',
+    'restore_access': 'operator',
+    'inspect_production': 'operator',
+    'inspect_upload': 'operator',
+}
+
+
+def repair_permission(action) -> str:
+    return REPAIR_PERMISSIONS.get(str(action or ''), 'operator')
+
+
+def goal_checklist(strategy, state):
+    """Bounded, evidence-led Goal/Checklist from the current observation.
+
+    Nothing here is a task or a publication permission: it is a readable plan
+    of what the existing owners still need to resolve.
+    """
+    strategy = validate_strategy(strategy)
+    rows = [row for row in (state or {}).get('incidents', ())
+            if isinstance(row, dict) and row.get('state') != 'resolved']
+    checklist = []
+    for row in rows[:8]:
+        action = row.get('action', '')
+        checklist.append(dict(
+            id=str(row.get('id', ''))[:180],
+            department=str(row.get('department', ''))[:80],
+            title=str(row.get('title', ''))[:180],
+            action=str(action)[:80],
+            permission=repair_permission(action),
+            status='waiting_owner' if row.get('automatic') else 'needs_operator',
+            evidence=dict(jobs=int((state or {}).get('jobs') or 0),
+                          uploads=int((state or {}).get('uploads') or 0),
+                          open_incidents=len(rows)),
+        ))
+    return dict(version=VERSION, basis='observed_incidents',
+                goal=strategy['mission'], priority=list(strategy['priority_platforms']),
+                steps=checklist, total=len(rows), bounded=True,
+                completion='Blokir hanya ditutup setelah observasi berikutnya tidak lagi menampilkannya.')
+
+
 def revision(strategy) -> str:
     payload = json.dumps(strategy, sort_keys=True, ensure_ascii=False).encode()
     return hashlib.sha256(payload).hexdigest()[:16]

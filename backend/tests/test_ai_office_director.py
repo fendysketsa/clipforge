@@ -80,6 +80,28 @@ def test_operator_pause_and_qc_hold_block_directives_without_inventing_work():
     assert not any(row['automatic'] for row in rows)
 
 
+def test_repair_permissions_fail_closed_like_a_tool_allowlist():
+    assert director.repair_permission('verify_upload') == 'owner_wake'
+    assert director.repair_permission('recover_facebook') == 'owner_wake'
+    assert director.repair_permission('restore_access') == 'operator'
+    assert director.repair_permission('new_unknown_action') == 'operator'
+    assert director.repair_permission(None) == 'operator'
+
+
+def test_goal_checklist_is_bounded_and_driven_by_observed_incidents():
+    incident = dict(id='recovery:x', department='recovery', title='Verifikasi',
+                    action='verify_upload', automatic=True, state='waiting')
+    goal = director.goal_checklist(director.DEFAULT_STRATEGY,
+                                   dict(BASE, incidents=[incident, dict(incident, id='other')]))
+    assert goal['goal'] == director.DEFAULT_STRATEGY['mission']
+    assert goal['total'] == 2 and len(goal['steps']) == 2
+    assert goal['steps'][0]['permission'] == 'owner_wake'
+    assert goal['steps'][0]['status'] == 'waiting_owner'
+    assert goal['steps'][0]['evidence']['jobs'] == BASE['jobs']
+    assert goal['bounded'] is True and 'observasi' in goal['completion']
+    assert director.goal_checklist({}, None)['steps'] == []
+
+
 def test_strategy_revision_changes_with_strategy_only():
     first = director.revision(director.DEFAULT_STRATEGY)
     changed = director.validate_strategy(dict(focus=['pendidikan_moral']))
