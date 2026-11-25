@@ -177,9 +177,9 @@ def backend_contract(base: str) -> dict:
     if schedule.get('daily_plan_version') != 1:
         raise RuntimeError('Daily cron production accounting is stale')
     if (schedule.get('short_schedule_policy_version') != 1
-            or not 1 <= schedule.get('short_schedule_daily_limit', 0) <= 5
+            or not 1 <= schedule.get('short_schedule_daily_limit', 0) <= 7
             or schedule.get('short_schedule_timezone') != 'Asia/Jakarta'):
-        raise RuntimeError('Five-Short daily scheduling policy is stale')
+        raise RuntimeError('Seven-Short daily scheduling policy is stale')
     plan = schedule.get('daily_plan') or {}
     if os.environ.get('AUTO_VIRAL_DAILY_PLAN_ENABLED', '').lower() == 'true' and (
             not plan.get('enabled') or plan.get('timezone') != 'Asia/Jakarta'

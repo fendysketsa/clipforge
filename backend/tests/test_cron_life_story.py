@@ -214,11 +214,11 @@ def test_original_cron_story_consumes_one_scheduled_short_and_no_long_slot():
     job=dict(id='original',status='running',created_at=now.isoformat(),clips=[],request=dict(
         clip_mode='long_animate',scheduled_original_story=True,cron_daily_lane='scheduled_short',
         cron_production_day=story.today(now),top=1))
-    result=build_plan(now=now,targets={'scheduled_short':17,'private_short':4,'long':2},
+    result=build_plan(now=now,targets={'scheduled_short':24,'private_short':4,'long':2},
         jobs=[job],runs=[],uploads=[],attempts=[])
     assert result['lanes']['scheduled_short']['used']==1
     assert result['lanes']['long']['used']==result['lanes']['private_short']['used']==0
-    assert result['total_target']==23
+    assert result['total_target']==30
 
 
 def test_render_provenance_must_match_the_owning_episode_script():

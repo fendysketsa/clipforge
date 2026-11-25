@@ -476,7 +476,7 @@ def daily_cron_plan_enabled() -> bool:
 
 
 def daily_cron_targets() -> dict[str, int]:
-    return {"scheduled_short": max(0, min(21, env_int("AUTO_VIRAL_DAILY_SCHEDULED_SHORT_TARGET", 17))),
+    return {"scheduled_short": max(0, min(30, env_int("AUTO_VIRAL_DAILY_SCHEDULED_SHORT_TARGET", 24))),
             "private_short": max(0, min(10, env_int("AUTO_VIRAL_DAILY_PRIVATE_SHORT_TARGET", 4))),
             "long": max(0, min(3, env_int("AUTO_VIRAL_DAILY_LONG_UPLOAD_TARGET", 2)))}
 
@@ -5210,7 +5210,7 @@ def youtube_publish_slot_minutes(*, long_form: bool) -> list[int]:
 
 
 def youtube_short_schedule_daily_limit() -> int:
-    return max(1, min(5, env_int("YOUTUBE_SHORT_SCHEDULE_DAILY_LIMIT", 5)))
+    return max(1, min(7, env_int("YOUTUBE_SHORT_SCHEDULE_DAILY_LIMIT", 7)))
 
 
 def youtube_upload_is_long_form(upload: YouTubeUploadJob) -> bool:
@@ -5295,7 +5295,7 @@ def youtube_short_schedule_issue(when: datetime, *, source_url: str = "", exclud
     day = when.astimezone(ZoneInfo("Asia/Jakarta")).date()
     if sum(value.astimezone(ZoneInfo("Asia/Jakarta")).date() == day
            for value in youtube_short_publication_times(publications, exclude_upload_ids=excluded)) >= youtube_short_schedule_daily_limit():
-        return "Tanggal WIB sudah berisi maksimal 5 Short; gunakan tanggal berikutnya."
+        return f"Tanggal WIB sudah berisi maksimal {youtube_short_schedule_daily_limit()} Short; gunakan tanggal berikutnya."
     normalized = normalize_youtube_video_url(source_url)
     if normalized and any(not row["long"] and row["source"] == normalized
                           and row["when"].astimezone(ZoneInfo("Asia/Jakarta")).date() == day
@@ -5551,7 +5551,7 @@ def reconcile_youtube_cron_schedules(plan: dict[str, str] | None = None) -> list
                     source = normalize_youtube_video_url(upload.source_video_url) or sources.get(upload.source_job_id, "")
                     if (sum(t.astimezone(ZoneInfo("Asia/Jakarta")).date() == day for t in short_times) >= youtube_short_schedule_daily_limit()
                             or (source and (source, day.isoformat()) in source_dates)):
-                        raise HTTPException(status_code=409, detail="Rencana melampaui lima Short/tanggal WIB atau mengulang sumber yang sama.")
+                        raise HTTPException(status_code=409, detail=f"Rencana melampaui {youtube_short_schedule_daily_limit()} Short/tanggal WIB atau mengulang sumber yang sama.")
                     short_times.append(candidate)
                     if source:
                         source_dates.add((source, day.isoformat()))
@@ -22307,7 +22307,7 @@ def auto_viral_daily_upload_limit() -> int:
     """Hard per-platform cap for scheduled uploads on one Jakarta date."""
     return max(
         1,
-        min(25, env_int("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", 23 if daily_cron_plan_enabled() else 3)),
+        min(35, env_int("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", 30 if daily_cron_plan_enabled() else 3)),
     )
 
 
@@ -27136,6 +27136,7 @@ def get_cron_long_strategy() -> dict[str, Any]:
         "themes": [{"key": key, "label": profile["label"],
                     "manual_review_required": ryuundy_editorial_themes.requires_manual_review(key)}
                    for key, profile in RYUUNDY_CRON_THEME_PROFILES.items()],
+        "format_fit": [cron_long_strategy.format_fit(key) for key in RYUUNDY_CRON_THEME_PROFILES],
     }
 
 

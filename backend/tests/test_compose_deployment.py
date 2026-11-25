@@ -139,7 +139,7 @@ def test_backend_contract_does_not_resume_disabled_cron(monkeypatch):
           'caption_plane':'outside_picture_transitions','motion_policy_version':1,'default_engine':'motlab'},
       '/api/automation/viral-cc/editorial-policy':{'version':1,'scope':'cron_only',
           'all_channel_search':True,'monthly_refresh':True,'manual_requests_modified':False},
-      '/api/automation/viral-cc/schedule':{'short_schedule_policy_version':1,'short_schedule_daily_limit':5,'short_schedule_timezone':'Asia/Jakarta','daily_plan_version':1,'activity_version':1,'activity':{'state':'disabled'},'cron_director_effects_policy_version':4,'cron_source_process_limit':2,'enabled':False,'scheduler_running':False},
+      '/api/automation/viral-cc/schedule':{'short_schedule_policy_version':1,'short_schedule_daily_limit':7,'short_schedule_timezone':'Asia/Jakarta','daily_plan_version':1,'activity_version':1,'activity':{'state':'disabled'},'cron_director_effects_policy_version':4,'cron_source_process_limit':2,'enabled':False,'scheduler_running':False},
       '/api/automation/viral-cc/long-strategy':{'version':2,'semantic_story_review_required':True,
           'reference_catalog_version':1,'reference_count':4,
           'compilation_fallback_policy_version':1,'compilation_fallback_enabled':True,'fallback_preserves_long_qc':True,'themes':[

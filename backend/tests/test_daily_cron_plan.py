@@ -6,7 +6,7 @@ import api
 from daily_cron_plan import build_plan, next_short_lane
 
 NOW = datetime(2026, 11, 14, 1, tzinfo=timezone.utc)
-TARGETS = {"scheduled_short": 17, "private_short": 4, "long": 2}
+TARGETS = {"scheduled_short": 24, "private_short": 4, "long": 2}
 
 
 def plan(**changes):
@@ -23,18 +23,18 @@ def upload(index=0, **changes):
 def test_seventeen_four_two_is_a_daily_production_plan_not_a_future_backlog_limit():
     old = [dict(upload(i), cron_production_day="2026-11-13") for i in range(57)]
     result = plan(uploads=old)
-    assert result["total_target"] == 23
+    assert result["total_target"] == 30
     assert result["total_used"] == 0
     assert next_short_lane(result) == "scheduled_short"
     assert result["lanes"]["private_short"]["remaining"] == 4
 
 
 def test_all_three_quotas_are_independent_and_private_uploads_are_not_public_slots():
-    rows = [upload(i) for i in range(17)]
-    rows += [dict(upload(i+20), cron_daily_lane="private_short", visibility="private", publish_at=None) for i in range(4)]
-    rows += [dict(upload(i+30), cron_daily_lane="long", visibility="private", publish_at=None) for i in range(2)]
+    rows = [upload(i) for i in range(24)]
+    rows += [dict(upload(i+40), cron_daily_lane="private_short", visibility="private", publish_at=None) for i in range(4)]
+    rows += [dict(upload(i+50), cron_daily_lane="long", visibility="private", publish_at=None) for i in range(2)]
     result = plan(uploads=rows)
-    assert result["total_uploaded"] == 23
+    assert result["total_uploaded"] == 30
     assert next_short_lane(result) is None
     assert all(row["remaining"] == 0 for row in result["lanes"].values())
 
@@ -117,10 +117,10 @@ def enabled(monkeypatch):
 def test_old_eleven_plus_five_backlog_never_blocks_today_production(enabled, monkeypatch):
     monkeypatch.setattr(api,"youtube_scheduled_backlog_count",lambda **k:57)
     monkeypatch.setattr(api,"youtube_cron_private_buffer_count",lambda:5)
-    assert api.youtube_cron_capacity_room() == 21
+    assert api.youtube_cron_capacity_room() == 28
     assert api.auto_viral_daily_mix_not_before(NOW) is None
     assert api.auto_viral_daily_mix_incomplete(NOW)
-    assert api.auto_viral_daily_short_upload_target() == 21
+    assert api.auto_viral_daily_short_upload_target() == 28
     assert api.auto_viral_daily_long_upload_target() == 2
 
 
@@ -140,7 +140,7 @@ def test_private_reserves_are_never_automatically_promoted_in_the_new_plan(enabl
 
 
 def test_public_quota_does_not_consume_the_four_private_slots(enabled, monkeypatch):
-    snapshot = plan(uploads=[upload(i) for i in range(17)])
+    snapshot = plan(uploads=[upload(i) for i in range(24)])
     monkeypatch.setattr(api, "daily_cron_plan_status", lambda *a: snapshot)
     # Test capacity independently of real Studio demand, which can pick a
     # political theme whose publication hold correctly disables auto-upload.
@@ -159,7 +159,7 @@ def test_public_quota_does_not_consume_the_four_private_slots(enabled, monkeypat
 
 
 def test_completed_short_quotas_wait_until_next_wib_day_without_stopping_long_worker(enabled, monkeypatch):
-    snapshot = plan(uploads=[upload(i) for i in range(17)] + [dict(upload(i+20),cron_daily_lane="private_short") for i in range(4)])
+    snapshot = plan(uploads=[upload(i) for i in range(24)] + [dict(upload(i+30),cron_daily_lane="private_short") for i in range(4)])
     monkeypatch.setattr(api, "daily_cron_plan_status", lambda *a: snapshot)
     assert next_short_lane(snapshot) is None
     assert snapshot["lanes"]["long"]["remaining"] == 2
@@ -195,7 +195,7 @@ def test_daily_upload_routing_ignores_old_full_buffers_and_preserves_private_des
     assert not requests[0].cron_private_buffer
 
 
-def test_seventeen_produced_shorts_fill_five_slots_per_date_while_longs_remain_independent(enabled, monkeypatch):
+def test_seventeen_produced_shorts_fill_seven_slots_per_date_while_longs_remain_independent(enabled, monkeypatch):
     from collections import Counter
     monkeypatch.setenv("YOUTUBE_PUBLIC_DAILY_LIMIT","7")
     monkeypatch.setenv("YOUTUBE_PUBLIC_MIN_GAP_HOURS","1")
@@ -212,5 +212,6 @@ def test_seventeen_produced_shorts_fill_five_slots_per_date_while_longs_remain_i
         reserved.add(slot)
         (longs if is_long else shorts).append(slot)
     assert len(reserved)==19
-    assert sorted(Counter(api.daily_cron_plan.wib_day(value.isoformat()) for value in shorts).values()) == [2,5,5,5]
-    assert {api.daily_cron_plan.wib_day(value.isoformat()) for value in longs} == {"2026-11-14"}
+    assert sorted(Counter(api.daily_cron_plan.wib_day(value.isoformat()) for value in shorts).values()) == [4,6,7]
+    assert {api.daily_cron_plan.wib_day(value.isoformat()) for value in longs} <= {"2026-11-14", "2026-11-15", "2026-11-16"}
+    assert api.daily_cron_plan.wib_day(longs[0].isoformat()) == "2026-11-14"

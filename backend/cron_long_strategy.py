@@ -23,6 +23,24 @@ VISUAL_DIRECTION_BRIEF = (
     "franchise, atau karakter pihak ketiga, dan jangan menyebut gaya sebagai bukti hak atau QC."
 )
 
+# A Long must earn its length: deeper intent for drama and long information.
+LONG_DEPTH_BRIEF = (
+    "Intent Long lebih dalam dari Short: Short mengambil satu momen; Long harus menjawab "
+    "mengapa sesuatu terjadi, apa yang berubah, dan apa akibatnya. Untuk drama Cina/Korea, "
+    "jelaskan motif tokoh, hubungan, keputusan, konsekuensi, dan akhir versi sumber — bukan "
+    "rangkuman episode atau kumpulan adegan. Untuk informasi panjang, susun pertanyaan, konteks, "
+    "bukti, penjelasan, lalu simpulan yang jujur; bedakan fakta, opini, dan tuduhan. Setiap bagian "
+    "harus memberi informasi baru; bila bukti tidak cukup, nyatakan batas pengetahuan, jangan mengarang."
+)
+
+RYUUNDY_ORIGINALITY_BRIEF = (
+    "Orisinalitas RYUUNDY dijaga: tokoh, sudut pandang, narasi, dan makna harus lahir dari "
+    "sumber yang benar dan keputusan editor sendiri; jangan meniru suara, gaya, karakter, atau "
+    "adegan kreator lain, jangan memakai footage atau musik pihak ketiga, dan jangan mengganti "
+    "makna cerita demi hook. Cerita tetap bermakna: ada pilihan, akibat, dan hal yang bisa "
+    "dipahami penonton, bukan sekadar potongan yang viral."
+)
+
 LONG_EDITOR_BRIEF = (
     "Konsep khusus Long: satu pertanyaan atau perjalanan tokoh dengan konteks, perkembangan, "
     "bukti/konsekuensi, dan jawaban tuntas. Penonton harus mendapat informasi baru sepanjang video. "
@@ -41,8 +59,36 @@ LONG_EDITOR_BRIEF = (
     "bahan/gizi; jangan menjanjikan manfaat medis atau mengarang harga dan angka nutrisi. "
     "Target eksperimen 1000+ views, bukan jaminan. Ukur CTR, retensi 30 detik, durasi tonton rata-rata "
     "dan bagian penonton keluar setelah publikasi; bandingkan hanya Long bertopik dan usia setara."
-    + " " + VISUAL_DIRECTION_BRIEF
+    + " " + VISUAL_DIRECTION_BRIEF + " " + LONG_DEPTH_BRIEF + " " + RYUUNDY_ORIGINALITY_BRIEF
 )
+
+
+LONG_FIT_THEMES = frozenset({
+    'chinese_drama_story', 'korean_drama_story', 'mystery_story', 'legend_folklore',
+    'domestic_politics', 'food_healthy_review', 'food_taste_review',
+    'moral_animation_story', 'nostalgia_indonesia', 'lecture_wisdom',
+    'practical_knowledge', 'history_geography_nusantara', 'faith_life',
+    'family_conflict', 'love_betrayal', 'life_comeback', 'friendship_twist',
+    'islamic_podcast_dialogue', 'podcast_conversation',
+})
+SHORT_FIT_THEMES = frozenset({
+    'humor_interlude', 'gaming_story', 'famous_game_reaction', 'quirky_animation',
+    'reaction_clip_story', 'football_story', 'islamic_animation_kids',
+    'islamic_animation_general', 'islamic_current_viral', 'muslim_family_lifestyle',
+})
+
+
+def format_fit(theme_key):
+    """Which format a cron topic can honestly carry. Short = one moment; Long = development."""
+    key = str(theme_key or '').strip()
+    long_fit = key in LONG_FIT_THEMES
+    short_fit = key in SHORT_FIT_THEMES or long_fit
+    return dict(version=1, theme=key, long=long_fit, short=bool(short_fit),
+                preferred='long' if long_fit else 'short',
+                rationale=('Perlu konteks, perkembangan, bukti, dan akhir yang tuntas; '
+                           'Short boleh mengambil satu momen dari sumber yang sama.'
+                           if long_fit else 'Satu momen dengan payoff utuh lebih cocok; '
+                           'Long hanya jika sumber cukup panjang dan bersifat informasi.'))
 
 
 def number(value):

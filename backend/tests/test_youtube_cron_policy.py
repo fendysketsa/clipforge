@@ -34,7 +34,7 @@ def record(index, **updates):
     return api.YouTubeUploadJob(**values)
 
 
-def test_five_short_slots_then_next_day():
+def test_seven_short_slots_then_next_day():
     now = datetime(2099, 1, 1, 21, tzinfo=timezone.utc)
     reserved = set()
     slots = []
@@ -43,7 +43,7 @@ def test_five_short_slots_then_next_day():
         reserved.add(slot)
         slots.append(slot)
     dates = Counter(slot.astimezone(ZoneInfo("Asia/Jakarta")).date() for slot in slots)
-    assert sorted(dates.values()) == [5, 5, 5]
+    assert sorted(dates.values()) == [1, 7, 7]
     assert all(b - a >= timedelta(hours=2.25) for a, b in zip(slots, slots[1:]))
 
 
@@ -106,7 +106,7 @@ def test_reconcile_preserves_ids_and_reserves_at_most_five_shorts_per_day(monkey
     assert {u.id for u in changed} == {u.id for u in uploads[1:]}
     assert api.youtube_uploads[uploads[0].id].publish_at == uploads[0].publish_at
     times = sorted(api.parsed_datetime(u.publish_at) for u in api.youtube_uploads.values())
-    assert max(Counter(t.astimezone(ZoneInfo("Asia/Jakarta")).date() for t in times).values()) <= 5
+    assert max(Counter(t.astimezone(ZoneInfo("Asia/Jakarta")).date() for t in times).values()) <= 7
     assert all(b - a >= timedelta(hours=2.25) for a, b in zip(times, times[1:]))
 
 

@@ -94,6 +94,24 @@ def test_repeated_continuation_and_late_promise_are_rejected(story):
     assert not result["passed"]
 
 
+def test_long_brief_requires_deeper_intent_and_ryuundy_originality():
+    brief = strategy.LONG_EDITOR_BRIEF
+    assert strategy.LONG_DEPTH_BRIEF in brief
+    assert strategy.RYUUNDY_ORIGINALITY_BRIEF in brief
+    assert 'motif tokoh' in brief and 'fakta, opini, dan tuduhan' in brief
+    assert 'tokoh, sudut pandang, narasi' in brief
+    assert 'dua detik pertama' not in brief
+
+
+def test_format_fit_separates_long_stories_from_short_moments():
+    drama = strategy.format_fit('chinese_drama_story')
+    humor = strategy.format_fit('humor_interlude')
+    assert drama['long'] is True and drama['short'] is True
+    assert humor['long'] is False and humor['short'] is True
+    assert drama['preferred'] == 'long' and humor['preferred'] == 'short'
+    assert 'bukti' in drama['rationale']
+
+
 def test_long_direction_never_inherits_short_fyp_brief():
     import api
     request = api.AutoViralRequest(cron_theme_key="gaming_story")

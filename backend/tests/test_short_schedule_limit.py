@@ -11,9 +11,9 @@ NOW = datetime(2099, 1, 1, 17, tzinfo=timezone.utc)  # Jan 2, 00:00 WIB.
 
 @pytest.fixture(autouse=True)
 def policy(monkeypatch):
-    for key,value in {'YOUTUBE_SHORT_SCHEDULE_DAILY_LIMIT':'5','YOUTUBE_PUBLIC_DAILY_LIMIT':'7',
+    for key,value in {'YOUTUBE_SHORT_SCHEDULE_DAILY_LIMIT':'7','YOUTUBE_PUBLIC_DAILY_LIMIT':'9',
         'YOUTUBE_PUBLIC_MIN_GAP_HOURS':'1','YOUTUBE_CHANNEL_RECOVERY_MODE':'false',
-        'YOUTUBE_SHORT_PUBLISH_SLOTS':'07:00,10:00,13:00,16:00,19:00',
+        'YOUTUBE_SHORT_PUBLISH_SLOTS':'07:00,09:15,11:30,13:45,16:00,18:15,20:30',
         'YOUTUBE_LONG_PUBLISH_SLOTS':'05:00,23:00','YOUTUBE_PUBLISH_TIMEZONE':'Asia/Jakarta',
         'YOUTUBE_PUBLIC_PAUSE_UNTIL':'','YOUTUBE_SCHEDULE_MIN_LEAD_MINUTES':'30',
         'YOUTUBE_CRON_BUFFER_ENABLED':'true'}.items():
@@ -22,25 +22,26 @@ def policy(monkeypatch):
 
 
 def row(index, hour, **changes):
+    moment = datetime(2099,1,2,int(hour),int(round((hour % 1) * 60)),tzinfo=WIB)
     values=dict(id=f'u{index}',source_job_id=f'j{index}',clip_url=f'/clip{index}.mp4',clip_name='clip_01.mp4',title='Clip',
         status='completed',created_at=NOW.isoformat(),updated_at=NOW.isoformat(),visibility='public',upload_confirmed=True,
-        publish_at=datetime(2099,1,2,hour,tzinfo=WIB).isoformat(),video_url=f'https://www.youtube.com/watch?v=video{index:06}',
+        publish_at=moment.isoformat(),video_url=f'https://www.youtube.com/watch?v=video{index:06}',
         clip_sha256=f'hash-{index}',source_video_url=f'https://www.youtube.com/watch?v=source{index:05}')
     values.update(changes)
     return api.YouTubeUploadJob(**values)
 
 
-def test_seventeen_shorts_produce_a_five_five_five_two_publication_queue():
+def test_seventeen_shorts_produce_a_seven_seven_three_publication_queue():
     reserved=set();shorts=[]
     for _ in range(17):
         slot=api.youtube_next_publish_slot(long_form=False,now=NOW,reserved=reserved,short_reserved=shorts)
         reserved.add(slot);shorts.append(slot)
-    assert sorted(Counter(when.astimezone(WIB).date() for when in shorts).values()) == [2,5,5,5]
+    assert sorted(Counter(when.astimezone(WIB).date() for when in shorts).values()) == [3,7,7]
     assert len(set(shorts))==17
 
 
-def test_completed_and_future_shorts_on_the_same_wib_date_share_five_slots(monkeypatch):
-    uploads=[row(i,hour) for i,hour in enumerate([7,10,13,16,19])]
+def test_completed_and_future_shorts_on_the_same_wib_date_share_seven_slots(monkeypatch):
+    uploads=[row(i,hour) for i,hour in enumerate([7,9,11,13,15,17,19])]
     uploads[0].publish_at=None
     uploads[0].finished_at=datetime(2099,1,2,7,tzinfo=WIB).isoformat()
     monkeypatch.setattr(api,'youtube_uploads',{r.id:r for r in uploads})
@@ -77,8 +78,8 @@ def test_a_source_cannot_fill_two_short_slots_on_the_same_date(monkeypatch):
     assert 'Sumber' in api.youtube_short_schedule_issue(api.parsed_datetime(original.publish_at),source_url=original.source_video_url)
 
 
-def test_reconcile_moves_only_the_sixth_short_and_keeps_remote_identity_and_longs(monkeypatch):
-    uploads=[row(i,hour) for i,hour in enumerate([7,10,13,16,19,21])]
+def test_reconcile_moves_only_the_eighth_short_and_keeps_remote_identity_and_longs(monkeypatch):
+    uploads=[row(i,hour) for i,hour in enumerate([0,2.5,5,7.5,10,12.5,15,17.5])]
     long=row(99,23,clip_name='resume_cerita_1.mp4')
     uploads.append(long)
     monkeypatch.setattr(api,'youtube_uploads',{r.id:r for r in uploads})
@@ -86,16 +87,17 @@ def test_reconcile_moves_only_the_sixth_short_and_keeps_remote_identity_and_long
     queued=[]
     monkeypatch.setattr(api,'queue_youtube_upload_jobs',lambda rows:queued.extend(rows))
     changed=api.reconcile_youtube_cron_schedules()
-    assert [r.id for r in changed]==['u5']
-    assert changed[0].video_url==uploads[5].video_url
-    assert api.parsed_datetime(changed[0].publish_at)>api.parsed_datetime(uploads[5].publish_at)
-    assert api.parsed_datetime(changed[0].publish_at).astimezone(WIB).date().isoformat()=='2099-01-03'
+    assert [r.id for r in changed]==['u6','u7']
+    assert [r.video_url for r in changed]==[uploads[6].video_url,uploads[7].video_url]
+    assert all(api.parsed_datetime(r.publish_at).astimezone(WIB).date().isoformat()=='2099-01-03'
+               or api.parsed_datetime(r.publish_at) > api.parsed_datetime(uploads[int(r.id[1:])].publish_at)
+               for r in changed)
     assert api.youtube_uploads[long.id].publish_at==long.publish_at
-    assert len(queued)==1 and api.YOUTUBE_RESTART_VERIFY_MARKER in queued[0].logs
+    assert len(queued)==len(changed) and all(api.YOUTUBE_RESTART_VERIFY_MARKER in row.logs for row in queued)
 
 
-def test_an_explicit_six_short_plan_is_rejected_before_any_mutation(monkeypatch):
-    uploads=[row(i,hour) for i,hour in enumerate([7,9,11,13,15,17])]
+def test_an_explicit_eight_short_plan_is_rejected_before_any_mutation(monkeypatch):
+    uploads=[row(i,hour) for i,hour in enumerate([7,9,11,13,15,17,19,21])]
     monkeypatch.setattr(api,'youtube_uploads',{r.id:r for r in uploads})
     monkeypatch.setattr(api,'scheduled_auto_viral_job_ids',lambda:{r.source_job_id for r in uploads})
     with pytest.raises(api.HTTPException,match='') as error:
@@ -113,6 +115,6 @@ def test_identical_files_on_distinct_remote_ids_require_review_and_are_not_resch
     assert all(r.status=='completed' for r in api.youtube_uploads.values())
 
 
-def test_daily_limit_cannot_be_configured_above_five(monkeypatch):
+def test_daily_limit_cannot_be_configured_above_seven(monkeypatch):
     monkeypatch.setenv('YOUTUBE_SHORT_SCHEDULE_DAILY_LIMIT','999')
-    assert api.youtube_short_schedule_daily_limit()==5
+    assert api.youtube_short_schedule_daily_limit()==7
