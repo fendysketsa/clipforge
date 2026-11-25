@@ -6943,14 +6943,15 @@ def reviewed_quality_only_short_for_private_upload(
 
 
 def short_has_selectable_cover_frame(sidecar: dict[str, Any]) -> bool:
-    """Recognize both current embedded covers and legacy reaction frames.
+    """Recognize embedded covers and verified frames from legacy renders.
 
     Scheduled reaction renders intentionally use their composed host/source
     opening as the selectable Shorts cover. Older sidecars named that proven
     path ``rendered_video_frame`` while upload preflight only recognized the
     newer ``embedded_shorts_cover_frame`` label. Keep the legacy allowance
-    narrow: the disclosed reaction layout must actually have been selected and
-    its Shorts compliance record must confirm the rendered-frame fallback.
+    narrow: require either the selected reaction layout or successful encoded
+    frame QC plus a sampled thumbnail timestamp inside the rendered duration.
+    This only resolves cover availability; rights and editorial gates still run.
     """
     strategy = str(sidecar.get("thumbnail_strategy") or "").strip()
     if not strategy or strategy == "embedded_shorts_cover_frame":
@@ -6959,13 +6960,33 @@ def short_has_selectable_cover_frame(sidecar: dict[str, Any]) -> bool:
         return False
     reaction_layout = sidecar.get("scheduled_reaction_avatar_layout")
     compliance = sidecar.get("shorts_policy_compliance")
-    return bool(
-        isinstance(reaction_layout, dict)
-        and reaction_layout.get("selected") is True
-        and isinstance(compliance, dict)
+    if not (
+        isinstance(compliance, dict)
         and compliance.get("embedded_cover_frame_retained_as_fallback") is True
         and compliance.get("thumbnail_strategy")
         == "custom_upload_with_rendered_frame_fallback"
+    ):
+        return False
+    if isinstance(reaction_layout, dict) and reaction_layout.get("selected") is True:
+        return True
+    qc = sidecar.get("render_quality_qc")
+    if not (
+        isinstance(qc, dict)
+        and qc.get("available") is True
+        and qc.get("status") == "passed"
+        and qc.get("quality_gate_passed") is True
+        and qc.get("blocking") is False
+        and qc.get("requires_manual_review") is False
+    ):
+        return False
+    timestamp = sidecar.get("thumbnail_frame_seconds")
+    duration = sidecar.get("output_duration_seconds") or sidecar.get("duration")
+    samples = qc.get("sample_count")
+    return bool(
+        isinstance(timestamp, (int, float)) and not isinstance(timestamp, bool)
+        and isinstance(duration, (int, float)) and not isinstance(duration, bool)
+        and 0 <= timestamp < duration < float("inf")
+        and isinstance(samples, int) and not isinstance(samples, bool) and samples > 0
     )
 
 
@@ -18507,15 +18528,35 @@ def parse_youtube_iso_duration(value: str) -> int:
     )
 
 
+def youtube_data_api_keys() -> list[str]:
+    """Primary key first, then optional backups for quota failover."""
+    configured = os.environ.get("YOUTUBE_DATA_API_KEYS", "").strip()
+    keys = [item.strip() for item in re.split(r"[\s,]+", configured) if item.strip()]
+    primary = os.environ.get("YOUTUBE_DATA_API_KEY", "").strip()
+    if primary:
+        keys.insert(0, primary)
+    seen: set[str] = set()
+    return [key for key in keys if not (key in seen or seen.add(key))]
+
+
+_QUOTA_REASONS = {
+    "quotaexceeded",
+    "ratelimitexceeded",
+    "dailylimitexceeded",
+    "userratelimitexceeded",
+}
+
+
 def youtube_data_api_get(path: str, params: dict[str, Any]) -> dict[str, Any]:
-    api_key = os.environ.get("YOUTUBE_DATA_API_KEY", "").strip()
-    if not api_key:
+    api_keys = youtube_data_api_keys()
+    if not api_keys:
         raise RuntimeError("YOUTUBE_DATA_API_KEY belum diset")
     clean_params = {key: value for key, value in params.items() if value not in {None, ""}}
-    key_fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:10]
+    # Results do not depend on which key performed the request, so cache across
+    # keys: a quota failover then reuses the same discovery metadata.
     cache_key = hashlib.sha256(
         json.dumps(
-            [key_fingerprint, path, sorted(clean_params.items())],
+            [path, sorted(clean_params.items())],
             ensure_ascii=True,
             separators=(",", ":"),
         ).encode("utf-8")
@@ -18526,46 +18567,53 @@ def youtube_data_api_get(path: str, params: dict[str, Any]) -> dict[str, Any]:
             cached = youtube_data_api_cache.get(cache_key)
         if cached is not None and time.monotonic() - cached[0] <= cache_ttl:
             return cached[1]
-    clean_params["key"] = api_key
-    url = f"https://www.googleapis.com/youtube/v3/{path}?{urlencode(clean_params)}"
-    request = urllib.request.Request(url, headers={"Accept": "application/json"})
-    try:
-        timeout_seconds = max(
-            3, min(30, env_int("YOUTUBE_DATA_API_TIMEOUT_SECONDS", 10))
-        )
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        if cache_ttl and isinstance(payload, dict):
-            with youtube_data_api_cache_lock:
-                youtube_data_api_cache[cache_key] = (time.monotonic(), payload)
-                if len(youtube_data_api_cache) > 160:
-                    oldest = min(
-                        youtube_data_api_cache,
-                        key=lambda item: youtube_data_api_cache[item][0],
-                    )
-                    youtube_data_api_cache.pop(oldest, None)
-        return payload
-    except HTTPError as exc:
-        detail = exc.reason
+    timeout_seconds = max(3, min(30, env_int("YOUTUBE_DATA_API_TIMEOUT_SECONDS", 10)))
+    quota_errors: list[str] = []
+    for api_key in api_keys:
+        key_fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:10]
+        request_params = dict(clean_params, key=api_key)
+        url = f"https://www.googleapis.com/youtube/v3/{path}?{urlencode(request_params)}"
+        request = urllib.request.Request(url, headers={"Accept": "application/json"})
         try:
-            payload = json.loads(exc.read().decode("utf-8"))
-            error = payload.get("error") if isinstance(payload, dict) else None
-            if isinstance(error, dict):
-                message = error.get("message")
-                errors = error.get("errors")
-                reason = ""
-                if isinstance(errors, list) and errors and isinstance(errors[0], dict):
-                    reason = str(errors[0].get("reason") or "")
-                detail = f"{message or detail}" + (f" ({reason})" if reason else "")
-        except Exception:
-            pass
-        raise RuntimeError(
-            f"YouTube Data API HTTP {exc.code} [key-id {key_fingerprint}]: {detail}"
-        ) from exc
-    except (URLError, TimeoutError, OSError) as exc:
-        raise RuntimeError(
-            f"YouTube Data API request gagal [key-id {key_fingerprint}]: {exc}"
-        ) from exc
+            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            if cache_ttl and isinstance(payload, dict):
+                with youtube_data_api_cache_lock:
+                    youtube_data_api_cache[cache_key] = (time.monotonic(), payload)
+                    if len(youtube_data_api_cache) > 160:
+                        oldest = min(
+                            youtube_data_api_cache,
+                            key=lambda item: youtube_data_api_cache[item][0],
+                        )
+                        youtube_data_api_cache.pop(oldest, None)
+            return payload
+        except HTTPError as exc:
+            detail = exc.reason
+            reason = ""
+            try:
+                payload = json.loads(exc.read().decode("utf-8"))
+                error = payload.get("error") if isinstance(payload, dict) else None
+                if isinstance(error, dict):
+                    message = error.get("message")
+                    errors = error.get("errors")
+                    if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+                        reason = str(errors[0].get("reason") or "")
+                    detail = f"{message or detail}" + (f" ({reason})" if reason else "")
+            except Exception:
+                pass
+            if exc.code == 429 or reason.casefold() in _QUOTA_REASONS:
+                quota_errors.append(f"key-id {key_fingerprint}: {detail}")
+                continue
+            raise RuntimeError(
+                f"YouTube Data API HTTP {exc.code} [key-id {key_fingerprint}]: {detail}"
+            ) from exc
+        except (URLError, TimeoutError, OSError) as exc:
+            raise RuntimeError(
+                f"YouTube Data API request gagal [key-id {key_fingerprint}]: {exc}"
+            ) from exc
+    raise RuntimeError(
+        "YouTube Data API kuota habis pada semua key: " + "; ".join(quota_errors)
+    )
 
 
 def youtube_data_api_video_payload(item: dict[str, Any]) -> dict[str, Any]:

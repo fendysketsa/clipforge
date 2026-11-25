@@ -4735,6 +4735,70 @@ def test_unproven_rendered_frame_does_not_bypass_cover_gate():
     assert short_has_selectable_cover_frame(sidecar) is False
 
 
+def verified_legacy_cover_sidecar():
+    return {
+        "output_format": "vertical_short",
+        "thumbnail_strategy": "rendered_video_frame",
+        "scheduled_reaction_avatar_layout": {"selected": False},
+        "shorts_policy_compliance": {
+            "embedded_cover_frame_retained_as_fallback": True,
+            "thumbnail_strategy": "custom_upload_with_rendered_frame_fallback",
+        },
+        "thumbnail_frame_seconds": 7.81,
+        "output_duration_seconds": 43.387,
+        "render_quality_qc": {
+            "available": True, "status": "passed", "quality_gate_passed": True,
+            "blocking": False, "requires_manual_review": False, "sample_count": 7,
+        },
+    }
+
+
+def test_verified_legacy_non_reaction_frame_is_selectable():
+    assert short_has_selectable_cover_frame(verified_legacy_cover_sidecar()) is True
+
+
+@pytest.mark.parametrize("key,value", [
+    ("thumbnail_frame_seconds", None), ("thumbnail_frame_seconds", True),
+    ("thumbnail_frame_seconds", -1), ("thumbnail_frame_seconds", 43.387),
+    ("thumbnail_frame_seconds", float("nan")),
+    ("output_duration_seconds", float("inf")),
+    ("thumbnail_strategy", "unverified_custom_image"),
+    ("shorts_policy_compliance", {}),
+])
+def test_legacy_cover_rejects_missing_or_invalid_frame_evidence(key, value):
+    sidecar = verified_legacy_cover_sidecar()
+    sidecar[key] = value
+    assert short_has_selectable_cover_frame(sidecar) is False
+
+
+@pytest.mark.parametrize("key,value", [
+    ("available", False), ("status", "failed"), ("quality_gate_passed", False),
+    ("blocking", True), ("requires_manual_review", True),
+    ("sample_count", 0), ("sample_count", True),
+])
+def test_legacy_cover_requires_successful_frame_qc(key, value):
+    sidecar = verified_legacy_cover_sidecar()
+    sidecar["render_quality_qc"][key] = value
+    assert short_has_selectable_cover_frame(sidecar) is False
+
+
+def test_verified_legacy_cover_preserves_editorial_hold(monkeypatch):
+    import api
+
+    clip = make_clip(1).model_copy(update={"is_correct": True})
+    job = ClipJob(
+        id="job-legacy-cover", status="completed",
+        request=make_monetization_ready_url_request(),
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00", clips=[clip],
+    )
+    sidecar = verified_legacy_cover_sidecar()
+    sidecar["editorial_safety"] = {"safe_for_selection": False}
+    monkeypatch.setattr(api, "clip_sidecar_payload", lambda _clip: sidecar)
+    monkeypatch.setattr(api, "metadata_for_job", lambda _job: {})
+    assert "audit editorial" in (youtube_monetization_preflight_issue(job, clip) or "")
+
+
 def test_monetization_preflight_accepts_v8_transformation_after_documented_rights(monkeypatch):
     """A rights-only render status must not be mislabeled as failed editing."""
     import api

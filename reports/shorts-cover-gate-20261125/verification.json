@@ -1,0 +1,36 @@
+{
+  "job_id": "afc1416c23d14393ab2f04afdcf16645",
+  "cover_selectable_in_fixed_source": true,
+  "media_sha256_matches_render_provenance": true,
+  "thumbnail_frame_seconds": 7.81,
+  "encoded_frame_qc_status": "passed",
+  "next_preflight_issue_in_fixed_source": "Upload diblokir: Short dari sumber eksternal belum menampilkan Sudut Editorial dan Makna Utama pada dua waktu berbeda setelah perbaikan otomatis. Proses ulang sumber atau pilih clip lain.",
+  "publication_review_required_preserved": true,
+  "tests": "231 passed: tests/test_youtube_uploads.py",
+  "deployment_command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+  "deployment_status": "activation_verified_after_user_rebuild",
+  "runtime_fix_activated": true,
+  "live_automation_verified": {
+    "backend_health": "ok",
+    "scheduler_running": true,
+    "enabled": true,
+    "cron_upload_recovery_enabled": true,
+    "cron_upload_recovery_errors": {},
+    "scheduler_last_error": null,
+    "activity": "running",
+    "production_source_title": "BABUNGKUIH - KHW PART 405 - SUMATERA BARAT"
+  },
+  "persisted_media_and_upload_records_modified": false,
+  "verified_at": "2026-11-25T15:46:38.290511+00:00",
+  "runtime_release_id": "5c94e3af48e561cd10e3189bf7792ba13e5cdfdbe818cf4828f13bc655a6f13f",
+  "runtime_source_match": {
+    "backend": true,
+    "telegram-bot": true
+  },
+  "frontend_verification": {
+    "http_status": 200,
+    "ui_verified": true,
+    "build_id": "oSnU4zyPFZbDxP75_pc5-"
+  },
+  "live_cover_block_resolved": true
+}
