@@ -8,12 +8,13 @@ import ryuundy_reference_catalog as catalog
 from youtube_playlists import classify_youtube_playlist
 
 
-def test_all_four_references_have_explicit_evidence_and_no_automatic_reupload():
+def test_all_five_references_have_explicit_evidence_and_no_automatic_reupload():
     report = api.get_ryuundy_references()
-    assert report['reference_count'] == 4
+    assert report['reference_count'] == 5
     assert {r['key'] for r in report['references']} == {
         'kartun_acing_moral_story', 'uah_contextual_sermon_short',
         'zamanemas_indonesia_1980', 'dunia_sjr_history_reference',
+        'sensasi_trends_film_story_reference',
     }
     for key in ['transcripts_verified', 'full_audiovisual_review_verified',
                 'retention_verified', 'grants_source_rights', 'automatic_reference_reupload']:
@@ -53,6 +54,8 @@ def test_editorial_adaptation_reaches_each_format_and_keeps_manual_isolated(key,
 @pytest.mark.parametrize('key,expected', [
     ('moral_animation_story', 'Animasi Cerita Moral'),
     ('nostalgia_indonesia', 'Nostalgia & Indonesia Tempo Dulu'),
+    ('film_story_lesson', 'Cerita & Karakter'),
+    ('measured_trend_lesson', 'Topik Ramai'),
 ])
 def test_persisted_theme_routes_playlist_without_unrelated_religious_labels(key, expected):
     assert classify_youtube_playlist('Judul generik', theme_key=key) == expected
@@ -129,7 +132,17 @@ def test_new_profiles_do_not_enqueue_reference_urls_or_grant_rights(monkeypatch)
     assert restored.cron_theme_key == 'nostalgia_indonesia'
 
 
+def test_sensasi_trends_reference_is_editorial_only_never_a_source():
+    row=next(r for r in catalog.reference_catalog()['references']
+             if r['key']=='sensasi_trends_film_story_reference')
+    assert row['channel_id']=='UCb_er1PINGlJ_H6d9nfSjKA'
+    assert row['youtube_channel_verified'] is True
+    assert row['channel_search_enabled'] is False
+    assert catalog.channel_search_specs('film_story_lesson')==[]
+    assert 'jangan pakai footage' in row['adaptation']
+
+
 def test_capability_contract_exposes_reference_version_and_new_niches():
     contract = api.get_cron_long_strategy()
-    assert contract['reference_catalog_version'] == 1 and contract['reference_count'] == 4
+    assert contract['reference_catalog_version'] == 1 and contract['reference_count'] == 5
     assert {'moral_animation_story', 'nostalgia_indonesia'} <= {r['key'] for r in contract['themes']}

@@ -6,6 +6,13 @@ import pytest
 import api
 import ryuundy_editorial_themes as themes
 
+def test_originality_briefs_forbid_reuse_and_virality_claims():
+    film = themes.FILM_STORY_EDITOR_BRIEF.casefold()
+    trend = themes.MEASURED_TREND_EDITOR_BRIEF.casefold()
+    assert "jangan memakai footage film" in film and "orisinal" in film
+    assert "jangan mengarang angka" in trend and "fyp" in trend and "viral" in trend
+
+
 TITLES = {
     "practical_knowledge": "Sains teknologi Indonesia eksperimen cara kerja kecerdasan buatan",
     "moral_animation_story": "Animasi cerita moral Indonesia tentang pedagang curang dan kejujuran",
@@ -14,6 +21,8 @@ TITLES = {
     "domestic_politics": "Analisis politik Indonesia kronologi kebijakan pemerintah dan dampak masyarakat",
     "food_healthy_review": "Review makanan sehat Indonesia bahan porsi dan cara masak",
     "food_taste_review": "Review kuliner Indonesia rasa tekstur porsi dan harga makanan",
+    "film_story_lesson": "Alur cerita film pilihan tokoh, konflik keluarga, akibat, dan akhir yang tuntas",
+    "measured_trend_lesson": "Topik sedang ramai dibicarakan orang Indonesia minggu ini dan penjelasan konteksnya",
 }
 
 

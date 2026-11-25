@@ -60,8 +60,9 @@ SOURCE_RIGHTS_COMMERCIAL_PATTERNS = (
 # accepted as production sources. Keep the exact public handle/name narrowly
 # scoped; immutable Channel IDs supplied by the operator remain the preferred
 # identifier once they are known.
-BUILTIN_REFERENCE_ONLY_HANDLES = {"@podcastploudrest"}
-BUILTIN_REFERENCE_ONLY_NAMES = {"podcast ploudrest"}
+BUILTIN_REFERENCE_ONLY_CHANNEL_IDS = {"UCb_er1PINGlJ_H6d9nfSjKA"}
+BUILTIN_REFERENCE_ONLY_HANDLES = {"@podcastploudrest", "@sensasitrends9553"}
+BUILTIN_REFERENCE_ONLY_NAMES = {"podcast ploudrest", "sensasi trends"}
 
 
 def trusted_source_channel_ids() -> set[str]:
@@ -75,13 +76,14 @@ def trusted_source_channel_ids() -> set[str]:
 
 def reference_only_source_channel_ids() -> set[str]:
     """Return channels explicitly approved for research, never media reuse."""
-    return {
+    configured = {
         value.strip()
         for value in os.environ.get(
             "YOUTUBE_REFERENCE_ONLY_SOURCE_CHANNEL_IDS", ""
         ).split(",")
         if value.strip()
     }
+    return BUILTIN_REFERENCE_ONLY_CHANNEL_IDS | configured
 
 
 def reference_only_source_handles() -> set[str]:

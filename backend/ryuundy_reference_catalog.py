@@ -4,7 +4,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 VERSION = 1
-CHECKED_ON = "2026-11-20"
+CHECKED_ON = "2026-11-25"
 REFERENCES = (
     {
         "key": "kartun_acing_moral_story",
@@ -46,6 +46,22 @@ REFERENCES = (
         "evidence": "owner_handle_youtube_404_external_search_context",
         "youtube_channel_verified": False, "channel_search_enabled": False,
         "adaptation": "Gunakan arah topik sejarah dan kehidupan tempo dulu sebagai ide pencarian. Handle @dunia.sjr belum terverifikasi sebagai channel YouTube; jangan mengarang channel ID atau memperlakukan unggahan ulang sebagai bukti arsip atau izin penggunaan.",
+    },
+    {
+        "key": "sensasi_trends_film_story_reference",
+        "url": "https://www.youtube.com/@sensasitrends9553",
+        "title": "Sensasi Trends — recap alur cerita film",
+        "creator": "Sensasi Trends", "handle": "@sensasitrends9553",
+        "channel_id": "UCb_er1PINGlJ_H6d9nfSjKA",
+        "theme_key": "film_story_lesson", "duration_seconds": None,
+        "evidence": "youtube_channel_metadata_and_public_atom_feed_2026_11_25",
+        # Verified for editorial direction only. Exact-channel search stays off:
+        # these are third-party film recaps with spoilers and no reuse licence.
+        "youtube_channel_verified": True, "channel_search_enabled": False,
+        "adaptation": ("Pakai hanya pola alur pilihan tokoh -> konflik -> akibat -> akhir sebagai arah "
+                       "pencarian dan ukuran minat penonton. Kanal ini merangkum film pihak ketiga: "
+                       "jangan pakai footage, dialog, judul film, pemeran, atau spoiler, dan jangan "
+                       "jadikan sumber produksi. Ciptakan tokoh dan naskah RYUUNDY yang orisinal."),
     },
 )
 

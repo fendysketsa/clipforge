@@ -102,6 +102,17 @@ def test_podcast_ploudrest_is_reference_only_not_a_production_source():
     )
 
 
+def test_sensasi_trends_recap_channel_is_reference_only_not_production_source():
+    source = {
+        "title": "Alur cerita film Korea - recap",
+        "uploader": "Sensasi Trends",
+        "uploader_id": "@sensasitrends9553",
+        "channel_id": "UCb_er1PINGlJ_H6d9nfSjKA",
+    }
+    assert is_reference_only_source_channel(source) is True
+    assert any("referensi editorial" in reason for reason in source_rights_risk_reasons(source))
+
+
 def test_operator_can_add_reference_only_channel_by_immutable_id(monkeypatch):
     monkeypatch.setenv(
         "YOUTUBE_REFERENCE_ONLY_SOURCE_CHANNEL_IDS",

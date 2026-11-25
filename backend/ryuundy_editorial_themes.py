@@ -88,6 +88,30 @@ PROFILES = {
             "review makanan enak indonesia warung lokal pengalaman rasa",
         ],
     },
+    "film_story_lesson": {
+        "label": "Pelajaran dari Alur Cerita Film",
+        "tone": "story-first dan orisinal: ambil hanya struktur pilihan tokoh, konflik, akibat, dan akhir yang tuntas; jangan memakai footage, dialog, judul film, pemeran, atau spoiler pihak ketiga",
+        "short_role": "ambil satu keputusan tokoh dan akibat yang terlihat dalam satu momen utuh; tokoh dan naskah RYUUNDY sendiri, tanpa klaim kisah nyata",
+        "long_role": "susun konteks, motif, keputusan, konsekuensi, perubahan hubungan, dan akhir dari naskah orisinal; tiap bagian memberi informasi baru dan tidak mengulang Short",
+        "duration_filter": "any",
+        "queries": [
+            "cerita film keluarga pilihan tokoh dan konsekuensi alur lengkap",
+            "kisah animasi orisinal kejujuran pengorbanan dan akibat pilihan",
+            "cerita moral anak dari alur film yang menginspirasi naskah baru",
+        ],
+    },
+    "measured_trend_lesson": {
+        "label": "Topik Ramai Terukur",
+        "tone": "berbasis sinyal publik yang benar-benar teramati; jelaskan konteks dan makna, jangan mengklaim FYP, jaminan viral, atau angka yang tidak diukur",
+        "short_role": "ambil satu sudut dari topik yang sedang ramai dan beri penjelasan singkat yang jujur serta batasan yang jelas",
+        "long_role": "rangkai sebab-akibat, konteks, bukti yang tersedia, dan simpulan yang tidak berlebihan dari topik yang sama",
+        "duration_filter": "any",
+        "queries": [
+            "topik sedang ramai dibicarakan orang indonesia penjelasan konteks singkat",
+            "perbincangan hangat minggu ini penjelasan fakta dan batasannya",
+            "tren cerita dan kebiasaan yang sedang dibahas orang indonesia sekarang",
+        ],
+    },
 }
 
 SIGNALS = {
@@ -98,7 +122,20 @@ SIGNALS = {
     "domestic_politics": {"politik", "kebijakan", "pemerintah", "dpr", "pemilu", "pilkada", "kpk", "apbn", "menteri", "presiden"},
     "food_healthy_review": {"makanan sehat", "menu sehat", "bekal sehat", "gizi", "nutrisi", "sayuran", "porsi", "cara masak"},
     "food_taste_review": {"kuliner", "makanan", "masakan", "warung", "restoran", "rasa", "tekstur", "jajanan"},
+    "film_story_lesson": {"alur cerita film", "recap film", "ringkasan film", "cerita film", "tokoh film", "ending film", "plot twist", "konflik tokoh"},
+    "measured_trend_lesson": {"sedang ramai", "tren", "viral", "topik hangat", "ramai dibicarakan", "perbincangan", "fyp", "trending"},
 }
+
+FILM_STORY_EDITOR_BRIEF = (
+    "Lane alurfilm: pakai struktur cerita sebagai inspirasi, bukan materi. Jangan memakai footage film, "
+    "dialog, judul film, pemeran, atau akhir/spoiler pihak ketiga. Tokoh, naskah, dan konteks harus "
+    "orisinal RYUUNDY; fiksi diberi label jelas, satu pesan yang bisa dipahami, tanpa klaim kisah nyata."
+)
+MEASURED_TREND_EDITOR_BRIEF = (
+    "Lane topik ramai: pakai hanya sinyal publik yang benar-benar teramati. Jangan mengarang angka "
+    "penonton, menyebut FYP/jaminan viral, atau menjanjikan hasil. Jelaskan konteks, bukti yang tersedia, "
+    "dan batasan pengetahuan; bedakan fakta, opini, dan perkiraan."
+)
 
 HASHTAGS = {
     "practical_knowledge": ["PengetahuanPraktis", "SainsTeknologi", "BelajarBersama"],
@@ -108,6 +145,8 @@ HASHTAGS = {
     "domestic_politics": ["PolitikIndonesia", "KebijakanPublik", "KonteksIndonesia"],
     "food_healthy_review": ["ReviewMakanan", "MenuSehat", "PilihanMenu"],
     "food_taste_review": ["ReviewKuliner", "KulinerNusantara", "CeritaMakanan"],
+    "film_story_lesson": ["CeritaTokoh", "AlurPilihan", "KisahOrisinal"],
+    "measured_trend_lesson": ["TopikRamai", "KonteksTerukur", "BukanJaminanViral"],
 }
 
 
@@ -116,10 +155,16 @@ def requires_manual_review(theme_key: str) -> bool:
 
 
 def source_rejection_reason(info: dict, theme_key: str) -> str:
-    if theme_key != "moral_animation_story":
-        return ""
     text = " ".join([str(info.get("title") or ""), str(info.get("description") or ""),
                      " ".join(map(str, info.get("tags") or []))]).casefold()
-    if not re.search(r"\b(?:animasi|kartun|animation|animated)\b", text):
-        return "lane cerita moral membutuhkan sumber animasi/kartun fiksi, bukan tuduhan kejadian nyata"
+    if theme_key == "moral_animation_story":
+        if not re.search(r"\b(?:animasi|kartun|animation|animated)\b", text):
+            return "lane cerita moral membutuhkan sumber animasi/kartun fiksi, bukan tuduhan kejadian nyata"
+    if theme_key == "film_story_lesson":
+        # Only discussion/recap framing can inform an original scene. Raw
+        # footage, full-film uploads and named casts are not source material.
+        if re.search(r"\b(?:full movie|film penuh|full film|scene|adegan mentah|kompilasi adegan)\b", text):
+            return "lane alurfilm menolak footage film mentah atau unggahan penuh"
+        if not re.search(r"\b(?:alur cerita|recap|ringkasan|ulasan|pembahasan|bedah|narasi)\b", text):
+            return "lane alurfilm hanya memakai sumber berupa pembahasan/recap alur, bukan cuplikan film"
     return ""

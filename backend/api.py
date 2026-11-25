@@ -92,6 +92,7 @@ from youtube_remote_status import read_deleted_video_evidence
 from ryuundy_reference_learning import (
     RYUUNDY_REFERENCE_EDITOR_BRIEF, TREND_NOISE_WORDS, clean_topic_text, source_trend_matches,
 )
+from ryuundy_editorial_themes import FILM_STORY_EDITOR_BRIEF, MEASURED_TREND_EDITOR_BRIEF
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -1688,6 +1689,7 @@ CRON_TREND_SEARCH_QUERIES = [
     "reaction clip lucu indonesia dengan cerita dan payoff",
     "dokumenter sejarah dan geografi nusantara indonesia",
     "sejarah kolonial jalur perdagangan dan budaya nusantara",
+    "topik sedang ramai dibicarakan orang indonesia minggu ini penjelasan konteks",
 ]
 
 CRON_TREND_TOPIC_SIGNALS = {
@@ -21114,6 +21116,10 @@ def auto_viral_format_perspective(
         parts.append(RYUUNDY_REFERENCE_EDITOR_BRIEF)
     if request.cron_theme_key in DRAMA_THEME_PROFILES:
         parts.append(DRAMA_EDITOR_BRIEF)
+    if request.cron_theme_key == "film_story_lesson":
+        parts.append(FILM_STORY_EDITOR_BRIEF)
+    if request.cron_theme_key == "measured_trend_lesson":
+        parts.append(MEASURED_TREND_EDITOR_BRIEF)
     if not long_form and request.cron_theme_key in {"gaming_story", "quirky_animation", "moral_animation_story", "islamic_animation_kids", "islamic_animation_general", *DRAMA_THEME_PROFILES}:
         parts.append(ryuundy_growth_learning.CHARACTER_EDITOR_BRIEF)
     if request.cron_short_role or request.cron_long_role:

@@ -30,6 +30,8 @@ CRON_THEME_PLAYLISTS = {
     "faith_life": "Islam",
     "lecture_wisdom": "Islam",
     "news_hot": "News",
+    "film_story_lesson": "Cerita & Karakter",
+    "measured_trend_lesson": "Topik Ramai",
 }
 
 
