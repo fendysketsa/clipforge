@@ -393,7 +393,7 @@ export function createOfficeScene(host: HTMLElement,
         const partner = officeDestination(index % 2 ? index - 1 : Math.min(index + 1, OFFICE_PEOPLE.length - 1), 'chat');
         const desired = target.activity === "chat" ? Math.atan2(partner.x - person.point.x, partner.z - person.point.z)
           : target.activity === "desk" ? (profile.desk.z > 0 ? 0 : Math.PI)
-            : target.activity === "reading" || target.activity === "sofa" ? Math.PI
+            : target.activity === "observing" || target.activity === "reading" || target.activity === "sofa" ? Math.PI
               : target.activity === "meeting" ? -Math.PI / 2
                 : target.activity === "briefing" ? Math.atan2(-8 - person.point.x, 2 - person.point.z) : 0;
         let turn = desired - person.rotation;
@@ -407,7 +407,7 @@ export function createOfficeScene(host: HTMLElement,
       person.mouse.visible = pose.activity === 'desk' || pose.activity === 'observing';
       person.mouse.position.x = .42 + Math.sin(seconds * 1.8 + index) * .08;
       for (const material of deskScreens) material.opacity = .84 + Math.sin(seconds * .9) * .12;
-      const seated = ["desk", "reading", "cards", "write", "snack"].includes(pose.activity);
+      const seated = ["desk", "observing", "reading", "cards", "write", "snack"].includes(pose.activity);
       person.seat.visible = seated;
       person.seat.position.set(pose.x, pose.y ?? 0, pose.z);
       person.seat.rotation.y = pose.rotation;
