@@ -5460,6 +5460,38 @@ def queue_youtube_private_buffer_promotions_once() -> int:
     return len(promoted)
 
 
+def cancel_confirmed_blocked_youtube_uploads() -> int:
+    """Drop only conclusively claimed videos from the future publish list.
+
+    A scheduled-but-private video is NOT a block: it keeps its slot until the
+    operator-published time. A Content ID claim on a confirmed upload is
+    conclusive and cancels the local schedule while preserving remote identity.
+    """
+    with youtube_uploads_lock:
+        candidates = [row for row in youtube_uploads.values()
+                      if row.status == 'completed' and row.upload_confirmed
+                      and row.visibility == 'public' and row.publish_at
+                      and parsed_datetime(row.publish_at) > datetime.now(timezone.utc)]
+    changed = 0
+    for row in candidates:
+        if not youtube_upload_was_claimed(row):
+            continue
+        evidence = dict(video_id=youtube_video_id_from_url(row.video_url or '') or None,
+                        reason='confirmed_content_id_claim', upload_id=row.id,
+                        clip_sha256=getattr(row, 'clip_sha256', None))
+        with youtube_uploads_lock:
+            current = youtube_uploads.get(row.id)
+            if current is None or current.publish_at is None or not youtube_upload_was_claimed(current):
+                continue
+            logs = [str(line) for line in current.logs]
+            logs.append('REMOTE_BLOCK_CONFIRMED:' + json.dumps(evidence, ensure_ascii=False, sort_keys=True))
+            set_youtube_upload(row.id, status='cancelled', publish_at=None,
+                               cron_private_buffer=False, logs=logs[-160:],
+                               error='remote_content_claim_confirmed')
+        changed += 1
+    return changed
+
+
 def reconcile_youtube_cron_schedules(plan: dict[str, str] | None = None) -> list[YouTubeUploadJob]:
     """Replan our existing future schedules under one shared daily/gap budget."""
     if not youtube_cron_buffer_enabled():
@@ -6458,20 +6490,20 @@ def youtube_source_attribution(job: ClipJob) -> str:
     if not source_url:
         return ""
     license_name = str(metadata.get("license") or "Creative Commons Attribution").strip()
+    # Keep the attribution readable but do not publish a raw third-party URL
+    # in the description: the original URL stays in the durable rights evidence.
     if is_scheduled:
         label = "Sumber (CC BY)" if is_creative_commons else "Sumber"
-        lines = [
-            f"{label}: {creator[:80]} — {title[:140]}",
-            source_url[:500],
-        ]
+        lines = [f"{label}: {creator[:80]} — {title[:140]}"]
         if is_creative_commons:
             lines.append(f"Lisensi: {license_name[:120]}")
+        lines.append("URL asli tersimpan pada bukti hak produksi.")
         return "\n".join(lines)
     return (
         "Atribusi sumber (CC BY):\n"
         f"Judul: {title[:180]}\n"
         f"Kreator: {creator[:120]}\n"
-        f"Sumber: {source_url[:500]}\n"
+        "Sumber: kreator dan judul di atas; URL asli tersimpan pada bukti hak.\n"
         f"Lisensi: {license_name[:120]}\n"
         "Diolah secara editorial oleh @ryuundy.studio."
     )
@@ -26908,6 +26940,7 @@ def auto_viral_scheduler_loop() -> None:
                 cleanup_rejected_source_jobs_once()
                 try:
                     queue_youtube_private_buffer_promotions_once()
+                    cancel_confirmed_blocked_youtube_uploads()
                     reconcile_youtube_short_dates_once()
                 except Exception as exc:
                     print(f"Promosi cadangan Private ditunda: {exc}", flush=True)

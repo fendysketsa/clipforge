@@ -1,0 +1,50 @@
+{
+  "date": "2026-11-25",
+  "target_channel_id": "UCAOZF9Qzj6DYoXKtLnP4UUQ",
+  "deleted_video_id": "ooch-kVoZUE",
+  "deletion_verified": true,
+  "source_video_id": "SSU8Ko6wKm4",
+  "source_channel_id": "UCY5eSpSrHUKeEAh7t4N81cQ",
+  "source_uploader": "DW Dokumenter",
+  "findings": [
+    "Studio confirmed partial regional block on scheduled video.",
+    "Production discovery metadata did not verify source rights or a CC license.",
+    "Existing generic rights confirmation disabled the CC worker gate.",
+    "Science topic is relevant; source media reuse is the issue."
+  ],
+  "code_changes": [
+    "Explicit operator refusal takes precedence over channel trust and CC labels.",
+    "Discovery and pre-upload risk gates share that refusal.",
+    "Short/Long worker rejects source before media download even with CC enforcement off."
+  ],
+  "validation": {
+    "passed": 55,
+    "command": "cd backend && .venv/bin/python -m pytest -q --disable-warnings tests/test_source_rights.py tests/test_operator_source_refusal.py tests/test_original_rebuild.py tests/test_compose_deployment.py"
+  },
+  "deployment": {
+    "command": "sudo docker-compose --env-file .env up -d --build --force-recreate backend frontend telegram-bot",
+    "status": "not_activated",
+    "reason": "sudo requires an interactive password; Docker socket is unavailable to this account."
+  },
+  "original_ai_route": {
+    "available": "Generator Cerita / long_animate using a new authored script and generated assets",
+    "retired_route_not_enabled": "original_rebuild",
+    "requirements": [
+      "Independent facts and editorial explanation; do not copy documentary narration or scene sequence.",
+      "Create new visual assets and licensed synthetic narration; no source footage, audio, music or voice clone.",
+      "Pass quality and platform checks; generated content is not guaranteed claim-free or monetizable."
+    ],
+    "sample_concept": "Kenapa komputer bisa tertukar antara angka 3 dan 8? Demonstrasi gambar angka buatan sendiri, pembacaan pola, koreksi dan batasan."
+  },
+  "preserved": [
+    "Existing remote upload identity and historical records.",
+    "Persisted operator settings, publication holds and all unrelated videos."
+  ],
+  "evidence_files": [
+    "deletion.json",
+    "studio-before.json",
+    "target-details-before.txt",
+    "studio-after.json",
+    "runtime-after.json"
+  ]
+}

@@ -107,6 +107,45 @@ def uploader_deleted_video(response: dict) -> str | None:
     return None
 
 
+def remote_video_state(response: dict) -> str:
+    """Classify a watch page without treating scheduled privacy as a block."""
+    status = response.get('playabilityStatus') if isinstance(response, dict) else None
+    if not isinstance(status, dict):
+        return 'unknown'
+    if status.get('status') == 'OK':
+        return 'public'
+    messages = [str(value).strip().casefold() for value in _status_strings(status) if str(value).strip()]
+    joined = ' '.join(messages)
+    if uploader_deleted_video(response):
+        return 'removed_by_uploader'
+    if any(word in joined for word in ('copyright', 'hak cipta', 'content id',
+                                       'terms of use', 'pelanggaran kebijakan')):
+        return 'blocked'
+    if any(word in joined for word in ('private', 'pribadi', 'terjadwal')):
+        return 'scheduled_or_private'
+    return 'unknown'
+
+
+def _status_strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for child in value.values():
+            yield from _status_strings(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _status_strings(child)
+
+
+def read_video_state_evidence(video_id: str, cdp_url: str, *, context=None) -> dict | None:
+    """Read-only remote classification; never changes a publish schedule."""
+    response = _fetch_player_response(context, video_id) if context else None
+    if not response:
+        return None
+    return dict(video_id=video_id, state=remote_video_state(response),
+                checked_at=datetime.now(timezone.utc).isoformat())
+
+
 def read_deleted_video_evidence(video_id: str, cdp_url: str, *, context=None) -> dict | None:
     """Read playability over HTTP using a snapshot of Chrome's cookies.
 

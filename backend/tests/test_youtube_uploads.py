@@ -3853,7 +3853,8 @@ def test_cron_youtube_description_always_adds_compact_source_credit():
 
     assert "Ringkasan singkat untuk penonton." in description
     assert "Sumber: Kreator Asli — Ceramah Sumber" in description
-    assert "https://youtu.be/source12345" in description
+    assert "https://youtu.be/source12345" not in description
+    assert "URL asli tersimpan pada bukti hak produksi" in description
     assert len(description) <= 5000
 
 
@@ -4672,7 +4673,8 @@ def test_verified_cc_source_gets_required_attribution(monkeypatch):
 
     assert "Atribusi sumber (CC BY)" in value
     assert "Kreator: Kreator Asli" in value
-    assert "Sumber: https://youtu.be/source" in value
+    assert "https://youtu.be/source" not in value
+    assert "URL asli tersimpan pada bukti hak" in value
     assert "Diolah secara editorial oleh @ryuundy.studio" in value
 
 

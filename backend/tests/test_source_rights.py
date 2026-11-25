@@ -1,8 +1,33 @@
+import pytest
+
 from source_rights import (
     is_reference_only_source_channel,
+    source_media_reuse_rejection_reason,
     source_rights_review_reasons,
     source_rights_risk_reasons,
 )
+
+
+@pytest.mark.parametrize("identity", [
+    {"channel_id": "UCY5eSpSrHUKeEAh7t4N81cQ"},
+    {"channel": "  DW  Dokumenter "},
+    {"uploader_id": "@DWdokumenter"},
+    {"id": "SSU8Ko6wKm4"},
+    {"webpage_url": "https://www.youtube.com/watch?v=SSU8Ko6wKm4&t=30"},
+    {"original_url": "https://youtu.be/SSU8Ko6wKm4?si=example"},
+    {"url": "https://youtube.com/shorts/SSU8Ko6wKm4"},
+])
+def test_dw_operator_refusal_survives_cc_and_old_trust(monkeypatch, identity):
+    monkeypatch.setenv("YOUTUBE_TRUSTED_SOURCE_CHANNEL_IDS", "UCY5eSpSrHUKeEAh7t4N81cQ")
+    source = {"title": "Pembahasan teknologi", "license": "Creative Commons", **identity}
+    assert "operator melarang" in source_media_reuse_rejection_reason(source)
+    assert any("operator melarang" in reason for reason in source_rights_risk_reasons(source))
+
+
+def test_dw_refusal_does_not_match_mentions_or_unrelated_source():
+    source = {"id": "abcdefghijk", "channel": "Kreator Mandiri", "title": "Membahas DW Dokumenter",
+              "url": "https://unrelated.example/watch?v=SSU8Ko6wKm4"}
+    assert source_media_reuse_rejection_reason(source) == ""
 
 
 def test_claimed_tv_show_reupload_is_high_risk_even_when_metadata_says_cc():

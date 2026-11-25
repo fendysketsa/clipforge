@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 
 SOURCE_RIGHTS_REUPLOAD_PATTERNS = (
@@ -63,6 +64,37 @@ SOURCE_RIGHTS_COMMERCIAL_PATTERNS = (
 BUILTIN_REFERENCE_ONLY_CHANNEL_IDS = {"UCb_er1PINGlJ_H6d9nfSjKA"}
 BUILTIN_REFERENCE_ONLY_HANDLES = {"@podcastploudrest", "@sensasitrends9553"}
 BUILTIN_REFERENCE_ONLY_NAMES = {"podcast ploudrest", "sensasi trends"}
+
+# Operator instruction, 25 November 2026: the partially blocked DW Short must
+# not seed more clips. This explicit refusal overrides older rights attestations
+# and trusted-channel settings; it is not a claim about every broadcaster.
+NO_MEDIA_REUSE_CHANNEL_IDS = {"UCY5eSpSrHUKeEAh7t4N81cQ"}
+NO_MEDIA_REUSE_CHANNEL_NAMES = {"dw dokumenter"}
+NO_MEDIA_REUSE_HANDLES = {"@dwdokumenter"}
+NO_MEDIA_REUSE_VIDEO_IDS = {"SSU8Ko6wKm4"}
+
+
+def source_media_reuse_rejection_reason(info: dict[str, Any]) -> str:
+    """Enforce an explicit operator refusal even without CC enforcement."""
+    ids = {str(info.get(key) or "").strip() for key in ("id", "video_id")}
+    for key in ("url", "webpage_url", "original_url"):
+        parsed = urlparse(str(info.get(key) or ""))
+        host = (parsed.hostname or "").lower().removeprefix("www.")
+        if host in {"youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"}:
+            ids.update(parse_qs(parsed.query).get("v", []))
+            parts = parsed.path.strip("/").split("/")
+            if host == "youtu.be" or (len(parts) == 2 and parts[0] in {"shorts", "embed", "live"}):
+                ids.add(parts[-1])
+    names = {re.sub(r"\s+", " ", str(info.get(key) or "")).strip().casefold()
+             for key in ("uploader", "channel")}
+    handles = {str(info.get(key) or "").strip().casefold() for key in ("uploader_id", "channel_handle")}
+    if (ids & NO_MEDIA_REUSE_VIDEO_IDS
+            or source_channel_ids(info) & NO_MEDIA_REUSE_CHANNEL_IDS
+            or names & NO_MEDIA_REUSE_CHANNEL_NAMES
+            or handles & NO_MEDIA_REUSE_HANDLES):
+        return ("operator melarang pemakaian rekaman DW Dokumenter untuk clip; "
+                "gunakan topik sebagai riset saja dengan naskah, visual, dan audio orisinal")
+    return ""
 
 
 def trusted_source_channel_ids() -> set[str]:
@@ -154,6 +186,9 @@ def source_rights_risk_reasons(info: dict[str, Any]) -> list[str]:
     contains a broadcaster, film, music, or another creator's recording. These
     signals are conservative workflow gates, not a legal determination.
     """
+    refusal = source_media_reuse_rejection_reason(info)
+    if refusal:
+        return [refusal]
     if is_trusted_source_channel(info):
         return []
 

@@ -33,6 +33,28 @@ def test_unavailability_privacy_claims_and_timeouts_do_not_release_reserves(mess
     assert uploader_deleted_video(response(message)) is None
 
 
+def test_scheduled_private_video_is_not_reported_as_a_block():
+    assert remote.remote_video_state({"playabilityStatus": {"status": "OK"}}) == 'public'
+    assert remote.remote_video_state(response("This video is private")) == 'scheduled_or_private'
+    assert remote.remote_video_state(response("Video ini bersifat pribadi")) == 'scheduled_or_private'
+    assert remote.remote_video_state(response("This video contains content from a copyright owner")) == 'blocked'
+    assert remote.remote_video_state(response("Video ini telah dihapus oleh uploader")) == 'removed_by_uploader'
+    assert remote.remote_video_state(response("Network timeout")) == 'unknown'
+
+
+def test_video_state_reader_is_read_only(monkeypatch):
+    seen = []
+    def fake(context, video_id):
+        seen.append(video_id)
+        return {"playabilityStatus": {"status": "ERROR", "errorScreen": {"playerInterstitialRenderer": {
+            "content": {"interstitialViewModel": {"description": {"content": "This video is private"}}}}}}}
+    monkeypatch.setattr(remote, "_fetch_player_response", fake)
+    proof = remote.read_video_state_evidence("ooch-kVoZUE", "unused",
+        context=SimpleNamespace(cookies=lambda urls: []))
+    assert seen == ["ooch-kVoZUE"]
+    assert proof["state"] == "scheduled_or_private"
+
+
 def test_successful_video_is_not_considered_deleted():
     assert uploader_deleted_video(response("This video has been removed by the uploader", "OK")) is None
 

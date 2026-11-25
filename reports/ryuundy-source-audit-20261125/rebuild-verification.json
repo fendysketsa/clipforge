@@ -1,0 +1,228 @@
+{
+  "checked_at": "2026-11-25T08:57:12.789487+00:00",
+  "expected_backend_release": "b34ad654461b8f21275dc0bf3981df749baa87053bc93ebe76c00cd5c1553446",
+  "services": {
+    "backend": {
+      "release_id": "b34ad654461b8f21275dc0bf3981df749baa87053bc93ebe76c00cd5c1553446",
+      "matches_current_source": true,
+      "verified": true,
+      "source_verified": true,
+      "age_seconds": 124.34
+    },
+    "backend-health": {
+      "release_id": "b34ad654461b8f21275dc0bf3981df749baa87053bc93ebe76c00cd5c1553446",
+      "matches_current_source": true,
+      "verified": true,
+      "source_verified": null,
+      "age_seconds": 0.13
+    },
+    "telegram-bot": {
+      "release_id": "b34ad654461b8f21275dc0bf3981df749baa87053bc93ebe76c00cd5c1553446",
+      "matches_current_source": true,
+      "verified": true,
+      "source_verified": true,
+      "age_seconds": 113.07
+    }
+  },
+  "local_guard": "operator melarang pemakaian rekaman DW Dokumenter untuk clip; gunakan topik sebagai riset saja dengan naskah, visual, dan audio orisinal",
+  "health": {
+    "status": "ok"
+  },
+  "schedule": {
+    "cron_life_story": {
+      "version": 1,
+      "scope": "cron_only",
+      "enabled": true,
+      "series": "Langkah Kecil RYUUNDY",
+      "provider_rights_ready": false,
+      "state": "waiting_for_provider_rights",
+      "daily_attempt_limit": 2,
+      "attempts_today": 0,
+      "quota_lane": "scheduled_short",
+      "manual_requests_modified": false,
+      "automatic_fallback": "standard_cron",
+      "fallback_active": true,
+      "restart_duplicate_guard": true,
+      "upload_quality_gates_preserved": true
+    },
+    "short_schedule_policy_version": 1,
+    "short_schedule_daily_limit": 7,
+    "short_schedule_timezone": "Asia/Jakarta",
+    "daily_plan_version": 1,
+    "daily_plan": {
+      "version": 1,
+      "enabled": true,
+      "day": "2026-11-25",
+      "timezone": "Asia/Jakarta",
+      "total_target": 30,
+      "total_used": 3,
+      "total_uploaded": 2,
+      "lanes": {
+        "scheduled_short": {
+          "label": "Short terjadwal",
+          "target": 24,
+          "uploaded": 1,
+          "active": 0,
+          "ready": 0,
+          "held": 0,
+          "used": 1,
+          "remaining": 23
+        },
+        "private_short": {
+          "label": "Short Private",
+          "target": 4,
+          "uploaded": 1,
+          "active": 0,
+          "ready": 0,
+          "held": 0,
+          "used": 1,
+          "remaining": 3
+        },
+        "long": {
+          "label": "Long clip",
+          "target": 2,
+          "uploaded": 0,
+          "active": 1,
+          "ready": 0,
+          "held": 0,
+          "used": 1,
+          "remaining": 1
+        }
+      },
+      "long_production_enabled": true,
+      "long_rejected_today": 1
+    },
+    "activity_version": 1,
+    "reported_at": "2026-11-25T08:57:12.934352+00:00",
+    "activity": {
+      "state": "running",
+      "label": "Render Long berjalan",
+      "detail": "Mengunduh video sumber 22% · 389 MB/1.7 GB · 950 KB/dtk · ETA 1512 dtk · jalur 1/5",
+      "progress_percent": 6,
+      "stage": "source",
+      "updated_at": "2026-11-25T08:57:11.592949+00:00",
+      "source_title": null
+    },
+    "scheduler_health": {
+      "last_tick_at": "2026-11-25T08:56:56.107121+00:00",
+      "last_checked_at": "2026-11-25T08:56:56.196972+00:00",
+      "phase": "waiting",
+      "last_error": null,
+      "long_production_status": "waiting_for_render"
+    },
+    "capacity": {
+      "enabled": true,
+      "daily_mode": true,
+      "scheduled_count": 52,
+      "scheduled_limit": 57,
+      "private_count": 0,
+      "private_limit": 4
+    },
+    "upload_queue": {
+      "youtube": {
+        "queued": 0,
+        "running": 0
+      },
+      "tiktok": {
+        "queued": 0,
+        "running": 0
+      }
+    },
+    "last_run_status": "completed",
+    "last_run_message": "Automation selesai; semua hasil berkualitas yang tersedia terverifikasi terupload satu kali ke setiap platform.",
+    "cron_drama_lanes": {
+      "chinese_drama_story": "Drama China: Pilihan, Keluarga & Plot Twist"
+    },
+    "cron_upload_recovery": {
+      "last_tick_at": "2026-11-25T08:56:56.108685+00:00",
+      "queued": {
+        "youtube": 0,
+        "tiktok": 0
+      },
+      "errors": {},
+      "enabled": true
+    },
+    "tiktok_strategy_version": 3,
+    "tiktok_automatic_retry_enabled": true,
+    "tiktok_automatic_retry_limit": 3,
+    "cron_source_process_limit": 2,
+    "cron_follow_cta_adaptive": true,
+    "cron_director_effects_required": true,
+    "cron_director_effects_policy_version": 4,
+    "social_upload_serialized": true,
+    "social_upload_min_gap_seconds": 45,
+    "social_upload_failure_gap_seconds": 90,
+    "cron_requested_source_rescue_supported": true,
+    "enabled": true,
+    "interval_hours": 24.0,
+    "run_on_startup": true,
+    "once_per_boot": false,
+    "scheduler_running": true,
+    "boot_delay_minutes": 5.0,
+    "post_clip_upload_delay_minutes": 0.0,
+    "background_upload_enabled": true,
+    "paired_long_video_enabled": false,
+    "paired_long_duration": 300.0,
+    "paired_long_auto_public_enabled": false,
+    "active_run_id": null,
+    "last_run_id": "ffbe249a377c4979a7b890ab230b6d02",
+    "last_started_at": "2026-11-25T08:30:47.806863+00:00",
+    "last_finished_at": "2026-11-25T08:56:53.450954+00:00",
+    "next_run_at": "2026-11-25T09:01:53.450954+00:00",
+    "news_hot_enabled": true,
+    "news_hot_daily_limit": 3,
+    "news_hot_daily_reserved": 3,
+    "news_hot_playlist": "News",
+    "news_hot_review_required": true,
+    "message": "Rencana cron 2026-11-25 WIB: 24 Short terjadwal, 4 Short Private, 2 Long. Masih ada 26 slot Short untuk diproduksi; antrean lintas tanggal tidak mengurangi target hari ini. News Hot: 3/3 slot harian WIB; playlist News, review sebelum upload."
+  },
+  "original_story": {
+    "version": 1,
+    "scope": "cron_only",
+    "enabled": true,
+    "series": "Langkah Kecil RYUUNDY",
+    "provider_rights_ready": false,
+    "state": "waiting_for_provider_rights",
+    "daily_attempt_limit": 2,
+    "attempts_today": 0,
+    "quota_lane": "scheduled_short",
+    "manual_requests_modified": false,
+    "automatic_fallback": "standard_cron",
+    "fallback_active": true,
+    "restart_duplicate_guard": true,
+    "upload_quality_gates_preserved": true
+  },
+  "frontend": {
+    "schema": 1,
+    "build_id": "zmDltYl5K3WjMO11w_fU5",
+    "release_id": "5ad9bfe3aefa509d98250add78a128acde305d88a08236d5ff58c9e91851d85d",
+    "ui_verified": true,
+    "matches_current_source": true
+  },
+  "telegram_process_observed": 88702,
+  "deleted_video_local_record": [
+    {
+      "id": "027d49235bee415cbd737a0b7ff6a94a",
+      "video_url": "https://www.youtube.com/watch?v=ooch-kVoZUE",
+      "status": "completed",
+      "upload_confirmed": true,
+      "publish_at": "2026-12-06T03:00:00+00:00"
+    }
+  ],
+  "limitations": [
+    "Docker CLI inspection unavailable: sudo password required; activation checked using matching startup fingerprints, fresh health and live APIs.",
+    "Original story lane waits for configured provider rights evidence and has made zero attempts today.",
+    "Deleted video identity is preserved in local completed record; its future publish_at is still present."
+  ],
+  "runtime_dw_probe": {
+    "endpoint": "/api/probe?url=https://www.youtube.com/watch?v=SSU8Ko6wKm4",
+    "channel_id": "UCY5eSpSrHUKeEAh7t4N81cQ",
+    "source_rights_trusted": false,
+    "source_rights_risk": true,
+    "source_rights_risk_reasons": [
+      "operator melarang pemakaian rekaman DW Dokumenter untuk clip; gunakan topik sebagai riset saja dengan naskah, visual, dan audio orisinal"
+    ],
+    "elapsed_seconds": 1.5
+  },
+  "conclusion": "Current source activated; live DW risk guard verified. Automatic original video production is not yet fulfilled."
+}

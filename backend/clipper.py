@@ -39,6 +39,7 @@ from islamic_text import (
 )
 from source_rights import (
     is_trusted_source_channel,
+    source_media_reuse_rejection_reason,
     source_rights_review_reasons,
     source_rights_risk_reasons,
 )
@@ -21768,6 +21769,9 @@ def main() -> int:
     else:
         console.print("[bold]Fetching metadata...[/bold]")
         metadata = fetch_metadata(args.url, diagnostic_dir=root)
+        refusal = source_media_reuse_rejection_reason({**metadata, "original_url": args.url})
+        if refusal and args.clip_mode != "original_rebuild":
+            raise UserFacingError("Sumber ditolak sebelum download: " + refusal)
         if args.clip_mode == "highlight_5m" and args.cron_long_strategy:
             profile = cron_long_strategy.source_profile(metadata)
             if not profile["eligible"]:

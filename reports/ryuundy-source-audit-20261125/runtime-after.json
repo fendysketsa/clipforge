@@ -1,0 +1,20 @@
+{
+  "health": {
+    "status": "ok"
+  },
+  "scheduler_health": {
+    "last_tick_at": "2026-11-25T08:53:30.700859+00:00",
+    "last_checked_at": "2026-11-25T08:53:30.718602+00:00",
+    "phase": "waiting",
+    "last_error": null,
+    "long_production_status": "waiting_for_campaign"
+  },
+  "capacity": {
+    "enabled": true,
+    "daily_mode": true,
+    "scheduled_count": 52,
+    "scheduled_limit": 57,
+    "private_count": 0,
+    "private_limit": 4
+  }
+}
