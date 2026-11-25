@@ -229,6 +229,10 @@ class OfficeService:
             return False
         if action == 'cleanup_history' and a.env_bool('AUTO_UPLOAD_TERMINAL_CLEANUP_ENABLED', True):
             callback = getattr(a, 'process_autonomous_history_once', None)
+        elif action == 'review_quality' and callable(getattr(a, 'queue_review_long_qc_once', None)):
+            callback = a.queue_review_long_qc_once
+        elif action == 'defer_manual_review' and callable(getattr(a, 'defer_job_for_manual_review', None)):
+            callback = lambda: a.defer_job_for_manual_review(incident.get('job_id', ''))
         elif action == 'recover_scheduled_uploads' and a.auto_viral_schedule_enabled():
             callback = getattr(a, 'queue_missing_scheduled_uploads_once', None)
         elif action == 'verify_upload' and a.upload_attention_service.enabled():

@@ -22569,6 +22569,21 @@ def auto_viral_run_can_resume_upload(run: AutoViralRun | None) -> bool:
     return bool(completed_jobs)
 
 
+def defer_job_for_manual_review(job_id: str, reason: str = 'publication_review_required') -> bool:
+    """Quarantine a finished job from auto-upload without approving its QC."""
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if job is None or job.status != 'completed':
+            return False
+        request = job.request.model_copy(update={
+            'auto_upload_youtube': False, 'publication_review_required': True})
+        jobs[job_id] = job.model_copy(update={
+            'request': request, 'updated_at': now_iso(),
+            'progress_detail': 'Ditunda untuk review manusia; unggah otomatis dinonaktifkan.'})
+    save_jobs_unlocked()
+    return True
+
+
 def hold_auto_viral_upload_item(
     item: dict[str, Any],
     reason: str,

@@ -57,9 +57,17 @@ def detect(api, context):
                     automatic=bool(cleanup and api.env_bool('AUTO_UPLOAD_TERMINAL_CLEANUP_ENABLED', True)), job_id=identity)
         elif status == 'completed' and clips:
             if getattr(request, 'publication_review_required', False) or any(getattr(c, 'render_qc_blocking', False) for c in clips):
+                long_review = (getattr(request, 'clip_mode', '') == 'highlight_5m'
+                               and callable(getattr(api, 'queue_review_long_qc_once', None)))
+                quarantine = callable(getattr(api, 'defer_job_for_manual_review', None))
                 add('job:' + identity, 'quality', title,
-                    'Hasil tersedia, tetapi pemeriksaan kualitas atau review publikasi belum selesai. Upload tetap ditahan.',
-                    'review_quality', job_id=identity)
+                    ('Worker QC diminta mengaudit ulang hasil ini; kelulusan tetap harus dibuktikan dan upload tetap ditahan.'
+                     if long_review else
+                     'Hasil ditahan untuk review manusia dan dikeluarkan dari unggah otomatis; QC tidak disetujui otomatis.'
+                     if quarantine else
+                     'Hasil tersedia, tetapi pemeriksaan kualitas atau review publikasi belum selesai. Upload tetap ditahan.'),
+                    'review_quality' if long_review else 'defer_manual_review' if quarantine else 'review_quality',
+                    automatic=bool(long_review or quarantine), job_id=identity)
             elif (identity not in owned and getattr(request, 'scheduled_public_source_credit', False)
                   and not getattr(request, 'review_only', False)):
                 add('job:' + identity, 'distribution', title,

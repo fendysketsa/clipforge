@@ -55,6 +55,34 @@ def test_ownership_and_operator_holds_are_preserved(office,kind):
     assert service.run_once()==0 and api.jobs['keep'] is row
 
 
+def test_review_incident_delegates_qc_recheck_without_approving(office):
+    service, api = office
+    api.queue_review_long_qc_once = lambda: api.calls.append('qc-recheck') or 0
+    row = job(status='completed', error=None, clips=[NS(render_qc_blocking=True)],
+        request=NS(target_platform='standard', scheduled_public_source_credit=True,
+                   review_only=False, publication_review_required=True, clip_mode='highlight_5m'))
+    api.jobs['review'] = row
+    assert service.run_once() == 1
+    assert api.calls == ['qc-recheck']
+    row_after = service.snapshot()['incidents'][0]
+    assert row_after['action'] == 'review_quality' and row_after['automatic'] is True
+    assert api.jobs['review'].clips[0].render_qc_blocking is True
+
+
+def test_manual_review_short_is_quarantined_without_approving_qc(office):
+    service, api = office
+    api.defer_job_for_manual_review = lambda job_id: api.calls.append(('defer', job_id)) or True
+    row = job(status='completed', error=None, clips=[NS(render_qc_blocking=True)],
+        request=NS(target_platform='standard', scheduled_public_source_credit=True,
+                   review_only=False, publication_review_required=True, clip_mode='short'))
+    api.jobs['review'] = row
+    assert service.run_once() == 1
+    assert api.calls == [('defer', 'review')]
+    incident = service.snapshot()['incidents'][0]
+    assert incident['action'] == 'defer_manual_review' and incident['automatic'] is True
+    assert api.jobs['review'].clips[0].render_qc_blocking is True
+
+
 def test_unknown_tiktok_post_only_wakes_verification_without_touching_upload_identity(office):
     service, api=office
     api.flags['UPLOAD_ATTENTION_AUTOMATIC_ENABLED']=True

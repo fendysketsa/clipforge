@@ -104,6 +104,8 @@ TOOL_SPECS = {
     'retry_tiktok': dict(owner='tiktok_retry_sweeper_wakeup.set', permission='owner_wake', timeout=120, read_only=False),
     'recover_facebook': dict(owner='request_facebook_recovery', permission='owner_wake', timeout=120, read_only=False),
     'use_supported_cron': dict(owner='auto_viral_scheduler_wakeup.set', permission='owner_wake', timeout=120, read_only=False),
+    'review_quality': dict(owner='queue_review_long_qc_once', permission='owner_wake', timeout=120, read_only=False),
+    'defer_manual_review': dict(owner='defer_job_for_manual_review', permission='owner_wake', timeout=120, read_only=False),
     'worker_supervision': dict(owner='office_owner_start', permission='owner_wake', timeout=120, read_only=False),
 }
 
