@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { OFFICE_PEOPLE, officeDestination, officePath, officeStep } from '../lib/officeChoreography.ts';
+import { OFFICE_PEOPLE, PERSONAL_RADIUS, officeAvoidStep, officeBlocked, officeDestination, officePath, officeStep } from '../lib/officeChoreography.ts';
 
 const DOORS = [-11.2, 0, 7.8];
 const PARTITION_GAP = [-3.25, -1.55];
@@ -40,6 +40,42 @@ test('setiap agen mencapai tujuan tanpa menembus kaca atau partisi', () => {
         `${OFFICE_PEOPLE[i].id}/${state}: tidak sampai tujuan`);
     }
   }
+});
+
+test('pejalan menghindar atau berhenti saat ada orang di depan, tidak menembus', () => {
+  const from = { x: -1, z: 4.4 };
+  const desired = { x: -.6, z: 4.4 };
+  const others = [{ x: -.2, z: 4.4 }];
+  const result = officeAvoidStep(from, desired, [], others);
+  assert.equal(result.greeting, true);
+  assert.equal(result.blocker, 0);
+  assert.ok(!officeBlocked(result.point, others), 'titik akhir masih menimpa rekan');
+  assert.ok(result.point.x >= -11.9 && result.point.x <= 11.9 && result.point.z >= -1.35 && result.point.z <= 6.4,
+    'menghindar keluar area aman');
+  const detour = result.path[0];
+  assert.ok(detour && Math.abs(detour.z - 4.4) > .3, 'tidak ada titik menyamping');
+  assert.ok(!officeBlocked(detour, others), 'titik menyamping menimpa rekan');
+  assert.ok(result.path.length >= 2, 'tujuan aslinya masih disimpan');
+});
+
+test('pejalan berhenti menyapa bila kedua sisi juga penuh', () => {
+  const from = { x: 0, z: 4.4 };
+  const desired = { x: .2, z: 4.4 };
+  const others = [{ x: .6, z: 4.4 }, { x: -.6, z: 4.4 }, { x: 0, z: 5.02 }, { x: 0, z: 3.78 }];
+  const result = officeAvoidStep(from, desired, [], others);
+  assert.equal(result.greeting, true);
+  assert.deepEqual(result.point, from);
+});
+
+test('langkah bebas tetap lewat tanpa memicu sapaan', () => {
+  const from = { x: 0, z: 4.4 };
+  const desired = { x: .2, z: 4.4 };
+  const others = [{ x: 6, z: -4 }];
+  const result = officeAvoidStep(from, desired, [], others);
+  assert.equal(result.greeting, false);
+  assert.equal(result.blocker, -1);
+  assert.deepEqual(result.point, desired);
+  assert.ok(PERSONAL_RADIUS > 0);
 });
 
 test('pimpinan punya ruang sendiri dan turun ke ruang rapat saat memberi arahan', () => {

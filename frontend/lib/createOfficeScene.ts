@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { OFFICE_PEOPLE, officeDestination, officePath, officeStep, type OfficePoint, type OfficeActivity } from "./officeChoreography";
+import { OFFICE_PEOPLE, officeAvoidStep, officeDestination, officePath, officeStep, type OfficePoint, type OfficeActivity } from "./officeChoreography";
 
 export type OfficeProjection = { id: string; x: number; y: number; activity: OfficeActivity };
 export const OFFICE_AREAS = [
@@ -314,7 +314,7 @@ export function createOfficeScene(host: HTMLElement,
     return { group, body, head, legs, arms, mug, book, mouse, seat, station, prop,
       notebook, phone, copier, cup, cards, point: { ...person.desk } as OfficePoint,
       path: [] as OfficePoint[], destination: "", pendingDestination: "", pendingSince: 0,
-      speed: 0, rotation: person.desk.z > 0 ? 0 : Math.PI };
+      speed: 0, rotation: person.desk.z > 0 ? 0 : Math.PI, greetUntil: 0 };
   });
   let width = 1, height = 1, zoom = 1, night = false;
   let lastSeconds = 0, lastStates: Record<string, string> = {};
@@ -383,8 +383,17 @@ export function createOfficeScene(host: HTMLElement,
       const walking = state !== "unavailable" && person.path.length > 0;
       person.speed += ((walking ? 1 : 0) - person.speed) * Math.min(1, delta * 5);
       if (walking && delta > 0) {
+        const others = people.map((other, otherIndex) => ({ otherIndex, point: other.point }))
+          .filter(other => other.otherIndex !== index);
         const step = officeStep(person.point, person.path, delta * person.speed);
-        person.point = { x: step.x, z: step.z, y: step.y }; person.path = step.path;
+        const avoided = officeAvoidStep(person.point, step, step.path, others.map(other => other.point));
+        person.point = { x: avoided.point.x, z: avoided.point.z, y: step.y };
+        person.path = avoided.path;
+        if (avoided.greeting) {
+          person.greetUntil = seconds + 1.1;
+          const met = others[avoided.blocker];
+          if (met) people[met.otherIndex].greetUntil = seconds + 1.1;
+        }
         let turn = step.rotation - person.rotation;
         turn = Math.atan2(Math.sin(turn), Math.cos(turn));
         person.rotation += turn * Math.min(1, delta * 8);
@@ -401,7 +410,9 @@ export function createOfficeScene(host: HTMLElement,
         turn = Math.atan2(Math.sin(turn), Math.cos(turn));
         person.rotation += turn * Math.min(1, delta * 5);
       }
-      const pose = { ...person.point, rotation: person.rotation, activity: person.path.length && state !== "unavailable" ? "walk" as const : target.activity };
+      const activity = person.greetUntil > seconds ? "greet" as const
+        : person.path.length && state !== "unavailable" ? "walk" as const : target.activity;
+      const pose = { ...person.point, rotation: person.rotation, activity };
       person.group.position.set(pose.x, pose.y ?? 0, pose.z);
       person.group.rotation.y = pose.rotation + (pose.activity === 'observing' ? Math.sin(seconds * .8) * .5 : 0);
       person.head.rotation.y = Math.sin(seconds * .6 + index) * .16;
@@ -429,12 +440,16 @@ export function createOfficeScene(host: HTMLElement,
       person.body.position.y = pose.activity === "walk" ? Math.abs(Math.sin(seconds * 8)) * .045
         : pose.activity === "sofa" ? -.3
           : pose.activity === "meeting" ? -.16
-            : pose.activity === "desk" ? -.12 : pose.activity === "coffee" || pose.activity === "reading" ? quiet : 0;
+            : pose.activity === "desk" ? -.12
+              : pose.activity === "coffee" || pose.activity === "reading" || pose.activity === "greet" ? quiet : 0;
       person.legs.forEach((leg, side) => leg.rotation.x = pose.activity === "walk"
         ? Math.sin(seconds * 8 + side * Math.PI) * .52
         : pose.activity === "meeting" || pose.activity === "desk" ? -.95 : 0);
       person.arms.forEach((arm, side) => {
+        arm.rotation.z = 0;
         switch (pose.activity) {
+          case "greet": arm.rotation.x = side ? -1 + Math.sin(seconds * 7) * .16 : -.2;
+            arm.rotation.z = side ? -.28 : 0; break;
           case "walk": arm.rotation.x = Math.sin(seconds * 8 + side * Math.PI + Math.PI) * .4; break;
           case "meeting": arm.rotation.x = -.5 + Math.sin(seconds * 2.5 + side) * .25; break;
           case "desk": arm.rotation.x = state === "running" ? -.55 + Math.sin(seconds * 5 + side) * .08 : -.2; break;

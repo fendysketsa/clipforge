@@ -1,5 +1,5 @@
 export type OfficePoint = { x: number; z: number; y?: number };
-export type OfficeActivity = "desk" | "walk" | "meeting" | "briefing" | "observing" | "notice" | "chat" | "coffee" | "lounge" | "sofa" | "reading" | "write" | "call" | "copy" | "snack" | "cards";
+export type OfficeActivity = "desk" | "walk" | "greet" | "meeting" | "briefing" | "observing" | "notice" | "chat" | "coffee" | "lounge" | "sofa" | "reading" | "write" | "call" | "copy" | "snack" | "cards";
 
 // One floor only. Every working spot is in the open front area (z > -1.4),
 // so nobody ever has to cross the glass partition or a wall to do their job.
@@ -89,6 +89,72 @@ export function officePath(from: OfficePoint, to: OfficePoint): OfficePoint[] {
 }
 
 const at = (point: OfficePoint): OfficePoint => ({ x: point.x, z: point.z });
+
+// Personal space: nobody walks through a colleague who is in the way. A
+// walker either steps around them or pauses for a quick greeting instead.
+export const PERSONAL_RADIUS = .62;
+
+export function officeBlocked(point: OfficePoint, others: OfficePoint[], radius = PERSONAL_RADIUS) {
+  return others.some(other => Math.hypot(point.x - other.x, point.z - other.z) < radius);
+}
+
+function safePoint(x: number, z: number): OfficePoint {
+  let px = Math.max(-11.9, Math.min(11.9, x));
+  let pz = z;
+  if (pz < -1.4) {
+    const room = px < -4.25 ? [-11.9, -4.35] : px > 4.25 ? [4.35, 11.9] : [-3.2, 3.2];
+    px = Math.max(room[0], Math.min(room[1], px));
+    pz = Math.max(-6.4, Math.min(-1.45, pz));
+  } else {
+    pz = Math.max(-1.35, Math.min(6.4, pz));
+  }
+  // Keep the sidestep off the meeting table as well.
+  if (px > -10.6 && px < -5.4 && pz > .4 && pz < 3.6) pz = pz > 2 ? 3.75 : .25;
+  return { x: px, z: pz };
+}
+
+// Reactive avoidance for the current frame. If the proposed step overlaps a
+// colleague, try a bounded perpendicular sidestep (away from them) and keep
+// the original step queued; if even that is crowded, simply wait and greet.
+export function officeAvoidStep(
+  from: OfficePoint,
+  desired: OfficePoint,
+  path: OfficePoint[],
+  others: OfficePoint[],
+): { point: OfficePoint; path: OfficePoint[]; greeting: boolean; blocker: number } {
+  let blocker = -1, nearest = PERSONAL_RADIUS;
+  others.forEach((other, index) => {
+    const distance = Math.hypot(desired.x - other.x, desired.z - other.z);
+    if (distance < nearest) { nearest = distance; blocker = index; }
+  });
+  if (blocker < 0 || Math.hypot(desired.x - from.x, desired.z - from.z) < .001) {
+    return { point: desired, path, greeting: false, blocker: -1 };
+  }
+  const other = others[blocker];
+  const dx = desired.x - from.x, dz = desired.z - from.z;
+  const length = Math.hypot(dx, dz);
+  const tx = dx / length, tz = dz / length;
+  let px = -tz, pz = tx;
+  if ((from.x - other.x) * px + (from.z - other.z) * pz < 0) { px = -px; pz = -pz; }
+  // Step aside now, then queue one real detour that carries us past the
+  // colleague before rejoining the original route. Queuing the tiny original
+  // step instead would make the walker oscillate in place forever.
+  const offset = PERSONAL_RADIUS + .33;
+  const along = Math.max(0, (other.x - from.x) * tx + (other.z - from.z) * tz);
+  for (const side of [1, -1]) {
+    const sx = px * side, sz = pz * side;
+    const candidate = safePoint(from.x + sx * offset, from.z + sz * offset);
+    if (officeBlocked(candidate, others, PERSONAL_RADIUS * .9)) continue;
+    const detour = safePoint(from.x + tx * (along + 1.05) + sx * offset,
+      from.z + tz * (along + 1.05) + sz * offset);
+    if (officeBlocked(detour, others, PERSONAL_RADIUS * .9)) continue;
+    const rest = [candidate];
+    if (Math.hypot(detour.x - candidate.x, detour.z - candidate.z) > .01) rest.push(detour);
+    rest.push(...path);
+    return { point: from, path: rest, greeting: true, blocker };
+  }
+  return { point: from, path, greeting: true, blocker };
+}
 
 export function officeStep(from: OfficePoint, path: OfficePoint[], seconds: number) {
   let point = { ...from }, remaining = Math.max(0, seconds) * 1.65, rotation = 0;

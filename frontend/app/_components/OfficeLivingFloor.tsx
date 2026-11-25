@@ -7,7 +7,7 @@ import type { createOfficeScene, OfficeProjection } from "../../lib/createOffice
 
 const areaLabels = ["Ruang rapat", "Produksi & QC", "Distribusi & pemulihan", "Studio sosial & aset", "Lounge", "Coffee bar"];
 const areaIds = ["meeting", "creative", "media", "assets", "lounge", "pantry"];
-const activityLabel: Record<OfficeActivity, string> = { desk: "Di meja kerja", walk: "Berjalan", meeting: "Diskusi tim", briefing: "Menerima arahan pimpinan", observing: "Memantau tim", notice: "Mengecek papan tugas", chat: "Berbincang dengan tim", coffee: "Di coffee bar", lounge: "Di lounge", reading: "Membaca", sofa: "Beristirahat sebentar", cards: "Menyusun ide", copy: "Menyiapkan bahan", write: "Menyiapkan langkah", call: "Menghubungi tim", snack: "Ngopi sebentar" };
+const activityLabel: Record<OfficeActivity, string> = { desk: "Di meja kerja", walk: "Berjalan", meeting: "Diskusi tim", briefing: "Menerima arahan pimpinan", observing: "Memantau tim", notice: "Mengecek papan tugas", chat: "Berbincang dengan tim", greet: "Salaman saat papasan", coffee: "Di coffee bar", lounge: "Di lounge", reading: "Membaca", sofa: "Beristirahat sebentar", cards: "Menyusun ide", copy: "Menyiapkan bahan", write: "Menyiapkan langkah", call: "Menghubungi tim", snack: "Ngopi sebentar" };
 
 export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect, animate }: {
   snapshot: AIOfficeSnapshot; now: number; refreshFailed: boolean; selected: string; onSelect: (value: string) => void; animate: boolean;
