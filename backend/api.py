@@ -27267,6 +27267,13 @@ def runtime_optimization() -> dict[str, Any]:
             "native_checkpoint_json": True, "daily_plan_projection": True}
 
 
+@app.get("/api/runtime/visual-style")
+def runtime_visual_style() -> dict[str, Any]:
+    """Prompt-only art direction catalogue; no renderer or rights claim."""
+    import visual_style_hints
+    return visual_style_hints.catalog()
+
+
 @app.get("/api/tiktok/config", response_model=TikTokConfig)
 def get_tiktok_config() -> TikTokConfig:
     return tiktok_config_payload()

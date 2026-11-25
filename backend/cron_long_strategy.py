@@ -14,6 +14,15 @@ COMPILATION_FALLBACK_VERSION = 1
 STORY_REVIEW_VERSION = 2
 PROMISE_OPENING_SECONDS = 30.0
 
+# General techniques distilled from the optional docs/pulupulu-motion skill.
+# No artist, franchise, character, composition or rights claim is reproduced.
+VISUAL_DIRECTION_BRIEF = (
+    "Arah visual: pilih satu bahasa visual orisinal yang konsisten dari teknik umum "
+    "(bentuk geometris, kertas potong, sapuan air, garis tinta, atau blok warna datar) "
+    "dengan palet terbatas dan satu gerakan responsif per beat; jangan meniru artis, "
+    "franchise, atau karakter pihak ketiga, dan jangan menyebut gaya sebagai bukti hak atau QC."
+)
+
 LONG_EDITOR_BRIEF = (
     "Konsep khusus Long: satu pertanyaan atau perjalanan tokoh dengan konteks, perkembangan, "
     "bukti/konsekuensi, dan jawaban tuntas. Penonton harus mendapat informasi baru sepanjang video. "
@@ -32,6 +41,7 @@ LONG_EDITOR_BRIEF = (
     "bahan/gizi; jangan menjanjikan manfaat medis atau mengarang harga dan angka nutrisi. "
     "Target eksperimen 1000+ views, bukan jaminan. Ukur CTR, retensi 30 detik, durasi tonton rata-rata "
     "dan bagian penonton keluar setelah publikasi; bandingkan hanya Long bertopik dan usia setara."
+    + " " + VISUAL_DIRECTION_BRIEF
 )
 
 

@@ -28,6 +28,14 @@ ClipForge already enforces the overlapping safety rules in its own code
 (`caption_clearance.py`, transcription/retention measurement, upload evidence
 and independent QC). Nothing here weakens or replaces those gates.
 
+### Adopted piece
+
+`backend/visual_style_hints.py` carries ten **original, technique-only** art
+direction profiles inspired by the general material-layer ideas here. No artist
+name, franchise, sample frame, coordinate or character is copied; each profile
+is a bounded prompt add-on with a suggested palette, and it never claims
+rights, QC approval or publication.
+
 ## Safety review (before vendoring)
 
 - 233 files, ~3.1 MB, plain Markdown + Python + small JS; no minified blobs.

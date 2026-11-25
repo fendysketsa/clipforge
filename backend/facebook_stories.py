@@ -393,6 +393,13 @@ def _validated_ai(raw, style):
     return dict(title=title, narration=lines, panels=clean, caption=caption)
 
 
+def _art_direction_hint(plan):
+    """Prompt-only art direction for the model; never a plan or renderer key."""
+    import visual_style_hints
+    topic = (plan.get('story') or {}).get('topic_text', '')
+    return visual_style_hints.prompt_hint(topic)['text'] + ' '
+
+
 def author(source_plan, previous=(), config=None):
     """Author a fresh script from the operator topic, then keep a safe fallback."""
     previous = set(previous)
@@ -417,6 +424,7 @@ def author(source_plan, previous=(), config=None):
                     'Jika audiensnya anak sekolah, pakai kalimat pendek dan satu kebiasaan baik yang jelas, '
                     'beri contoh di sekolah atau di rumah, jangan menakut-nakuti, menghakimi, atau memaksakan '
                     'keyakinan; biarkan anak melihat akibat dari pilihannya. '
+                    + _art_direction_hint(plan) +
                     'Balas JSON {"title":"...","narration":["...","...","...","..."],'
                     '"panels":[{"label":"...","caption":"...","icon":"..."}],"caption":"..."}.'},
                 {'role': 'user', 'content': json.dumps(dict(

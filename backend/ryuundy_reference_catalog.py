@@ -74,4 +74,7 @@ def editorial_brief(theme_key: str) -> str:
     parts = [row["adaptation"] for row in REFERENCES if row["theme_key"] == theme_key]
     if not parts:
         return ""
-    return "Referensi pemilik channel, hanya struktur editorial: " + " ".join(parts)
+    import visual_style_hints
+    hint = visual_style_hints.prompt_hint(theme_key)
+    return ("Referensi pemilik channel, hanya struktur editorial: " + " ".join(parts)
+            + " " + hint["text"])
