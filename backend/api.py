@@ -5479,15 +5479,19 @@ def cancel_confirmed_blocked_youtube_uploads() -> int:
         evidence = dict(video_id=youtube_video_id_from_url(row.video_url or '') or None,
                         reason='confirmed_content_id_claim', upload_id=row.id,
                         clip_sha256=getattr(row, 'clip_sha256', None))
+        # Never call set_youtube_upload while holding the same non-reentrant lock.
+        updated_logs = None
         with youtube_uploads_lock:
             current = youtube_uploads.get(row.id)
-            if current is None or current.publish_at is None or not youtube_upload_was_claimed(current):
-                continue
-            logs = [str(line) for line in current.logs]
-            logs.append('REMOTE_BLOCK_CONFIRMED:' + json.dumps(evidence, ensure_ascii=False, sort_keys=True))
-            set_youtube_upload(row.id, status='cancelled', publish_at=None,
-                               cron_private_buffer=False, logs=logs[-160:],
-                               error='remote_content_claim_confirmed')
+            if current is not None and current.publish_at and youtube_upload_was_claimed(current):
+                updated_logs = [str(line) for line in current.logs]
+                updated_logs.append('REMOTE_BLOCK_CONFIRMED:' + json.dumps(
+                    evidence, ensure_ascii=False, sort_keys=True))
+        if updated_logs is None:
+            continue
+        set_youtube_upload(row.id, status='cancelled', publish_at=None,
+                           cron_private_buffer=False, logs=updated_logs[-160:],
+                           error='remote_content_claim_confirmed')
         changed += 1
     return changed
 

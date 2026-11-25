@@ -42,9 +42,14 @@ export function AIOfficePanel() {
     .sort((a,b) => ({running:0,queued:1,blocked:2}[a.state]-{running:0,queued:1,blocked:2}[b.state]));
   const incidents = officeIncidents(snapshot,"all",department);
   const observed = snapshot?.control_version === 2 && snapshot.incident_observation_available;
+  const clockText = new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", hour: "2-digit",
+    minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(now));
   return <section className="officeHQ" aria-labelledby="ai-office-title">
     <header className="officeHQHeading"><div><span className="studioEyebrow">RYUUNDY / OPERATIONS</span><h1 id="ai-office-title">Kantor AI</h1></div>
-      <button className="officeCommand" type="button" disabled={requesting || !snapshot?.enabled} onClick={() => void check()}>{requesting ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}{requesting ? "Memeriksa…" : "Periksa sistem"}</button></header>
+      <div className="officeHeaderActions">
+        <span className="officeClock" suppressHydrationWarning aria-label={`Waktu Jakarta ${clockText}`}><i />{clockText}<small>WIB</small></span>
+        <button className="officeCommand" type="button" disabled={requesting || !snapshot?.enabled} onClick={() => void check()}>{requesting ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}{requesting ? "Memeriksa…" : "Periksa sistem"}</button>
+      </div></header>
     <div className={`officeHQStatus${!status.fresh ? " is-stale" : ""}`} role="status">{status.fresh ? <Radio size={14} /> : <Clock3 size={14} />}<strong>{status.fresh ? `${totals.running} bekerja · ${totals.queued} mengantre` : snapshot?.activity ? "Menunggu pembaruan aktivitas" : "Membaca antrean sistem…"}</strong><span>{status.observedAt ? `Diperbarui ${officeTime(status.observedAt)}` : ""}</span></div>
     {snapshot?.departments.length ? <><OfficeLiveDesk snapshot={snapshot} now={now} refreshFailed={refreshFailed} selected={department} onSelect={setDepartment} /><OfficeStudioFloor snapshot={snapshot} now={now} refreshFailed={refreshFailed} selected={department} onSelect={setDepartment} /></> : <div className="officeFloor officeFloorLoading"><Loader2 size={22} /><h3>{refreshFailed ? "Kantor belum dapat dihubungi" : "Menyiapkan kantor…"}</h3></div>}
     <nav className="officeWorkTools" aria-label="Alat kerja studio"><a href="/#quick-start-title">Buat video <ArrowUpRight size={13} /></a><a href="/#results">Hasil video <ArrowUpRight size={13} /></a><a href="/#history">Riwayat produksi <ArrowUpRight size={13} /></a><a href="/#facebook">Facebook Studio <ArrowUpRight size={13} /></a><a href="/#settings">Koneksi platform <ArrowUpRight size={13} /></a></nav>
