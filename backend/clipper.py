@@ -27,6 +27,7 @@ from yt_dlp import YoutubeDL
 import source_download
 
 import cron_director_effects
+import clip_liveliness
 import cron_short_director
 import cron_long_strategy
 import retention_loop
@@ -19201,6 +19202,31 @@ def export_clip(
                 + " aksen kontekstual: " + ", ".join(cue["kind"] for cue in cron_accent_plan["cues"])
                 + "; dialog, subtitle, wajah, dan durasi tetap dijaga.")
         sidecar_payload["cron_director_effects"] = cron_accent_plan
+        if env_enabled('SHORTS_SCHEDULED_LIVELINESS_ACCENTS_ENABLED', False):
+            # Additive and opt-in: manual jobs and every existing render path keep
+            # their previous behaviour when this flag is absent.
+            liveliness_plan = clip_liveliness.build_plan(
+                clip, segments, enabled=True,
+                protected=bool(cron_accent_plan.get('sensitive_context')),
+                layout=dict(portrait=portrait_framing,
+                    caption_position=effective_caption.position,
+                    evidence=evidence_direction['enabled'],
+                    social_card=social_card_selected,
+                    reaction_avatar=reaction_avatar_selected,
+                    multi_split=multi_clip_split),
+                seed=str(getattr(clip, 'id', '') or f'{clip.start}:{clip.end}'),
+            )
+            if liveliness_plan['enabled']:
+                emit_render_task(0.61, 'Menambah aksen hidup opsional dari momen dialog sumber')
+                clip_liveliness.render_overlays(
+                    temp_video_path, liveliness_plan, ffmpeg=ffmpeg_path(),
+                    crf=int(quality['crf']), preset=str(quality['preset']),
+                    threads=cpu_threads_per_job(),
+                )
+                sidecar_payload['clip_liveliness'] = liveliness_plan
+                if liveliness_plan['rendered']:
+                    applied_edits.append('Aksen hidup opsional dipasang pada momen dialog sumber; '
+                        'waktu sumber, audio, subtitle, dan durasi tetap terjaga.')
         if motion_filter:
             motion_plan["rendered"] = True
             applied_edits.append(

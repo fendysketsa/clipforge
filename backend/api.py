@@ -16649,10 +16649,13 @@ def clipper_worker_environment(request: ClipJobRequest) -> dict[str, str]:
         "SHORTS_SCHEDULED_REACTION_AVATAR_ENABLED",
         "SHORTS_SCHEDULED_REACTION_AVATAR_PERCENT",
         "SHORTS_SCHEDULED_SUBSCRIBE_PULSE_ENABLED",
+        "SHORTS_SCHEDULED_LIVELINESS_ACCENTS_ENABLED",
     ):
         environment.pop(scheduler_flag, None)
     if request.scheduled_director_effects:
         environment["CLIPFORGE_CRON_DIRECTOR_EFFECTS"] = "true"
+        if os.environ.get("AUTO_VIRAL_SCHEDULED_LIVELINESS_ACCENTS_ENABLED", "").strip().casefold() in {"1", "true", "yes", "on"}:
+            environment["SHORTS_SCHEDULED_LIVELINESS_ACCENTS_ENABLED"] = "true"
     if request.scheduled_human_editor:
         environment["SHORTS_SCHEDULED_HUMAN_EDITOR_ENABLED"] = "true"
     if request.scheduled_contextual_audio:

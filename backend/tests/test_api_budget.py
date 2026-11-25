@@ -4165,6 +4165,20 @@ def test_cron_worker_features_are_isolated_from_manual_jobs(monkeypatch):
     assert cron_environment["SHORTS_SCHEDULED_SUBSCRIBE_PULSE_ENABLED"] == "true"
 
 
+def test_liveliness_accents_are_opt_in_cron_only(monkeypatch):
+    import api
+
+    monkeypatch.delenv("SHORTS_SCHEDULED_LIVELINESS_ACCENTS_ENABLED", raising=False)
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULED_LIVELINESS_ACCENTS_ENABLED", "true")
+    assert "SHORTS_SCHEDULED_LIVELINESS_ACCENTS_ENABLED" not in api.clipper_worker_environment(ClipJobRequest())
+    cron_environment = api.clipper_worker_environment(ClipJobRequest(scheduled_director_effects=True))
+    assert cron_environment["SHORTS_SCHEDULED_LIVELINESS_ACCENTS_ENABLED"] == "true"
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULED_LIVELINESS_ACCENTS_ENABLED", "false")
+    cron_environment = api.clipper_worker_environment(ClipJobRequest(scheduled_director_effects=True))
+    assert "SHORTS_SCHEDULED_LIVELINESS_ACCENTS_ENABLED" not in cron_environment
+
+
 def test_source_view_floor_is_strict_for_every_cron_theme_but_not_manual(monkeypatch):
     import api
 
