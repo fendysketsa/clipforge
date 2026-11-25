@@ -109,6 +109,8 @@ test('gerakan karyawan mengikuti state dan tahap worker nyata', () => {
   assert.equal(officeMotionFromWork({ state: 'queued', stage: 'Menunggu giliran' }, fallback), 'queued');
   assert.equal(officeMotionFromWork({ state: 'blocked', stage: 'Menunggu review' }, fallback), 'blocked');
   assert.equal(officeMotionFromWork({ state: 'idle', stage: '' }, fallback), 'idle');
+  assert.equal(officeMotionFromWork({ state: 'running', stage: 'Memeriksa kualitas', stage_key: 'download' }, fallback), 'desk', 'stage_key menang dari label');
+  assert.equal(officeMotionFromWork({ state: 'running', stage: 'Memeriksa kualitas', stage_key: 'youtube_upload' }, fallback), 'chat');
   assert.equal(officeMotionFromWork({ state: 'unavailable', stage: '' }, fallback), 'unavailable');
   assert.equal(officeMotionFromWork({ state: 'paused', stage: '' }, 'sofa'), 'sofa');
   assert.equal(officeMotionFromWork(undefined, 'desk'), 'desk');

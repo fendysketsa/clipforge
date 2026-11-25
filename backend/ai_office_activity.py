@@ -46,9 +46,13 @@ def observe(api, context):
     with api.long_qc_lock:
         long_qc = {str(key).split('\n', 1)[0] for key in api.long_qc_active}
 
-    def item(identity, state, text, stage, *, job_id=None, upload_id=None, platform=None, progress=None, kind='production'):
-        return dict(id=identity, state=state, title=text, stage=stage, progress_percent=progress,
-                    job_id=job_id, upload_id=upload_id, platform=platform, kind=kind,
+    def item(identity, state, text, stage, *, job_id=None, upload_id=None, platform=None,
+             progress=None, kind='production', stage_key=''):
+        # stage_key is the worker's own machine-readable stage. The UI maps it
+        # to an avatar pose; it never edits QC, rights or publication state.
+        return dict(id=identity, state=state, title=text, stage=stage, stage_key=stage_key,
+                    progress_percent=progress, job_id=job_id, upload_id=upload_id,
+                    platform=platform, kind=kind,
                     destination='facebook' if platform == 'facebook' else 'history')
 
     for key, job in jobs.items():
@@ -63,7 +67,7 @@ def observe(api, context):
         stage = 'Memeriksa kualitas Long' if key in long_qc else STAGES.get(job['stage'], 'Memperbaiki hasil' if job['repair'] else 'Memproses video')
         rows[department].append(item('job:' + key, state, job['title'], stage, job_id=key,
             platform='facebook' if job['facebook'] else None, progress=job['progress'] if state == 'running' else None,
-            kind='qc' if quality else 'production'))
+            kind='qc' if quality else 'production', stage_key=job['stage']))
 
     for platform in ('youtube', 'tiktok'):
         with getattr(api, platform + '_uploads_lock'):
@@ -77,10 +81,10 @@ def observe(api, context):
                 text = title(getattr(upload, 'title', None) or getattr(upload, 'clip_name', None), platform.title() + ' ' + key[:8])
                 rows['distribution'].append(item(platform + ':' + key, state, text,
                     ('Mengirim ke ' if state == 'running' else 'Antrean ') + platform.title(),
-                    job_id=job_id, upload_id=key, platform=platform, kind='upload'))
+                    job_id=job_id, upload_id=key, platform=platform, kind='upload', stage_key='upload'))
     # Long QC may be active for a record that disappeared between two snapshots.
     for key in long_qc - jobs.keys():
-        rows['quality'].append(item('qc:' + key, 'running', 'Audit Long ' + key[:8], 'Memeriksa kualitas Long', job_id=key, kind='qc'))
+        rows['quality'].append(item('qc:' + key, 'running', 'Audit Long ' + key[:8], 'Memeriksa kualitas Long', job_id=key, kind='qc', stage_key='qc'))
 
     fb = context['facebook']
     for row in fb.get('activity_work', []):
@@ -88,17 +92,18 @@ def observe(api, context):
         if row['kind'] == 'production' and (jobs.get(row.get('job_id'), {}).get('status') in {'queued', 'running'} or row.get('job_id') in long_qc):
             continue
         rows['facebook'].append(item(row['id'], row['state'], title(row.get('title'), 'Facebook'),
-            row['stage'], job_id=row.get('job_id'), upload_id=row.get('upload_id'), platform='facebook', kind=row['kind']))
+            row['stage'], job_id=row.get('job_id'), upload_id=row.get('upload_id'), platform='facebook',
+            kind=row['kind'], stage_key=str(row.get('stage_key') or '')))
 
     # A scheduled cleanup is pending, not evidence that a deletion is executing.
     with api.claimed_clip_cleanup_lock:
         cleanups = list(api.claimed_clip_cleanup_scheduled)
     for key in sorted(cleanups):
-        rows['cleanup'].append(item('cleanup:' + key, 'queued', 'Aset ' + key[:8], 'Menunggu file bebas dari transfer', upload_id=key, kind='cleanup'))
+        rows['cleanup'].append(item('cleanup:' + key, 'queued', 'Aset ' + key[:8], 'Menunggu file bebas dari transfer', upload_id=key, kind='cleanup', stage_key='cleanup'))
     if api.terminal_output_cleanup_lock.locked():
-        rows['cleanup'].append(item('cleanup:terminal', 'running', 'Pemeliharaan aset', 'Membersihkan hasil terminal', kind='cleanup'))
+        rows['cleanup'].append(item('cleanup:terminal', 'running', 'Pemeliharaan aset', 'Membersihkan hasil terminal', kind='cleanup', stage_key='cleanup'))
     if api.upload_attention_service.execution.locked():
-        rows['recovery'].append(item('recovery:inspection', 'running', 'Verifikasi pengiriman', 'Memeriksa bukti platform', kind='verification'))
+        rows['recovery'].append(item('recovery:inspection', 'running', 'Verifikasi pengiriman', 'Memeriksa bukti platform', kind='verification', stage_key='verification'))
 
     upload_jobs = {row['job_id'] for row in rows['distribution'] if row['kind'] == 'upload' and row['job_id']}
     rows['distribution'] = [row for row in rows['distribution'] if row['kind'] == 'upload' or row['job_id'] not in upload_jobs]
@@ -118,7 +123,8 @@ def observe(api, context):
                 title(incident.get('title'), 'Pekerjaan tertahan'),
                 'Perlu keputusan Anda' if incident['state'] == 'needs_operator' else 'Menunggu pemulihan',
                 job_id=incident.get('job_id'), upload_id=incident.get('upload_id'),
-                platform='facebook' if department == 'facebook' else None, kind='verification'))
+                platform='facebook' if department == 'facebook' else None, kind='verification',
+                stage_key='incident'))
 
     enabled = dict(production=context['cron_enabled'], quality=context['cron_enabled'] or context['generic_enabled'] or fb['enabled'],
         distribution=context['cron_enabled'] or context['generic_enabled'], recovery=context['attention_enabled'] or context['retry_enabled'],

@@ -20,7 +20,9 @@ export function OfficeStudioFloor({ snapshot, now, refreshFailed, selected, onSe
     <Office3DFloor snapshot={snapshot} now={now} refreshFailed={refreshFailed} selected={selected} onSelect={onSelect} animate={animate} />
     <div className="officeFloorRooms" role="group" aria-label="Pilih bagian">{snapshot.departments.map(department => {
       const row=officeAgentWork(snapshot,department.id,now,refreshFailed);
-      return <button type="button" className={`officeRoom is-${row.state}`} key={department.id} data-department={department.id} aria-pressed={selected===department.id} onClick={()=>onSelect(selected===department.id ? "all":department.id)}><strong>{department.name}</strong><span>{officeWorkLabel[row.state]}{row.running_count ? ` · ${row.running_count}` : row.queued_count ? ` · ${row.queued_count}` : ""}</span></button>;
+      const primary = row.work[0];
+      const progress = primary?.state === "running" && primary.progress_percent != null ? Math.round(primary.progress_percent) : null;
+      return <button type="button" className={`officeRoom is-${row.state}`} key={department.id} data-department={department.id} data-stage={primary?.stage_key || undefined} aria-pressed={selected===department.id} onClick={()=>onSelect(selected===department.id ? "all":department.id)}><strong>{department.name}</strong><span>{officeWorkLabel[row.state]}{row.running_count ? ` · ${row.running_count}` : row.queued_count ? ` · ${row.queued_count}` : ""}{row.blocked_count ? ` · ${row.blocked_count} tertahan` : ""}</span>{progress != null ? <i className="officeRoomMeter"><i style={{ width: `${progress}%` }} /></i> : null}</button>;
     })}</div>
   </section>;
 }

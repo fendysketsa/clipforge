@@ -81,11 +81,23 @@ const CHAT_SPOTS: OfficePoint[] = [
   { x: 5, z: 4.4 }, { x: 6.8, z: 4.4 },
 ];
 
-export type OfficeWorkCue = { state: string; stage: string; title?: string };
+export type OfficeWorkCue = { state: string; stage: string; stage_key?: string; title?: string };
 
-// Turn the worker's real queue state and stage into a visible work pose.
-// This only changes where the avatar stands; QC, rights and publication are
-// still decided by the backend owner that produced the cue.
+// The worker's own stage key is authoritative; the Indonesian label is only
+// a fallback for older snapshots. This only changes where an avatar stands —
+// QC, rights and publication stay with the backend owner that produced it.
+const STAGE_MOTION: Record<string, string> = {
+  transcribe: 'reading', transcription: 'reading', analysis: 'reading', analyze: 'reading', selection: 'reading',
+  qc: 'notice', quality_control: 'notice', clip_qc: 'notice', audit: 'notice',
+  preflight: 'notice', trend_discovery: 'notice', fallback_discovery: 'notice',
+  quality_repair: 'write', repair: 'write',
+  upload: 'chat', youtube_upload: 'chat', social_upload: 'chat', verification: 'chat',
+  waiting_upload: 'queued', resume_pending_upload: 'queued', retry_upload: 'queued',
+  cron_capacity_wait: 'queued', daily_upload_limit: 'queued', youtube_platform_daily_limit: 'queued',
+  cleanup: 'notice', incident: 'blocked',
+  source: 'desk', download: 'desk', render: 'desk', rendering: 'desk',
+};
+
 export function officeMotionFromWork(cue: OfficeWorkCue | undefined, fallback: string): string {
   if (!cue) return fallback;
   if (cue.state === 'unavailable') return 'unavailable';
@@ -93,6 +105,8 @@ export function officeMotionFromWork(cue: OfficeWorkCue | undefined, fallback: s
   if (cue.state === 'blocked') return 'blocked';
   if (cue.state === 'queued') return 'queued';
   if (cue.state === 'idle') return 'idle';
+  const key = (cue.stage_key || '').toLocaleLowerCase();
+  if (STAGE_MOTION[key]) return STAGE_MOTION[key];
   const stage = (cue.stage || '').toLocaleLowerCase();
   if (/qc|kualitas|audit|review|periksa|mencari sumber|penemuan/.test(stage)) return 'notice';
   if (/unggah|upload|distribusi|mengirim|kirim/.test(stage)) return 'chat';

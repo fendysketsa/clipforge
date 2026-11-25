@@ -80,6 +80,7 @@ export function createOfficeScene(host: HTMLElement,
   const materials = new Map<string, THREE.MeshStandardMaterial>();
   const geometries = new Set<THREE.BufferGeometry>();
   const textures: THREE.Texture[] = [];
+  const glowMaterials: THREE.MeshBasicMaterial[] = [];
   function material(color: string, opacity = 1) {
     const key = color + opacity;
     if (!materials.has(key)) materials.set(key, new THREE.MeshStandardMaterial({ color, roughness: .78,
@@ -311,7 +312,15 @@ export function createOfficeScene(host: HTMLElement,
     const copier = box(-1.1, 1.05, 1.15, 1.4, .95, 1, "#9aa9a2", prop);
     const cup = cylinder(.55, 1.16, 1.02, .11, .24, "#f7e8d0", prop);
     const cards = box(.62, 1.02, 1.16, .5, .04, .36, "#f6f0de", prop);
-    return { group, body, head, legs, arms, mug, book, mouse, seat, station, prop,
+    // A quiet floor glow shows which colleague the real worker queue is
+    // driving right now. It never changes a status or an approval.
+    const glowGeometry = new THREE.CircleGeometry(.72, 28); geometries.add(glowGeometry);
+    const glowMaterial = new THREE.MeshBasicMaterial({ color: person.color, transparent: true,
+      opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+    glowMaterials.push(glowMaterial);
+    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+    glow.rotation.x = -Math.PI / 2; glow.visible = false; scene.add(glow);
+    return { group, body, head, legs, arms, mug, book, mouse, seat, station, prop, glow, glowMaterial,
       notebook, phone, copier, cup, cards, point: { ...person.desk } as OfficePoint,
       path: [] as OfficePoint[], destination: "", pendingDestination: "", pendingSince: 0,
       speed: 0, rotation: person.desk.z > 0 ? 0 : Math.PI, greetUntil: 0 };
@@ -422,6 +431,13 @@ export function createOfficeScene(host: HTMLElement,
         : person.path.length && state !== "unavailable" ? "walk" as const : target.activity;
       const pose = { ...person.point, rotation: person.rotation, activity };
       person.group.position.set(pose.x, pose.y ?? 0, pose.z);
+      const glowState = profile.id === 'director'
+        ? (attentionIndex === null ? 'idle' : 'running') : (work[profile.id]?.state || observedState);
+      person.glowMaterial.color.set(glowState === 'blocked' ? '#c98a35' : glowState === 'queued' ? '#6d8fb8' : profile.color);
+      person.glowMaterial.opacity = glowState === 'running' ? .16 + Math.sin(seconds * 2 + index) * .03
+        : glowState === 'blocked' ? .13 : glowState === 'queued' ? .07 : 0;
+      person.glow.visible = person.glowMaterial.opacity > .01;
+      person.glow.position.set(pose.x, .014 + (pose.y ?? 0), pose.z);
       person.group.rotation.y = pose.rotation + (pose.activity === 'observing' ? Math.sin(seconds * .8) * .5 : 0);
       person.head.rotation.y = Math.sin(seconds * .6 + index) * .16;
       person.mouse.visible = pose.activity === 'desk' || pose.activity === 'observing';
@@ -552,6 +568,7 @@ export function createOfficeScene(host: HTMLElement,
       observer.disconnect(); geometries.forEach(geometry => geometry.dispose());
       materials.forEach(mat => mat.dispose()); signMaterials.forEach(mat => mat.dispose());
       lampMaterials.forEach(mat => mat.dispose()); poolMaterials.forEach(mat => mat.dispose());
+      glowMaterials.forEach(mat => mat.dispose());
       deskScreens.forEach(material => material.dispose());
       textures.forEach(texture => texture.dispose());
       renderer.dispose(); renderer.domElement.remove();

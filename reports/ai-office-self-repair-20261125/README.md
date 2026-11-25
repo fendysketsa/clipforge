@@ -39,6 +39,15 @@ they survive `docker-compose --force-recreate`.
   task board, upload/distribution → coordination, repair → notebook, queued →
   task queue, blocked → meeting room, idle → lounge. The time-based routine is
   only a fallback when a department has no live work yet.
+- The backend now publishes a machine-readable `stage_key` for each work item,
+  so the UI maps the worker's own stage instead of guessing from a translated
+  label.
+- Fresh UI: a live work board with per-department cards, real progress meters,
+  state chips and a director-focus line; a live 3D scene caption, pulsing active
+  avatars, and animated meters. The 3D stage now has a glass control layer
+  (live hero, activity bars, room dock), a subtle grid, and a floor glow under
+  the colleague whose real worker stage is active. Every value comes from the
+  observed snapshot; stale or unavailable data is labelled honestly.
 
 ## Safety boundaries
 

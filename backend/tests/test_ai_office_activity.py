@@ -33,6 +33,21 @@ def test_queued_work_is_not_running_and_completed_work_leaves_the_office(office)
     assert not api.calls and not service.path.exists()
 
 
+def test_worker_stage_key_is_exposed_for_task_driven_office_motion(office):
+    service, api = office
+    api.cron_enabled = True
+    api.jobs['source'] = job(stage='transcribe')
+    work = departments(service)['production']['work'][0]
+    assert work['stage_key'] == 'transcribe'
+    assert work['stage'] == 'Mentranskripsi'
+    api.jobs['source'].progress_stage = 'qc'
+    work = departments(service)['quality']['work'][0]
+    assert work['stage_key'] == 'qc' and work['stage'] == 'Memeriksa kualitas'
+    record = upload(); record.source_job_id = 'source'; api.youtube_uploads['yt'] = record
+    upload_work = departments(service)['distribution']['work'][0]
+    assert upload_work['stage_key'] == 'upload' and upload_work['progress_percent'] is None
+
+
 def test_the_same_job_moves_from_production_to_qc_without_double_counting(office):
     service,api=office
     api.cron_enabled=True

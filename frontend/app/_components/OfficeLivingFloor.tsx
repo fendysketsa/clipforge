@@ -8,6 +8,7 @@ import type { createOfficeScene, OfficeProjection } from "../../lib/createOffice
 const areaLabels = ["Ruang rapat", "Produksi & QC", "Distribusi & pemulihan", "Studio sosial & aset", "Lounge", "Coffee bar"];
 const areaIds = ["meeting", "creative", "media", "assets", "lounge", "pantry"];
 const repairSeat: Record<string, number> = { production: 0, quality: 1, distribution: 2, recovery: 3, cleanup: 4, facebook: 5 };
+const dockNames: Record<string, string> = { production: "Produksi", quality: "QC", distribution: "Distribusi", recovery: "Pemulihan", cleanup: "Aset", facebook: "Facebook" };
 const activityLabel: Record<OfficeActivity, string> = { desk: "Di meja kerja", walk: "Berjalan", greet: "Salaman saat papasan", patrol: "Keliling mengecek tim", meeting: "Diskusi tim", briefing: "Menerima arahan pimpinan", observing: "Memantau tim", notice: "Mengecek papan tugas", chat: "Berbincang dengan tim", coffee: "Di coffee bar", lounge: "Di lounge", reading: "Membaca", sofa: "Beristirahat sebentar", cards: "Menyusun ide", copy: "Menyiapkan bahan", write: "Menyiapkan langkah", call: "Menghubungi tim", snack: "Ngopi sebentar" };
 
 export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect, animate }: {
@@ -32,7 +33,8 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
   const workRows = OFFICE_PEOPLE.map(person => officeAgentWork(snapshot, person.id, now, refreshFailed));
   const states = Object.fromEntries(workRows.map(row => [row.id, row.state]));
   const workCues: Record<string, OfficeWorkCue> = Object.fromEntries(workRows.map(row => [row.id, {
-    state: row.state, stage: row.work[0]?.stage || "", title: row.work[0]?.title || "" }]));
+    state: row.state, stage: row.work[0]?.stage || "", stage_key: row.work[0]?.stage_key || "",
+    title: row.work[0]?.title || "" }]));
   const activeRepair = snapshot.director?.active_repair || null;
   const leadIncident = (snapshot.incidents || []).find(row => row.state !== "needs_operator" && row.automatic) || null;
   const attentionSeat = repairSeat[activeRepair?.department || leadIncident?.department || ""] ?? null;
@@ -106,12 +108,22 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
   const chosen = OFFICE_PEOPLE.find(person => person.id === selected);
   const department = snapshot.departments.find(row => row.id === selected);
   const chosenWork = officeAgentWork(snapshot,selected,now,refreshFailed);
-  return <div className={`officeDiorama${night ? " is-night" : ""}`}>
+  const activeCount = workRows.filter(row => row.state === "running").length;
+  const blockedCount = workRows.filter(row => row.state === "blocked").length;
+  return <div className={`officeDiorama${night ? " is-night" : ""}`} data-live={status.fresh ? "true" : "false"}>
     <div className="officeDioramaBar"><div><span className="officeDioramaMark"><Users size={14} /></span><strong>RYUUNDY HQ <span>/ LANTAI 01</span></strong></div>
       <span className={`officeConnection${!status.fresh ? " is-stale" : ""}`}><i />{!status.fresh ? "Data terakhir" : "Antrean langsung"}</span></div>
     <div className="office3dFloor officeDioramaStage" data-ready={ready} data-animated={animate && inView} aria-label="AI Office 3D: ruangan kantor, karyawan berjalan, dan bubble percakapan">
       <div ref={host} className="officeCanvas" aria-hidden="true" />
       {!ready ? <div className="officeSceneLoading" role="status"><Users size={28} /><strong>{failed ? "Tampilan 3D tidak tersedia" : "Membuka pintu studio…"}</strong><span>{failed ? "Gunakan daftar tim di bawah untuk melihat aktivitas." : "Menyiapkan ruangan & tim Anda"}</span></div> : null}
+      {ready ? <>
+        <div className="officeSceneHero"><span className="officeSceneEyebrow"><i />LIVE CONTROL FLOOR</span><strong>AI Office <em>3D</em></strong><small>{status.fresh ? `${activeCount} bekerja · ${blockedCount} tertahan` : "Menunggu data worker"}</small></div>
+        <div className="officeScenePulse" data-live={status.fresh && activeCount > 0 ? "true" : "false"} aria-hidden="true"><i /><i /><i /><i /></div>
+        <div className="officeSceneDock" role="group" aria-label="Pilih ruangan">{snapshot.departments.map(row => <button type="button" key={row.id}
+          className={`officeDockPill is-${states[row.id] || "unavailable"}${selected === row.id ? " is-selected" : ""}`}
+          data-department={row.id} aria-pressed={selected === row.id} onClick={() => onSelect(selected === row.id ? "all" : row.id)}>
+          <i />{dockNames[row.id] || row.name}</button>)}</div>
+      </> : null}
       {ready ? <div className="officeSceneLabels" data-bubbles={bubbles}>{areaIds.map((id, index) => <span className={`officeAreaLabel is-${id}`} key={id} ref={element => { if (element) areas.current.set(id, element); else areas.current.delete(id); }}>{areaLabels[index]}</span>)}
         {OFFICE_PEOPLE.map(person => {
           const activity = activities[person.id] || "desk";
@@ -127,7 +139,9 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
               : speech.text;
           return <button type="button" key={person.id} ref={element => { if (element) labels.current.set(person.id, element); else labels.current.delete(person.id); }}
             className={`officeWalker officePersonLabel${selected === person.id ? " is-selected" : ""}`} style={{ ["--person-color" as string]: person.color }}
-            data-person={person.id} data-work-state={work.state} data-job-id={work.work[0]?.job_id || undefined} data-bubble="false" data-chat={chatWith || undefined} aria-pressed={selected === person.id}
+            data-person={person.id} data-work-state={work.state} data-stage={work.work[0]?.stage_key || undefined}
+            data-progress={work.work[0]?.state === "running" && work.work[0]?.progress_percent != null ? Math.round(work.work[0].progress_percent) : undefined}
+            data-job-id={work.work[0]?.job_id || undefined} data-bubble="false" data-chat={chatWith || undefined} aria-pressed={selected === person.id}
             aria-label={`${person.name}, ${person.role}. ${activityLabel[activity]}. ${bubble}`}
             onClick={() => onSelect(selected === person.id ? "all" : person.id)}>
             <span className="officeSpeech"><span>{chatWith || repairing ? <MessageCircle size={10} /> : <Radio size={10} />}{repairing ? "Perbaikan" : chatWith ? "Obrolan" : officeWorkLabel[work.state]}</span><strong>{bubble}</strong></span>

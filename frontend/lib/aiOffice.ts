@@ -128,7 +128,7 @@ export function officeTime(value: string | null) {
 
 export type OfficeWorkState = "running" | "queued" | "blocked" | "idle" | "paused" | "unavailable";
 export type OfficeWork = {
-  id: string; state: "running" | "queued" | "blocked"; title: string; stage: string;
+  id: string; state: "running" | "queued" | "blocked"; title: string; stage: string; stage_key?: string;
   kind: string; progress_percent: number | null; job_id: string | null; upload_id: string | null;
   platform: string | null; destination: "history" | "facebook";
 };
