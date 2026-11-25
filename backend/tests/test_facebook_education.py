@@ -21,13 +21,13 @@ def measured(topic='count_objects'):
     return plan
 
 
-def test_catalogue_is_complete_and_existing_settings_keep_digital_series():
+def test_catalogue_is_complete_and_new_settings_default_to_character_stories():
     catalogue=originals.series_catalogue()
     assert {r['key'] for r in catalogue}==set(education.SERIES)|{originals.stories.SERIES_KEY}
     assert {t['key'] for row in catalogue if row['key'] not in ('digital',originals.stories.SERIES_KEY)
             for t in row['topics']}==set(education.TOPICS)
     assert next(r for r in catalogue if r['key']==originals.stories.SERIES_KEY)['topics']==[]
-    assert policy.config({'enabled':False})['series']=='digital'
+    assert policy.config({'enabled':False})['series']==originals.stories.SERIES_KEY
     assert not policy.config({'enabled':False,'series':'nature'})['enabled']
     with pytest.raises(ValueError):policy.config({'series':'unknown'})
     with pytest.raises(ValueError):originals.plan('s',series='kids_basics',topic='group')
