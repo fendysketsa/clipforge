@@ -223,6 +223,10 @@ class OfficeService:
     def _dispatch_incident(self, incident):
         a = self.api
         action = incident['action']
+        try:
+            ai_office_director.validate_tool_call(action)
+        except ValueError:
+            return False
         if action == 'cleanup_history' and a.env_bool('AUTO_UPLOAD_TERMINAL_CLEANUP_ENABLED', True):
             callback = getattr(a, 'process_autonomous_history_once', None)
         elif action == 'recover_scheduled_uploads' and a.auto_viral_schedule_enabled():
@@ -508,6 +512,8 @@ class OfficeService:
                         repairs=repairs[:12], active_repair=next((row for row in repairs if row['status'] == 'running'), None),
                         repair_count=len(repairs), autonomous_repair=True,
                         goal=ai_office_director.goal_checklist(self.strategy, context or {}),
+                        model_channel=ai_office_director.model_channel_snapshot(),
+                        tool_registry={key: dict(value) for key, value in ai_office_director.TOOL_SPECS.items()},
                         open_incidents=len(live_incidents), needs_operator=sum(r['state'] == 'needs_operator' for r in live_incidents)),
                     journal_ready=self.loaded and error is None,
                     capabilities=dict(supervised_workers=True, persisted_decisions=True, operator_settings_preserved=True,
@@ -517,7 +523,8 @@ class OfficeService:
                                       digital_director=True, strategic_directives=True,
                                       organizational_learning=True, observed_queue_activity=True,
                                       autonomous_repair=True, bounded_repair_permissions=True,
-                                      observed_goal_checklist=True))
+                                      observed_goal_checklist=True, registered_tool_bridge=True,
+                                      redacted_model_channel=True))
 
     def request_check(self):
         if not self.enabled():

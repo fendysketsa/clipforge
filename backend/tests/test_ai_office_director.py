@@ -88,6 +88,28 @@ def test_repair_permissions_fail_closed_like_a_tool_allowlist():
     assert director.repair_permission(None) == 'operator'
 
 
+def test_tool_registry_is_explicit_and_fail_closed():
+    assert director.tool_spec('verify_upload')['permission'] == 'owner_wake'
+    assert director.tool_spec('restore_access') is None
+    assert director.tool_spec('unknown_action') is None
+    with pytest.raises(ValueError):
+        director.validate_tool_call('restore_access')
+    with pytest.raises(ValueError):
+        director.validate_tool_call('unknown_action')
+    assert director.validate_tool_call('retry_tiktok')['timeout'] <= 120
+
+
+def test_model_channel_snapshot_never_exposes_a_key(monkeypatch):
+    monkeypatch.setenv('OPENROUTER_API_KEY', 'secret-leak-check')
+    monkeypatch.setenv('TELEGRAM_AI_BASE_URL', 'http://model.example/v1')
+    snapshot = director.model_channel_snapshot()
+    assert 'secret-leak-check' not in str(snapshot)
+    assert snapshot['api_key_configured'] is True
+    assert snapshot['api_key_exposed'] is False
+    assert snapshot['fail_closed'] is True
+    assert snapshot['applies_to'] == 'worker_owned_llm_calls_only'
+
+
 def test_goal_checklist_is_bounded_and_driven_by_observed_incidents():
     incident = dict(id='recovery:x', department='recovery', title='Verifikasi',
                     action='verify_upload', automatic=True, state='waiting')
@@ -142,5 +164,9 @@ def test_coordinator_publishes_director_without_new_tasks(office):
     assert snapshot['capabilities']['digital_director'] is True
     assert snapshot['director']['model'] == 'digital_leader'
     assert len(snapshot['director']['directives']) == 6
+    assert snapshot['director']['model_channel']['api_key_exposed'] is False
+    assert 'verify_upload' in snapshot['director']['tool_registry']
+    assert snapshot['capabilities']['registered_tool_bridge'] is True
+    assert snapshot['capabilities']['redacted_model_channel'] is True
     assert snapshot['director']['strategy']['name'] == director.DEFAULT_STRATEGY['name']
     assert not any(task['department'] == 'direktur' for task in snapshot['tasks'])

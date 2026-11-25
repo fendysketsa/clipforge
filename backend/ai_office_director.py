@@ -10,6 +10,7 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 import json
+import os
 
 VERSION = 1
 HISTORY_LIMIT = 12
@@ -91,6 +92,42 @@ REPAIR_PERMISSIONS = {
 
 def repair_permission(action) -> str:
     return REPAIR_PERMISSIONS.get(str(action or ''), 'operator')
+
+
+# Loopra-style tool registry: an action may only reach a declared existing
+# owner, with a bounded timeout. Unknown actions fail closed; the director
+# still never renders, edits settings or publishes.
+TOOL_SPECS = {
+    'cleanup_history': dict(owner='process_autonomous_history_once', permission='owner_wake', timeout=120, read_only=False),
+    'recover_scheduled_uploads': dict(owner='queue_missing_scheduled_uploads_once', permission='owner_wake', timeout=120, read_only=False),
+    'verify_upload': dict(owner='upload_attention_service.wakeup.set', permission='owner_wake', timeout=120, read_only=False),
+    'retry_tiktok': dict(owner='tiktok_retry_sweeper_wakeup.set', permission='owner_wake', timeout=120, read_only=False),
+    'recover_facebook': dict(owner='request_facebook_recovery', permission='owner_wake', timeout=120, read_only=False),
+    'use_supported_cron': dict(owner='auto_viral_scheduler_wakeup.set', permission='owner_wake', timeout=120, read_only=False),
+    'worker_supervision': dict(owner='office_owner_start', permission='owner_wake', timeout=120, read_only=False),
+}
+
+
+def tool_spec(action):
+    return dict(TOOL_SPECS[str(action or '')]) if str(action or '') in TOOL_SPECS else None
+
+
+def validate_tool_call(action) -> dict:
+    spec = tool_spec(action)
+    if not spec or spec['permission'] != 'owner_wake':
+        raise ValueError('Aksi perbaikan tidak dikenal atau memerlukan operator.')
+    return spec
+
+
+def model_channel_snapshot() -> dict:
+    """Read-only, key-free view of the already configured LLM channel."""
+    base = (os.environ.get('TELEGRAM_AI_BASE_URL') or os.environ.get('FREELLMAPI_BASE_URL') or '').strip()
+    model = (os.environ.get('TELEGRAM_AI_MODEL') or os.environ.get('FREELLMAPI_MODEL') or '').strip()
+    key_present = bool(os.environ.get('OPENROUTER_API_KEY') or os.environ.get('FREELLMAPI_API_KEY'))
+    return dict(version=1, channel='existing_env_channel', enabled=bool(base),
+                base_url=base[:240], model=model[:120],
+                api_key_configured=key_present, api_key_exposed=False,
+                fail_closed=True, applies_to='worker_owned_llm_calls_only')
 
 
 def goal_checklist(strategy, state):
