@@ -8,6 +8,13 @@ import facebook_motion as motion
 import facebook_originals as originals
 
 
+def test_folder_board_keeps_its_subject_but_has_an_occasional_cameo():
+    source=renderer.SCENE.read_text()
+    assert 'function cameo(' in source
+    assert 'if(model.selected||model.complete)cameo(' in source
+    assert 'model.folders.forEach(folderBack)' in source
+
+
 def measured(topic='copy'):
     p=originals.plan('motlab-facebook-test',topic=topic)
     for i,stage in enumerate(p['stages']):stage.update(start=i*8.,end=(i+1)*8.)

@@ -45,6 +45,19 @@ function background(){
   rect(125,480,750,730,145,'#EDF1E4');ellipse(48,1135,892,135,'#DDE4D6');
   rect(65,1220,870,12,6,'#B8CEC1');
 }
+// A small, occasional cameo beside the object lesson. The folder/text board
+// stays the subject; this cast member only reacts to a real selection/result.
+function cameo(x,y,t,active,scale=.5){
+  ctx.save();ctx.translate(x,y+Math.sin(t*2.2)*3);ctx.scale(scale,scale);
+  rect(-20,50,16,58,6,'#425953');rect(4,50,16,58,6,'#425953');
+  rect(-44,-22,88,96,25,TEAL);
+  ellipse(-39,-110,78,86,'#e2b894');ellipse(-41,-138,82,46,'#4a3a30');
+  ellipse(-19,-69,10,12,'#263932');ellipse(9,-69,10,12,'#263932');
+  if(active)line([[-15,-43],[0,-33],[15,-43]],'#8c5d50',5);else line([[-11,-41],[11,-41]],'#8c5d50',4);
+  line([[36,2],[58,-16]],TEAL,13);
+  ctx.restore();
+  if(active){ellipse(x+46,y-112,34,34,'#fff',TEAL,3);text('!',x+55,y-104,22,30,TEAL,true,1);}
+}
 function folderBack(row){
   const {x,y,w,color}=row;
   rect(x+10,y-45,w*.5-10,60,20,color);rect(x,y,w,245,26,color);
@@ -107,6 +120,8 @@ window.renderAt=async(t)=>{
   const inspecting=data.topic==='copy'&&model.clock.inspect<=t&&t<model.clock.inspect+3;
   text(inspecting?'PERIKSA SALINANNYA':model.complete?'HASILNYA TERLIHAT':model.selected?'IKUTI PERGERAKANNYA':'PERHATIKAN OBJEKNYA',95,470,790,23,TEAL,true,1);
   if(!['size','date','number'].includes(data.topic))guide(t,model.focus,inspecting||!model.complete);
+  // Cameo only on a real interaction or at the result; the board stays primary.
+  if(model.selected||model.complete)cameo(922,1228,t,model.complete,.5);
   model.folders.forEach(folderBack);
   if(model.selected&&['copy','group','restore'].includes(data.topic))for(let i=0;i<14;i++)ellipse(260+i*36,620-70*Math.sin(i/13*Math.PI),5,5,'#8FBEB1');
   if(data.topic==='search'){
