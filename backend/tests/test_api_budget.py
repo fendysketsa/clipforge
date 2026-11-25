@@ -4203,6 +4203,18 @@ def test_source_view_floor_is_strict_for_every_cron_theme_but_not_manual(monkeyp
     ) == ""
 
 
+def test_cron_humor_includes_conversational_comedy_podcasts():
+    import api
+
+    queries = " ".join(api.CRON_HUMOR_SEARCH_QUERIES).casefold()
+    assert "deny sumargo" in queries and "prasteguh" in queries
+    assert "deny sumargo" in api.CRON_HUMOR_SIGNALS
+    assert "prasteguh" in api.CRON_HUMOR_SIGNALS
+    assert "podcast" in api.CRON_HUMOR_DIALOGUE_SIGNALS
+    assert "podcast Deny Sumargo obrolan candaan spontan" in api.CRON_HUMOR_SEARCH_QUERIES
+    assert "podcast Prasteguh kelakar obrolan sehari hari" in api.CRON_HUMOR_SEARCH_QUERIES
+
+
 def test_scheduled_humor_rotates_only_on_configured_cron_run(monkeypatch):
     import api
 

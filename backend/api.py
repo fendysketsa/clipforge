@@ -1622,6 +1622,10 @@ CRON_HUMOR_SEARCH_QUERIES = [
     "stand up comedy indonesia cerita sehari hari",
     "lawakan indonesia bersih tanpa prank",
     "momen lucu natural obrolan indonesia",
+    "podcast Deny Sumargo obrolan candaan spontan",
+    "podcast Prasteguh kelakar obrolan sehari hari",
+    "Deny Sumargo podcast dialog lucu narasumber",
+    "Prasteguh podcast humor celetukan natural",
     "sitkom indonesia humor keluarga",
     "humor warga kampung salah dengar",
     "dialog pak rt lucu salah paham",
@@ -1636,10 +1640,12 @@ CRON_HUMOR_SIGNALS = {
     "bikin ketawa", "candaan", "celetukan", "comedy", "gagal paham",
     "humor", "kocak", "komedi", "lawak", "lucu", "ngakak", "plesetan",
     "salah dengar", "salah paham", "sketsa", "sitkom", "stand up",
+    "deny sumargo", "prasteguh", "narasumber", "tamu podcast",
 }
 CRON_HUMOR_DIALOGUE_SIGNALS = {
     "dengar", "dialog", "jawab", "ngobrol", "obrolan", "pak rt",
     "percakapan", "reaksi", "tanya", "komentar", "komentator", "mabar",
+    "podcast", "host", "tamu", "wawancara",
 }
 CRON_HUMOR_UNSAFE_SIGNALS = {
     "18+", "berantem", "bully", "darah", "dewasa", "hajar", "hina",
@@ -1783,7 +1789,7 @@ RYUUNDY_CRON_THEME_PROFILES: dict[str, dict[str, Any]] = {
     },
     "humor_interlude": {
         "label": "Jeda Humor Kehidupan",
-        "tone": "lucu, cepat, bersih, dan tidak mempermalukan; termasuk komentator Roblox bila ada cerita atau interaksi manusiawi",
+        "tone": "lucu, cepat, bersih, dan tidak mempermalukan; termasuk obrolan podcast kelakar (mis. Deny Sumargo, Prasteguh) dan komentator Roblox bila ada cerita atau interaksi manusiawi",
         "short_role": "ambil punchline atau reaksi terbaik lalu sisakan satu pesan tentang pilihan, kerja sama, atau konsekuensi",
         "long_role": "lengkapi setup, dinamika percakapan/gameplay, payoff, dan nilai baik tanpa memaksa ceramah",
         "queries": CRON_HUMOR_SEARCH_QUERIES,
