@@ -214,14 +214,20 @@ export function createOfficeScene(host: HTMLElement,
   pendant(-8, 2, .3);
   signMaterials.push(board("RUANG RAPAT", -8, 3.15, 1.9, 4.6, "#2d5a4e", "#ffeccb"));
   signMaterials.push(board("RYUUNDY / RUANG PIMPINAN", 0.4, 2.95, -6.75, 6, "#4a3f2f", "#ffe6ad"));
-  // Task board: everyone takes a turn checking that work is on track.
+  // Task board: the notices and labels sit on the FRONT face of the panel.
   box(7.4, 1.55, 1.6, .12, 2.7, 3.4, "#b9a888");
-  box(7.32, 1.55, 1.6, .05, 2.4, 3.1, "#f7f2e3");
-  for (let i = 0; i < 5; i++) {
-    box(7.27, 2.3 - i * .42, .65, .03, .2, 1.4, i % 2 ? "#c8d8c5" : "#e8d9b8");
-    box(7.25, 2.3 - i * .42, 2.35, .03, .2, .5, i % 3 ? "#7ca893" : "#d29b72");
+  box(7.47, 1.55, 1.6, .02, 2.4, 3.1, "#f7f2e3");
+  box(7.49, .35, 1.6, .02, .05, 2.9, "#d8c8a4");
+  signMaterials.push(board("PAPAN TUGAS", 7.53, 2.62, 1.6, 2.2, "#2d5a4e", "#ffeccb", Math.PI / 2));
+  for (const [index, [label, colour]] of [
+    ["PRODUKSI", "#dbe8dd"], ["QUALITY CONTROL", "#e7e0ef"],
+    ["DISTRIBUSI", "#dbe6f0"], ["FACEBOOK", "#eee1cd"], ["PEMULIHAN", "#e5e8d5"],
+  ].entries()) {
+    const y = 2.08 - index * .4;
+    box(7.5, y, 1.6, .03, .34, 2.66, colour);
+    box(7.525, y, .42, .012, .14, .1, "#6f8f7e");
+    signMaterials.push(board(label, 7.53, y, 1.7, 2.3, colour, "#2c4a40", Math.PI / 2));
   }
-  signMaterials.push(board("PAPAN TUGAS", 7.24, 2.85, 1.6, 2.6, "#2d5a4e", "#ffeccb"));
   const clock = cylinder(-4.75, 2.5, -6.83, .31, .08, "#344d47"); clock.rotation.x = Math.PI / 2;
   const face = cylinder(-4.75, 2.5, -6.77, .26, .015, "#faf5e7"); face.rotation.x = Math.PI / 2;
   box(-4.75, 2.57, -6.73, .025, .18, .02, "#344d47"); box(-4.68, 2.5, -6.72, .17, .025, .02, "#344d47");
