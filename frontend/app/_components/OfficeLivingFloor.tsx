@@ -7,7 +7,7 @@ import type { createOfficeScene, OfficeProjection } from "../../lib/createOffice
 
 const areaLabels = ["Ruang rapat", "Produksi & QC", "Distribusi & pemulihan", "Studio sosial & aset", "Lounge", "Coffee bar"];
 const areaIds = ["meeting", "creative", "media", "assets", "lounge", "pantry"];
-const activityLabel: Record<OfficeActivity, string> = { desk: "Di meja kerja", walk: "Berjalan", meeting: "Diskusi tim", briefing: "Menerima arahan pimpinan", observing: "Memantau tim", notice: "Mengecek papan tugas", chat: "Berbincang dengan tim", greet: "Salaman saat papasan", coffee: "Di coffee bar", lounge: "Di lounge", reading: "Membaca", sofa: "Beristirahat sebentar", cards: "Menyusun ide", copy: "Menyiapkan bahan", write: "Menyiapkan langkah", call: "Menghubungi tim", snack: "Ngopi sebentar" };
+const activityLabel: Record<OfficeActivity, string> = { desk: "Di meja kerja", walk: "Berjalan", greet: "Salaman saat papasan", patrol: "Keliling mengecek tim", meeting: "Diskusi tim", briefing: "Menerima arahan pimpinan", observing: "Memantau tim", notice: "Mengecek papan tugas", chat: "Berbincang dengan tim", coffee: "Di coffee bar", lounge: "Di lounge", reading: "Membaca", sofa: "Beristirahat sebentar", cards: "Menyusun ide", copy: "Menyiapkan bahan", write: "Menyiapkan langkah", call: "Menghubungi tim", snack: "Ngopi sebentar" };
 
 export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect, animate }: {
   snapshot: AIOfficeSnapshot; now: number; refreshFailed: boolean; selected: string; onSelect: (value: string) => void; animate: boolean;
@@ -24,6 +24,7 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
     [follow, setFollow] = useState(initial.follow === true);
   useEffect(() => { try { localStorage.setItem('office3d-view', JSON.stringify({ bubbles, zoom, lighting, follow })); } catch { /* storage unavailable */ } }, [bubbles, zoom, lighting, follow]);
   const [activities, setActivities] = useState<Record<string, OfficeActivity>>({});
+  const [chats, setChats] = useState<Record<string, string>>({});
   const status = officeActivityStatus(snapshot, now, refreshFailed);
   const hour = new Date(now).getUTCHours();
   const night = lighting === "night" || lighting === "auto" && hour >= 12 && hour < 22;
@@ -45,7 +46,7 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
         if (!label) continue;
         label.style.left = `${person.x}px`; label.style.top = `${person.y}px`;
         const focus = latest.current.selected;
-        const talking = latest.current.bubbles && (focus === person.id || focus === "all" && (person.id === lead?.id || person.id === second?.id));
+        const talking = latest.current.bubbles && (Boolean(person.chatWith) || focus === person.id || focus === "all" && (person.id === lead?.id || person.id === second?.id));
         label.dataset.bubble = String(talking);
         label.style.zIndex = focus === person.id ? "9" : talking ? "6" : "3";
         const half = element.clientWidth < 640 ? 57.5 : 76.5;
@@ -57,8 +58,12 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
         const label = areas.current.get(room.id);
         if (label) { label.style.left = `${room.x}px`; label.style.top = `${room.y}px`; }
       }
-      const next = people.map(person => person.activity).join("|");
-      if (signature.current !== next) { signature.current = next; setActivities(Object.fromEntries(people.map(person => [person.id, person.activity]))); }
+      const next = people.map(person => `${person.activity}:${person.chatWith || ""}`).join("|");
+      if (signature.current !== next) {
+        signature.current = next;
+        setActivities(Object.fromEntries(people.map(person => [person.id, person.activity])));
+        setChats(Object.fromEntries(people.map(person => [person.id, person.chatWith || ""])));
+      }
     };
     void import("../../lib/createOfficeScene").then(({ createOfficeScene }) => {
       if (disposed) return;
@@ -100,12 +105,18 @@ export function Office3DFloor({ snapshot, now, refreshFailed, selected, onSelect
           const activity = activities[person.id] || "desk";
           const work = officeAgentWork(snapshot,person.id,now,refreshFailed);
           const speech = officeSpeech(snapshot, person.id, now, refreshFailed);
+          const chatWith = chats[person.id];
+          const chatName = OFFICE_PEOPLE.find(row => row.id === chatWith)?.name || chatWith;
+          // The answer is always the colleague's real queue status; no made-up work.
+          const bubble = chatWith
+            ? person.id === "director" ? `Cek progres ${chatName}: apa yang sedang dikerjakan?` : `Menjawab pimpinan: ${speech.text}`
+            : speech.text;
           return <button type="button" key={person.id} ref={element => { if (element) labels.current.set(person.id, element); else labels.current.delete(person.id); }}
             className={`officeWalker officePersonLabel${selected === person.id ? " is-selected" : ""}`} style={{ ["--person-color" as string]: person.color }}
-            data-person={person.id} data-work-state={work.state} data-job-id={work.work[0]?.job_id || undefined} data-bubble="false" aria-pressed={selected === person.id}
-            aria-label={`${person.name}, ${person.role}. ${activityLabel[activity]}. ${speech.text}`}
+            data-person={person.id} data-work-state={work.state} data-job-id={work.work[0]?.job_id || undefined} data-bubble="false" data-chat={chatWith || undefined} aria-pressed={selected === person.id}
+            aria-label={`${person.name}, ${person.role}. ${activityLabel[activity]}. ${bubble}`}
             onClick={() => onSelect(selected === person.id ? "all" : person.id)}>
-            <span className="officeSpeech"><span><Radio size={10} />{officeWorkLabel[work.state]}</span><strong>{speech.text}</strong></span>
+            <span className="officeSpeech"><span>{chatWith ? <MessageCircle size={10} /> : <Radio size={10} />}{chatWith ? "Obrolan" : officeWorkLabel[work.state]}</span><strong>{bubble}</strong></span>
             <span className="officePersonName"><i />{person.name}<small>{person.role}</small></span>
           </button>;
         })}</div> : null}

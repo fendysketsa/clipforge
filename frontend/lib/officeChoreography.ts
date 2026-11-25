@@ -1,5 +1,5 @@
 export type OfficePoint = { x: number; z: number; y?: number };
-export type OfficeActivity = "desk" | "walk" | "greet" | "meeting" | "briefing" | "observing" | "notice" | "chat" | "coffee" | "lounge" | "sofa" | "reading" | "write" | "call" | "copy" | "snack" | "cards";
+export type OfficeActivity = "desk" | "walk" | "greet" | "patrol" | "meeting" | "briefing" | "observing" | "notice" | "chat" | "coffee" | "lounge" | "sofa" | "reading" | "write" | "call" | "copy" | "snack" | "cards";
 
 // One floor only. Every working spot is in the open front area (z > -1.4),
 // so nobody ever has to cross the glass partition or a wall to do their job.
@@ -12,6 +12,30 @@ export const OFFICE_PEOPLE = [
   { id: "facebook", name: "Mika", role: "Facebook", color: "#697db8", desk: { x: -6.5, z: -1.8 } },
   { id: "director", name: "Pimpinan", role: "Direktur Studio", color: "#c99433", desk: { x: .5, z: -4 } },
 ] as const;
+
+// The director does one calm round of the floor: monitor his own screen,
+// visit every colleague at their desk to ask what they are doing, then brief
+// the team in the meeting room. Each stop lasts long enough to be readable.
+export const DIRECTOR_PATROL_SECONDS = 36;
+// Finish one room before crossing to the next, instead of zigzagging between
+// the left and right rooms on every stop.
+export const DIRECTOR_ROUTE = [0, 1, 4, 5, 2, 3];
+
+export function directorState(seconds: number): string {
+  const observe = 24, briefing = 24;
+  const cycle = observe + DIRECTOR_ROUTE.length * DIRECTOR_PATROL_SECONDS + briefing;
+  const time = ((seconds % cycle) + cycle) % cycle;
+  if (time < observe) return "observing";
+  const visit = Math.floor((time - observe) / DIRECTOR_PATROL_SECONDS);
+  if (visit < DIRECTOR_ROUTE.length) return `patrol:${DIRECTOR_ROUTE[visit]}`;
+  return "briefing";
+}
+
+export function patrolIndex(state: string): number {
+  if (!state.startsWith("patrol:")) return -1;
+  const index = Number(state.slice(7));
+  return Number.isInteger(index) && OFFICE_PEOPLE[index] && OFFICE_PEOPLE[index].id !== "director" ? index : -1;
+}
 
 const SPOTS: Record<'queued' | 'blocked' | 'idle', (OfficePoint & { activity: OfficeActivity })[]> = {
   queued: [
@@ -58,6 +82,12 @@ export function officeDestination(index: number, state: string): OfficePoint & {
   if (state === 'notice') return { ...TASK_BOARD_SPOTS[index % TASK_BOARD_SPOTS.length], activity: 'notice' };
   if (OFFICE_PEOPLE[index].id === 'director') {
     if (state === 'briefing') return { x: -8, z: 4.4, activity: 'briefing' };
+    const visit = patrolIndex(state);
+    if (visit >= 0) {
+      const desk = OFFICE_PEOPLE[visit].desk;
+      // Stand beside the colleague's desk, inside the same room, facing them.
+      return { x: desk.x + (desk.x < 0 ? .95 : -.95), z: desk.z - .55, activity: 'patrol' };
+    }
     return { ...OFFICE_PEOPLE[index].desk, activity: 'observing' };
   }
   if (state === 'queued' || state === 'blocked' || state === 'idle') return SPOTS[state][index % SPOTS[state].length];

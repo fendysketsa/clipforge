@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { OFFICE_PEOPLE, PERSONAL_RADIUS, officeAvoidStep, officeBlocked, officeDestination, officePath, officeStep } from '../lib/officeChoreography.ts';
+import { DIRECTOR_PATROL_SECONDS, DIRECTOR_ROUTE, OFFICE_PEOPLE, PERSONAL_RADIUS, directorState, officeAvoidStep, officeBlocked, officeDestination, officePath, officeStep, patrolIndex } from '../lib/officeChoreography.ts';
 
 const DOORS = [-11.2, 0, 7.8];
 const PARTITION_GAP = [-3.25, -1.55];
@@ -76,6 +76,27 @@ test('langkah bebas tetap lewat tanpa memicu sapaan', () => {
   assert.equal(result.blocker, -1);
   assert.deepEqual(result.point, desired);
   assert.ok(PERSONAL_RADIUS > 0);
+});
+
+test('pimpinan keliling ke setiap karyawan lalu kembali ke meja dan ruang rapat', () => {
+  const director = OFFICE_PEOPLE.findIndex(row => row.id === 'director');
+  assert.equal(directorState(0), 'observing');
+  const visited = new Set();
+  for (let second = 24; second < 24 + DIRECTOR_ROUTE.length * DIRECTOR_PATROL_SECONDS; second += 2) {
+    const state = directorState(second);
+    const index = patrolIndex(state);
+    assert.ok(index >= 0, `menit ${second}: tidak sedang keliling`);
+    visited.add(index);
+    const target = officeDestination(director, state);
+    assert.equal(target.activity, 'patrol');
+    const desk = OFFICE_PEOPLE[index].desk;
+    assert.ok(Math.hypot(target.x - desk.x, target.z - desk.z) < 1.3, 'tidak berhenti di dekat meja karyawan');
+    assert.ok(target.x > -12.3 && target.x < 12.3 && target.z > -6.5 && target.z < -1.4,
+      'titik keliling di luar ruangan');
+  }
+  assert.equal(visited.size, DIRECTOR_ROUTE.length, 'tidak semua karyawan dikunjungi');
+  assert.equal(directorState(24 + DIRECTOR_ROUTE.length * DIRECTOR_PATROL_SECONDS + 1), 'briefing');
+  assert.equal(patrolIndex('observing'), -1);
 });
 
 test('pimpinan punya ruang sendiri dan turun ke ruang rapat saat memberi arahan', () => {

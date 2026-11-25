@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { OFFICE_PEOPLE, officeAvoidStep, officeDestination, officePath, officeStep, type OfficePoint, type OfficeActivity } from "./officeChoreography";
+import { OFFICE_PEOPLE, directorState, officeAvoidStep, officeDestination, officePath, officeStep, patrolIndex, type OfficePoint, type OfficeActivity } from "./officeChoreography";
 
-export type OfficeProjection = { id: string; x: number; y: number; activity: OfficeActivity };
+export type OfficeProjection = { id: string; x: number; y: number; activity: OfficeActivity; chatWith?: string };
 export const OFFICE_AREAS = [
   { id: "meeting", label: "Ruang rapat", x: -8, z: 1.7, y: 0 },
   { id: "creative", label: "Produksi & QC", x: 0, z: -5.9, y: 0 },
@@ -347,18 +347,21 @@ export function createOfficeScene(host: HTMLElement,
         lamp.pool.opacity = night ? .16 : 0;
       }
     }
+    const directorRound = directorState(seconds);
+    const visit = patrolIndex(directorRound);
     const projections = people.map((person, index) => {
       const profile = OFFICE_PEOPLE[index];
       const observedState = states[profile.id] || "unavailable";
-      const state = profile.id === 'director'
-        ? (Math.floor(seconds / 28) % 2 ? 'briefing' : 'observing')
-        : observedState;
+      const state = profile.id === 'director' ? directorRound : observedState;
       // A visible work routine: people move between desk, task board and
       // coordination on a staggered cycle. Status bubbles still use real data.
       const routine = ['desk', 'desk', 'chat', 'desk', 'notice', 'desk', 'sofa', 'desk', 'queued', 'desk', 'blocked', 'desk'];
+      // Whoever the director is visiting stays at their desk, so the check-in
+      // is about their real work instead of an empty chair.
       const motionState = profile.id === 'director' ? state
-        : (observedState === 'unavailable'
-          ? observedState : routine[(Math.floor(seconds / 55) + index) % routine.length]);
+        : visit === index && observedState !== 'unavailable' ? 'desk'
+          : (observedState === 'unavailable'
+            ? observedState : routine[(Math.floor(seconds / 55) + index) % routine.length]);
       const target = officeDestination(index, motionState);
       const destination = `${target.x}:${target.z}:${target.y ?? 0}`;
       if (state === "unavailable") {
@@ -402,6 +405,8 @@ export function createOfficeScene(host: HTMLElement,
         const partner = officeDestination(index % 2 ? index - 1 : Math.min(index + 1, OFFICE_PEOPLE.length - 1), 'chat');
         const desired = target.activity === "chat" ? Math.atan2(partner.x - person.point.x, partner.z - person.point.z)
           : target.activity === "desk" ? (profile.desk.z > 0 ? 0 : Math.PI)
+            : target.activity === "patrol" && visit >= 0
+              ? Math.atan2(OFFICE_PEOPLE[visit].desk.x - person.point.x, OFFICE_PEOPLE[visit].desk.z - person.point.z)
             : target.activity === "observing" || target.activity === "reading" || target.activity === "sofa" ? Math.PI
               : target.activity === "meeting" ? -Math.PI / 2
                 : target.activity === "briefing" || target.activity === "call"
@@ -456,6 +461,7 @@ export function createOfficeScene(host: HTMLElement,
           case "coffee": arm.rotation.x = side ? -.78 + Math.sin(seconds * 1.6) * .1 : -.18; break;
           case "reading": arm.rotation.x = -.72 + side * .04; break;
           case "observing": arm.rotation.x = -.18 + Math.sin(seconds * .8 + side) * .06; break;
+          case "patrol": arm.rotation.x = side ? -.58 + Math.sin(seconds * 1.3) * .07 : -.16; break;
           case "briefing": arm.rotation.x = side ? -.7 + Math.sin(seconds * 2.4 + side) * .22 : -.3; break;
           case "lounge": case "sofa": arm.rotation.x = side ? -.42 + quiet * 2 : -.14; break;
           case "write": case "cards": case "copy": case "call": case "snack":
@@ -465,8 +471,20 @@ export function createOfficeScene(host: HTMLElement,
       });
       person.mug.visible = pose.activity === "coffee";
       person.book.visible = pose.activity === "reading";
-      return { id: OFFICE_PEOPLE[index].id, ...point(pose.x, 2.15 + (pose.y ?? 0), pose.z), activity: pose.activity };
+      return { id: OFFICE_PEOPLE[index].id, ...point(pose.x, 2.15 + (pose.y ?? 0), pose.z), activity: pose.activity, chatWith: undefined as string | undefined };
     });
+    // Only surface the chat bubble once the director actually reaches the
+    // colleague, never while he is still crossing the floor.
+    if (visit >= 0) {
+      const directorPoint = people[people.length - 1].point;
+      const colleaguePoint = people[visit].point;
+      if (Math.hypot(directorPoint.x - colleaguePoint.x, directorPoint.z - colleaguePoint.z) < 2.2) {
+        const lead = projections.find(row => row.id === 'director');
+        const colleague = projections.find(row => row.id === OFFICE_PEOPLE[visit].id);
+        if (lead) lead.chatWith = OFFICE_PEOPLE[visit].id;
+        if (colleague) colleague.chatWith = 'director';
+      }
+    }
     renderer.render(scene, camera);
     project(projections, OFFICE_AREAS.map(area => ({ id: area.id, ...point(area.x, .25 + area.y, area.z), activity: "desk" })));
   }
