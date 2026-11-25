@@ -102,7 +102,8 @@ export function createOfficeScene(host: HTMLElement,
   function sphere(x: number, y: number, z: number, r: number, color: string, parent: THREE.Object3D = fixed) {
     return mesh(new THREE.SphereGeometry(r, 12, 8), color, x, y, z, parent);
   }
-  function board(text: string, x: number, y: number, z: number, width: number, background = "#25443d", ink = "#faf4e6") {
+  function board(text: string, x: number, y: number, z: number, width: number,
+                 background = "#25443d", ink = "#faf4e6", rotationY = 0) {
     const canvas = document.createElement("canvas"); canvas.width = 768; canvas.height = 192;
     const ctx = canvas.getContext("2d")!;
     ctx.fillStyle = background; ctx.fillRect(0, 0, 768, 192);
@@ -111,7 +112,7 @@ export function createOfficeScene(host: HTMLElement,
     const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; textures.push(texture);
     const geometry = new THREE.PlaneGeometry(width, width / 4); geometries.add(geometry);
     const mat = new THREE.MeshBasicMaterial({ map: texture });
-    const sign = new THREE.Mesh(geometry, mat); sign.position.set(x, y, z); scene.add(sign);
+    const sign = new THREE.Mesh(geometry, mat); sign.position.set(x, y, z); sign.rotation.y = rotationY; scene.add(sign);
     return mat;
   }
   const signMaterials: THREE.Material[] = [];
@@ -157,9 +158,10 @@ export function createOfficeScene(host: HTMLElement,
     }
     box(x, 3.06, -4.3, width - .3, .05, .12, accent);
   }
-  signMaterials.push(board("PRODUKSI & QC", -8.05, 2.32, -6.58, 4.4, "#23463f", "#f4efe0"));
-  signMaterials.push(board("RUANG PIMPINAN", .5, 2.32, -6.58, 3.6, "#54432a", "#ffe6ad"));
-  signMaterials.push(board("DISTRIBUSI & PEMULIHAN", 8.1, 2.32, -6.58, 5.2, "#234055", "#ecf4ff"));
+  // Room plaques live on the side walls, clear of the back-wall studio sign
+  // and of the existing director plaque. They face into their own room.
+  signMaterials.push(board("PRODUKSI & QC", -11.84, 2.42, -4.5, 3.4, "#23463f", "#f4efe0", Math.PI / 2));
+  signMaterials.push(board("DISTRIBUSI & PEMULIHAN", 11.74, 2.42, -4.5, 4.4, "#234055", "#ecf4ff", -Math.PI / 2));
   signMaterials.push(board("RYUUNDY / CREATIVE STUDIO", -8, 2.55, -6.86, 6));
   // Glass partitions; corridor-facing walls have a real 1.8m door opening.
   function glassX(x: number, z1: number, z2: number) {
