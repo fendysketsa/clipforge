@@ -28,8 +28,15 @@ export function Topbar({ isRefreshing = false, onRefresh, activePage = "workspac
   cronSchedule, isTogglingCron = false, onToggleCron }: TopbarProps) {
   const selected = activePage === "source-log" ? "source-log" : activeView;
   const [menuOpen, setMenuOpen] = useState(false);
+  const [now, setNow] = useState(Date.now);
   const menuButton = useRef<HTMLButtonElement>(null);
   const sidebar = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const clockText = new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(now));
   useEffect(() => {
     if (!menuOpen) return;
     const previousOverflow = document.body.style.overflow;
@@ -65,6 +72,7 @@ export function Topbar({ isRefreshing = false, onRefresh, activePage = "workspac
         <span>ClipForge<small>STUDIO</small></span>
       </a>
       <span className="studioTopbarContext">Workspace <ChevronRight size={13} /> <strong>{navigation.find(item => item.key === selected)?.label}</strong></span>
+      <span className="studioTopbarClock" suppressHydrationWarning aria-label={`Waktu Jakarta ${clockText}`}><i />{clockText}<small>WIB</small></span>
       <div className="studioTopbarActions">
         {onToggleCron ? <button type="button" className={`studioCronToggle${cronSchedule?.enabled ? " isOn" : ""}`}
           onClick={onToggleCron} disabled={isTogglingCron || !cronSchedule}

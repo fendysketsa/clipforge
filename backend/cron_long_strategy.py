@@ -75,6 +75,7 @@ SHORT_FIT_THEMES = frozenset({
     'humor_interlude', 'gaming_story', 'famous_game_reaction', 'quirky_animation',
     'reaction_clip_story', 'football_story', 'islamic_animation_kids',
     'islamic_animation_general', 'islamic_current_viral', 'muslim_family_lifestyle',
+    'game_story_competitive', 'podcast_kisah_hidup',
 })
 
 

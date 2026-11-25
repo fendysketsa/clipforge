@@ -32,6 +32,8 @@ CRON_THEME_PLAYLISTS = {
     "news_hot": "News",
     "film_story_lesson": "Cerita & Karakter",
     "measured_trend_lesson": "Topik Ramai",
+    "game_story_competitive": "Gaming",
+    "podcast_kisah_hidup": "Kisah & Refleksi",
 }
 
 

@@ -100,6 +100,32 @@ PROFILES = {
             "cerita moral anak dari alur film yang menginspirasi naskah baru",
         ],
     },
+    "game_story_competitive": {
+        "label": "Game Kompetitif: MLBB & Free Fire",
+        "tone": "energik, ringkas, dan berbasis momen nyata; utamakan keputusan, kerja tim, kegagalan, comeback, atau reaksi spontan; jangan menjanjikan menang atau memberi tutorial klaim",
+        "short_role": "ambil satu momen pertandingan dengan taruhan jelas, perubahan situasi, dan payoff yang tuntas; karakter dan naskah orisinal",
+        "long_role": "susun setup tim, keputusan, konsekuensi, reaksi, dan hasil akhir dari sumber yang sama; tiap bagian memberi informasi baru",
+        "duration_filter": "any",
+        "queries": [
+            "mobile legends indonesia cerita pertandingan comeback lucu",
+            "free fire indonesia cerita mabar teamwork plot twist",
+            "mlbb indonesia momen kalah menang obrolan pemain",
+            "free fire indonesia reaksi pemain cerita seru terbaru",
+            "game kompetitif indonesia cerita pemain singkat berkesan",
+        ],
+    },
+    "podcast_kisah_hidup": {
+        "label": "Podcast Kisah Hidup & Pilihan",
+        "tone": "hangat, reflektif, dan jujur; bedakan pengalaman narasumber, opini, dan fakta; labeli sebagai cerita, jangan mengarang kutipan atau klaim",
+        "short_role": "ambil satu pengalaman atau keputusan dengan makna yang jelas dan akhir yang tuntas, tanpa nama atau kutipan palsu",
+        "long_role": "rangkai konteks, keputusan, konsekuensi, perubahan, dan makna dari naskah orisinal; jangan menyalin dialog podcast pihak ketiga",
+        "duration_filter": "any",
+        "queries": [
+            "podcast kisah hidup indonesia obrolan jujur pilihan",
+            "cerita kehidupan indonesia pengalaman kerja pertama dan pelajaran",
+            "podcast indonesia dialog Refleksi kebiasaan baik sehari hari",
+        ],
+    },
     "measured_trend_lesson": {
         "label": "Topik Ramai Terukur",
         "tone": "berbasis sinyal publik yang benar-benar teramati; jelaskan konteks dan makna, jangan mengklaim FYP, jaminan viral, atau angka yang tidak diukur",
@@ -124,6 +150,8 @@ SIGNALS = {
     "food_taste_review": {"kuliner", "makanan", "masakan", "warung", "restoran", "rasa", "tekstur", "jajanan"},
     "film_story_lesson": {"alur cerita film", "recap film", "ringkasan film", "cerita film", "tokoh film", "ending film", "plot twist", "konflik tokoh"},
     "measured_trend_lesson": {"sedang ramai", "tren", "viral", "topik hangat", "ramai dibicarakan", "perbincangan", "fyp", "trending"},
+    "game_story_competitive": {"mobile legends", "mlbb", "free fire", "game kompetitif", "ranked", "push rank"},
+    "podcast_kisah_hidup": {"podcast", "kisah hidup", "pengalaman", "obrolan", "narasumber", "refleksi", "cerita hidup"},
 }
 
 FILM_STORY_EDITOR_BRIEF = (
@@ -147,6 +175,8 @@ HASHTAGS = {
     "food_taste_review": ["ReviewKuliner", "KulinerNusantara", "CeritaMakanan"],
     "film_story_lesson": ["CeritaTokoh", "AlurPilihan", "KisahOrisinal"],
     "measured_trend_lesson": ["TopikRamai", "KonteksTerukur", "BukanJaminanViral"],
+    "game_story_competitive": ["CeritaGame", "MLBB", "FreeFire", "ComebackTim"],
+    "podcast_kisah_hidup": ["KisahHidup", "ObrolanJujur", "PilihanHidup"],
 }
 
 

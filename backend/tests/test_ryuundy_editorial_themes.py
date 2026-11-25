@@ -23,6 +23,8 @@ TITLES = {
     "food_taste_review": "Review kuliner Indonesia rasa tekstur porsi dan harga makanan",
     "film_story_lesson": "Alur cerita film pilihan tokoh, konflik keluarga, akibat, dan akhir yang tuntas",
     "measured_trend_lesson": "Topik sedang ramai dibicarakan orang Indonesia minggu ini dan penjelasan konteksnya",
+    "game_story_competitive": "Mobile legends dan free fire cerita mabar comeback tim indonesia",
+    "podcast_kisah_hidup": "Podcast kisah hidup indonesia obrolan jujur tentang pilihan dan pengalaman",
 }
 
 
