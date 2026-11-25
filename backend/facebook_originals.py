@@ -691,7 +691,7 @@ def audit(media: Path,job_id: str,clip_url: str,*,reviewer=None,repair_attempted
             sound_design=design,
             education=plan.get('education'),
             story=plan.get('story'),
-            originality_scope='Original topic story cards, vector icons and synthetic narration.' if plan.get('story') else
+            originality_scope='Original character-led cartoon story, vector cast and synthetic narration.' if plan.get('story') else
                 'Original educational cartoon, vector characters and synthetic narration.' if plan.get('education') else
                 'Original script and animated demonstration; labelled simulation with synthetic narration.')
         phase='provider'

@@ -304,44 +304,17 @@ export function createStoryRenderer(ctx, data) {
     const model=data.frames[index];
     const pal=PALETTE[model.style]||PALETTE.dulu_sekarang;
     ctx.globalAlpha=1;
-    if(model.scene&&model.scene!=='cards'&&model.scene!=='steps'){
-      personScene(model,t,pal);
-      const tense=model.scene==='drink_choking'&&model.phase>=2&&model.phase<3;
-      text('RYUUNDY  /  CERITA MORAL',85,95,880,23,tense?'#ffd9a0':pal.accent,true,1);
-      text(data.title,85,150,900,52,tense?'#fff3d8':pal.ink,true,3);
-      const cue=data.captionCues.find(c=>c.start<=t&&t<c.end);
-      if(cue){ctx.font=font(data.captionFontSize,true);ctx.textAlign='center';ctx.textBaseline='top';ctx.fillStyle=pal.ink;
-        cue.text.split('\n').forEach((v,i)=>ctx.fillText(v,540,1435+i*69));}
-      ['KENALI','LIHAT','PERBAIKI','SIMPULKAN'].forEach((label,i)=>{
-        const active=model.phase===i,x=90+i*250;rect(x,1668,210,7,3,active?pal.accent:'#D8D3C4');text(label,x,1698,220,19,active?pal.accent:MUTED,active,1);});
-      return;
-    }
-    background(pal);
-    text('RYUUNDY  /  CERITA SEHARI-HARI',85,95,880,23,pal.accent,true,1);
-    const titleRows=text(data.title,85,150,900,58,pal.ink,true,3);
-    const chipY=150+titleRows*70+16;
-    rect(85,chipY,910,54,27,pal.soft);
-    text('TOPIK  ·  '+model.topic_text,110,chipY+13,860,23,pal.accent,true,1);
-    if(model.layout==='steps'){
-      model.panels.forEach((panel,i)=>panelCard(panel,90,chipY+120+i*205,900,178,pal,true));
-    }else{
-      model.panels.forEach((panel,i)=>panelCard(panel,60+i*490,chipY+120,460,620,pal,false));
-    }
-    if(model.complete){
-      circle(112,1330,25,pal.accent);
-      path([[123,1330],[133,1341],[151,1318]],'#fff',5);
-      text('Ini cerita ringan, bukan patokan mutlak.',156,1312,640,27,pal.accent,true,2);
-    }
+    // A topic Reel is always a cartoon scene. Unknown/legacy card layouts are
+    // normalised to a safe everyday scene instead of falling back to text cards.
+    if(!model.scene||model.scene==='cards'||model.scene==='steps')model.scene='everyday';
+    personScene(model,t,pal);
+    const tense=model.scene==='drink_choking'&&model.phase>=2&&model.phase<3;
+    text('RYUUNDY  /  CERITA MORAL',85,95,880,23,tense?'#ffd9a0':pal.accent,true,1);
+    text(data.title,85,150,900,52,tense?'#fff3d8':pal.ink,true,3);
     const cue=data.captionCues.find(c=>c.start<=t&&t<c.end);
-    if(cue){
-      ctx.font=font(data.captionFontSize,true);ctx.textBaseline='top';ctx.textAlign='center';ctx.fillStyle=pal.ink;
-      cue.text.split('\n').forEach((v,i)=>ctx.fillText(v,540,1435+i*69));
-    }
-    const labels=model.layout==='steps'?['KENALI','LAKUKAN','PERIKSA']:['KENALI','BANDINGKAN','SIMPULKAN'];
-    labels.forEach((label,i)=>{
-      const active=model.phase===i||(model.complete&&i===2),x=100+i*300;
-      rect(x,1668,245,7,3,active?pal.accent:'#D8D3C4');
-      text(label,x,1698,250,21,active?pal.accent:MUTED,active,1);
-    });
+    if(cue){ctx.font=font(data.captionFontSize,true);ctx.textAlign='center';ctx.textBaseline='top';ctx.fillStyle=pal.ink;
+      cue.text.split('\n').forEach((v,i)=>ctx.fillText(v,540,1435+i*69));}
+    ['KENALI','LIHAT','PERBAIKI','SIMPULKAN'].forEach((label,i)=>{
+      const active=model.phase===i,x=90+i*250;rect(x,1668,210,7,3,active?pal.accent:'#D8D3C4');text(label,x,1698,220,19,active?pal.accent:MUTED,active,1);});
   };
 }

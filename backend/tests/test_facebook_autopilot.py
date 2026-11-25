@@ -406,7 +406,12 @@ def test_requested_education_series_reaches_owned_worker_without_replacing_qc_or
     assert saved['authored_plan']['education']['original_characters']
     assert saved['status']=='qc_wait' and not queued
     assert not api.jobs[record['job_id']].clips[0].is_correct
-    assert store.data['autopilot'].get('series','digital')=='digital'
+    assert store.data['autopilot'].get('series','topik')=='topik'
+
+
+def test_new_studios_default_to_character_led_topic_series():
+    assert policy.config({})['series']==originals.stories.SERIES_KEY
+    assert policy.config({'series':'topik'})['series']=='topik'
 
 
 def test_saved_series_is_used_for_a_new_request_and_cross_series_topics_are_rejected(runner):

@@ -90,7 +90,17 @@ class Runner:
                 if custom_topic is not None:
                     custom_topic=stories.normalize_topic(custom_topic)
                     series=stories.SERIES_KEY
-                series=series or policy.config(data.data.get('autopilot'))['series']
+                if series is None:
+                    saved_policy=data.data.get('autopilot') or {}
+                    configured=policy.config(saved_policy)['series']
+                    # A request naming a legacy fixture topic keeps its own bank
+                    # only when the operator never chose a series explicitly.
+                    # An explicit series still rejects cross-series topics.
+                    series=configured
+                    if (topic is not None and configured == stories.SERIES_KEY
+                            and topic not in originals.topic_keys(configured)
+                            and topic in originals.topic_keys('digital')):
+                        series='digital'
                 available=originals.topic_keys(series)
                 seed=key
                 if series==stories.SERIES_KEY:

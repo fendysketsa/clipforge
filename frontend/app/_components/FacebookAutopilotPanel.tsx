@@ -34,7 +34,7 @@ export function FacebookAutopilotPanel() {
     setBusy(true);
     try {
       await facebookRequest('facebook/originals',{request_id:crypto.randomUUID().replaceAll('-',''),
-        series:series||data?.config.series||'digital',topic:topic||null});
+        series:series||data?.config.series||'topik',topic:topic||null});
       toast.success('Reel animasi baru dimulai. QC tetap wajib sebelum tayang.');
       await load();
     } catch(reason){toast.error(reason instanceof Error?reason.message:'Produksi belum dimulai.');}
@@ -57,12 +57,12 @@ export function FacebookAutopilotPanel() {
     if(!data)return;setBusy(true);
     try{
       setData(await facebookRequest<FacebookAutopilot>('facebook/autopilot',{
-        enabled:data.config.enabled,series:series||data.config.series||'digital'}));
+        enabled:data.config.enabled,series:series||data.config.series||'topik'}));
       toast.success('Tema untuk produksi terjadwal disimpan.');
     }catch(reason){toast.error(reason instanceof Error?reason.message:'Tema belum tersimpan.');}
     finally{setBusy(false);}
   };
-  const selectedSeries=series||data?.config.series||'digital';
+  const selectedSeries=series||data?.config.series||'topik';
   const catalogue=data?.series_catalog||[];
   const selected=catalogue.find(item=>item.key===selectedSeries);
   const bank=data?.topic_bank||[];
@@ -80,10 +80,10 @@ export function FacebookAutopilotPanel() {
     </header>
     <div className="fbSeriesPicker">
       <div className="fbFormPair"><label>Tema animasi<select aria-label="Tema animasi" value={selectedSeries} disabled={busy||!catalogue.length} onChange={event=>{setSeries(event.target.value);setTopic('');}}>
-        {catalogue.length?catalogue.map(item=><option key={item.key} value={item.key}>{item.label}</option>):<option value="digital">Memuat pilihan tema…</option>}</select></label>
+        {catalogue.length?catalogue.map(item=><option key={item.key} value={item.key}>{item.label}</option>):<option value="topik">Memuat pilihan tema…</option>}</select></label>
         <label>Topik video<select aria-label="Topik video" value={topic} disabled={busy||!selected} onChange={event=>setTopic(event.target.value)}><option value="">Pilih otomatis</option>{selected?.topics.map(item=><option value={item.key} key={item.key}>{item.title}</option>)}</select></label></div>
       {selected?<p>{selected.description} <span>{selected.audience}.</span></p>:null}
-      <button type="button" className="uiButton" disabled={busy||!data||!selected||selectedSeries===(data.config.series||'digital')} onClick={()=>void saveSeries()}>Gunakan tema untuk jadwal</button>
+      <button type="button" className="uiButton" disabled={busy||!data||!selected||selectedSeries===(data.config.series||'topik')} onClick={()=>void saveSeries()}>Gunakan tema untuk jadwal</button>
     </div>
     <div className="fbTopicComposer">
       <header><span className="fbTopicIcon"><PenLine size={16}/></span><div><strong>Topik bebas</strong><small>Ketik topik apa saja. Gaya cerita dipilih otomatis supaya hasil tidak monoton.</small></div></header>
@@ -117,6 +117,6 @@ export function FacebookAutopilotPanel() {
         <small>Terakhir dipantau: {date(data?.heartbeat)}</small>
       </div>
     </div>
-    <footer className="fbAutoSchedule"><Clock3 size={15}/><span>{data ? `${data.config.weekly_posts} Reel · ${data.config.weekly_stories} Cerita per minggu` : 'Memuat jadwal…'}</span><span>{catalogue.find(item=>item.key===(data?.config.series||'digital'))?.label} · WIB</span></footer>
+    <footer className="fbAutoSchedule"><Clock3 size={15}/><span>{data ? `${data.config.weekly_posts} Reel · ${data.config.weekly_stories} Cerita per minggu` : 'Memuat jadwal…'}</span><span>{catalogue.find(item=>item.key===(data?.config.series||'topik'))?.label} · WIB</span></footer>
   </section>;
 }

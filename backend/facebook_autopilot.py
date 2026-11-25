@@ -21,7 +21,9 @@ def config(saved=None):
     saved=saved or {}
     if not isinstance(saved,dict) or type(saved.get('enabled',True)) is not bool:
         raise ValueError('Pengaturan otomasi Facebook tidak valid; publikasi ditahan.')
-    series=saved.get('series','digital')
+    # New studios start with the character-led topic renderer, not the legacy
+    # file/folder board. An operator's persisted choice still wins.
+    series=saved.get('series',stories.SERIES_KEY)
     if not isinstance(series,str) or series not in set(SERIES)|{stories.SERIES_KEY}:
         raise ValueError('Seri otomasi Facebook tidak valid; publikasi ditahan.')
     return {**DEFAULTS, 'enabled':saved.get('enabled',True), 'series':series, 'version':VERSION}
