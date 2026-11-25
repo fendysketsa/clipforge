@@ -2371,7 +2371,7 @@ def test_auto_viral_missing_checkpoint_is_not_resumable(monkeypatch):
     assert api.auto_viral_run_can_resume_upload(run) is False
 
 
-def test_scheduled_upload_daily_limit_is_hard_capped_at_twenty_five_wib(monkeypatch):
+def test_scheduled_upload_daily_limit_is_hard_capped_at_thirty_five_wib(monkeypatch):
     import api
     from types import SimpleNamespace
 
@@ -2385,7 +2385,7 @@ def test_scheduled_upload_daily_limit_is_hard_capped_at_twenty_five_wib(monkeypa
         request=AutoViralRequest(video_count=20, auto_upload_youtube=True),
         processed=[
             {"job_id": f"cron-job-{index}", "job_status": "completed"}
-            for index in range(1, 26)
+            for index in range(1, 36)
         ],
     )
     uploads = {
@@ -2400,13 +2400,13 @@ def test_scheduled_upload_daily_limit_is_hard_capped_at_twenty_five_wib(monkeypa
             updated_at=now.isoformat(),
             created_at=now.isoformat(),
         )
-        for index in range(1, 26)
+        for index in range(1, 36)
     }
     monkeypatch.setenv("AUTO_VIRAL_DAILY_UPLOAD_LIMIT", "99")
     monkeypatch.setattr(api, "auto_viral_runs", {run.id: run})
     monkeypatch.setattr(api, "youtube_uploads", uploads)
 
-    assert api.auto_viral_daily_upload_limit() == 25
+    assert api.auto_viral_daily_upload_limit() == 35
     assert api.auto_viral_daily_upload_slots("youtube", now) == 0
     with pytest.raises(api.AutoViralDailyUploadLimitReached) as caught:
         api.require_auto_viral_daily_upload_slot("youtube", now)
