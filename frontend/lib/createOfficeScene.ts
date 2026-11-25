@@ -172,7 +172,7 @@ export function createOfficeScene(host: HTMLElement,
     box(0, .1, 0, .74, .08, .08, "#485451", group); box(0, .1, 0, .08, .08, .74, "#485451", group);
   }
   for (const z of [1, 2.4]) {
-    chair(-11.2, z, -Math.PI / 2); chair(-4.8, z, Math.PI / 2);
+    chair(-11.2, z, Math.PI / 2); chair(-4.8, z, Math.PI / 2);
   }
   chair(-8, .1, Math.PI); chair(-8, 3.9, 0);
   box(-11.84, 2.1, 1.9, .07, 1.7, 3.1, "#faf9f1");
@@ -394,7 +394,8 @@ export function createOfficeScene(host: HTMLElement,
         const desired = target.activity === "chat" ? Math.atan2(partner.x - person.point.x, partner.z - person.point.z)
           : target.activity === "desk" ? (profile.desk.z > 0 ? 0 : Math.PI)
             : target.activity === "reading" || target.activity === "sofa" ? Math.PI
-              : target.activity === "meeting" || target.activity === "briefing" ? Math.atan2(-8 - person.point.x, 2 - person.point.z) : 0;
+              : target.activity === "meeting" ? -Math.PI / 2
+                : target.activity === "briefing" ? Math.atan2(-8 - person.point.x, 2 - person.point.z) : 0;
         let turn = desired - person.rotation;
         turn = Math.atan2(Math.sin(turn), Math.cos(turn));
         person.rotation += turn * Math.min(1, delta * 5);
