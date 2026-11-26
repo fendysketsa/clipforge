@@ -119,6 +119,16 @@ def test_only_idle_authorized_cron_artifacts_are_removed(output, monkeypatch, gu
             api.youtube_upload_creation_lock.release()
 
 
+def test_unverified_cron_accent_clip_is_quarantined(output):
+    job, media, _ = output
+    job.request.scheduled_director_effects = True
+    assert api.quarantine_unverified_cron_accents_once() == 1
+    assert not media.exists()
+    receipts = list((api.long_production_path().parent / 'cron_accent_quarantine').glob('*.json'))
+    assert receipts
+    assert api.quarantine_unverified_cron_accents_once() == 0
+
+
 def test_sibling_output_and_shared_workspace_survive(output):
     job, media, _ = output
     sibling = media.with_name("other.mp4")

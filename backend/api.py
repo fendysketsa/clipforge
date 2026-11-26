@@ -11969,6 +11969,7 @@ def schedule_confirmed_upload_cleanup_backfill() -> int:
 def startup_confirmed_upload_cleanup_backfill() -> None:
     try:
         schedule_confirmed_upload_cleanup_backfill()
+        quarantine_unverified_cron_accents_once()
     except Exception as exc:
         print(f"Confirmed-upload cleanup backfill skipped: {exc}", flush=True)
 
@@ -21842,6 +21843,57 @@ def cleanup_terminal_cron_outputs_once() -> int:
     return removed
 
 
+def quarantine_unverified_cron_accents_once() -> int:
+    """Discard cron clips whose mandatory accent audit never got recorded.
+
+    An interrupted render can leave an MP4 without a sidecar. Keeping that clip
+    blocks every later upload attempt with a permanent accent-verification hold.
+    Only idle, completed cron clips with no active upload/repair are removed.
+    """
+    removed = 0
+    with jobs_lock:
+        snapshot = list(jobs.values())
+    for job in snapshot:
+        if job.status != "completed" or not job.request.scheduled_director_effects:
+            continue
+        for clip in list(job.clips or []):
+            accents = (clip_sidecar_payload(clip) or {}).get('cron_director_effects')
+            if (isinstance(accents, dict) and accents.get('rendered') is True
+                    and isinstance(accents.get('cue_count'), int) and accents['cue_count'] >= 1
+                    and accents.get('verification') == 'duration_frame_count_and_geometry_preserved'):
+                continue
+            with process_lock:
+                if job.id in job_processes:
+                    continue
+            with youtube_uploads_lock:
+                if any(u.source_job_id == job.id and u.clip_url == clip.url
+                       and u.status in {'queued', 'running'} and not u.dry_run
+                       for u in youtube_uploads.values()):
+                    continue
+            with tiktok_uploads_lock:
+                if any(u.source_job_id == job.id and u.clip_url == clip.url
+                       and u.status in {'queued', 'running'} and not u.dry_run
+                       for u in tiktok_uploads.values()):
+                    continue
+            with jobs_lock:
+                if any(child.repair_source_job_id == job.id and child.repair_source_clip_url == clip.url
+                       and child.status in {'queued', 'running'} for child in jobs.values()):
+                    continue
+            try:
+                result = delete_job_clips_by_url(job.id, {clip.url})
+            except Exception:
+                continue
+            if not result.removed_clips:
+                continue
+            digest = hashlib.sha256(clip.url.encode('utf-8')).hexdigest()[:12]
+            receipt = long_production_path().parent / 'cron_accent_quarantine' / f'{job.id}_{digest}.json'
+            save_long_qc(receipt, dict(version=1, job_id=job.id, clip_url=clip.url,
+                reason='cron_accents_unverified_no_sidecar', removed_clips=result.removed_clips,
+                quarantined_at=now_iso()))
+            removed += result.removed_clips
+    return removed
+
+
 def run_long_qc(job_id: str, clip_url: str) -> None:
     """Review one exact artifact and enqueue only Private, without human-signoff spoofing."""
     key = job_id + "\n" + clip_url
@@ -27095,6 +27147,7 @@ def auto_viral_scheduler_loop() -> None:
                 reconcile_interrupted_scheduled_clip_runs()
                 try:
                     cleanup_terminal_cron_outputs_once()
+                    quarantine_unverified_cron_accents_once()
                     queue_review_long_qc_once()
                     long_result = queue_review_long_once()
                     with auto_viral_scheduler_lock:
