@@ -50,6 +50,7 @@ class QuranOutroQuote:
     source: str
     keywords: tuple[str, ...] = ()
     source_url: str = ""
+    fallback: bool = False
 
 
 # Do not populate this catalogue with model-generated wording. Every entry must
@@ -61,18 +62,21 @@ QURAN_OUTRO_QUOTES: tuple[QuranOutroQuote, ...] = (
         "QS. Al-Baqarah [2]: 286",
         ("beban", "berat", "sanggup", "ujian", "masalah", "kesulitan"),
         source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/2?from=286&to=286",
+        fallback=True,
     ),
     QuranOutroQuote(
         "Sesungguhnya beserta kesulitan ada kemudahan.",
         "QS. Al-Insyirah [94]: 5",
         ("sulit", "kesulitan", "mudah", "kemudahan", "ujian", "sabar"),
         source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/94?from=5&to=5",
+        fallback=True,
     ),
     QuranOutroQuote(
         "Ingatlah, bahwa hanya dengan mengingat Allah hati akan selalu tenteram.",
         "QS. Ar-Ra'd [13]: 28",
-        ("hati", "tenang", "tenteram", "zikir", "dzikir", "cemas", "gelisah"),
+        ("hati", "tenang", "tenteram", "zikir", "dzikir", "cemas", "gelisah", "ingat allah"),
         source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/13?from=28&to=28",
+        fallback=True,
     ),
     QuranOutroQuote(
         "Janganlah kamu berputus asa dari rahmat Allah.",
@@ -97,26 +101,91 @@ QURAN_OUTRO_QUOTES: tuple[QuranOutroQuote, ...] = (
         "QS. Al-Hujurat [49]: 13",
         ("mulia", "takwa", "suku", "bangsa", "manusia", "derajat"),
         source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/49?from=13&to=13",
+        fallback=True,
     ),
     QuranOutroQuote(
         "Hendaklah berbuat baik kepada ibu bapak.",
         "QS. Al-Isra' [17]: 23",
-        ("ibu", "bapak", "ayah", "orang tua", "berbakti", "keluarga"),
+        ("ibu", "bapak", "ayah", "orang tua", "berbakti"),
         source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/17?from=23&to=23",
+    ),
+    QuranOutroQuote(
+        "Sesungguhnya Allah menyuruh (kamu) berlaku adil dan berbuat kebajikan.",
+        "QS. An-Nahl [16]: 90",
+        ("adil", "kebajikan", "berbuat baik", "keji", "kemungkaran", "permusuhan", "akhlak"),
+        source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/16?from=90&to=90",
+    ),
+    QuranOutroQuote(
+        "Barang siapa berbuat kebaikan mendapat balasan sepuluh kali lipat amalnya.",
+        "QS. Al-An'am [6]: 160",
+        ("pahala", "balasan", "amal", "kebaikan", "kejahatan", "berbuat baik"),
+        source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/6?from=160&to=160",
+        fallback=True,
+    ),
+    QuranOutroQuote(
+        "Sesungguhnya orang-orang mukmin itu bersaudara, karena itu damaikanlah antara kedua saudaramu (yang berselisih) dan bertakwalah kepada Allah agar kamu mendapat rahmat.",
+        "QS. Al-Hujurat [49]: 10",
+        ("saudara", "ukhuwah", "damaikan", "perselisihan", "bertemu", "kerukunan"),
+        source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/49?from=10&to=10",
+    ),
+    QuranOutroQuote(
+        "Dan sungguh, kelak Tuhanmu pasti memberikan karunia-Nya kepadamu, sehingga engkau menjadi puas.",
+        "QS. Adh-Dhuha [93]: 5",
+        ("rezeki", "karunia", "cukup", "puas", "berkah", "nikmat"),
+        source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/93?from=5&to=5",
+    ),
+    QuranOutroQuote(
+        "Maka laksanakanlah salat karena Tuhanmu, dan berkurbanlah",
+        "QS. Al-Kautsar [108]: 2",
+        ("salat", "sholat", "sembahyang", "kurban", "qurban", "ibadah"),
+        source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/108?from=2&to=2",
+    ),
+    QuranOutroQuote(
+        "Dan mohonlah pertolongan (kepada Allah) dengan sabar dan salat.",
+        "QS. Al-Baqarah [2]: 45",
+        ("sabar", "pertolongan", "khusyuk", "salat", "sholat"),
+        source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/2?from=45&to=45",
+    ),
+    QuranOutroQuote(
+        "Wahai anakku! Laksanakanlah salat dan suruhlah (manusia) berbuat yang makruf dan cegahlah (mereka) dari yang mungkar",
+        "QS. Luqman [31]: 17",
+        ("anak", "didik", "makruf", "mungkar", "nasihat", "pendidikan"),
+        source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/31?from=17&to=17",
+    ),
+    QuranOutroQuote(
+        "Maka barangsiapa mengerjakan kebaikan seberat zarah, niscaya dia akan melihat (balasan)nya.",
+        "QS. Az-Zalzalah [99]: 7",
+        ("amal", "kebaikan", "balasan", "kecil", "zarah", "mengamalkan"),
+        source_url="https://quran.kemenag.go.id/quran/per-ayat/surah/99?from=7&to=7",
+        fallback=True,
     ),
 )
 
 
-def select_quran_outro_quote(value: str, seed: str = "") -> QuranOutroQuote:
-    """Select a relevant quote deterministically without asking AI to invent one."""
+def select_quran_outro_quote(value: str, seed: str = "", context: str = "") -> QuranOutroQuote:
+    """Pick the most source-grounded quote, never invent wording or a reference.
+
+    Direct transcript matches outweigh theme hints; an unmatched clip only draws
+    from broadly applicable fallback verses, so a generic clip cannot end on an
+    unrelated specific ruling such as the parent-care verse.
+    """
     normalized = re.sub(r"\s+", " ", value).casefold().strip()
-    relevant = tuple(
-        quote
-        for quote in QURAN_OUTRO_QUOTES
-        if any(keyword in normalized for keyword in quote.keywords)
-    )
-    pool = relevant or QURAN_OUTRO_QUOTES
-    digest = hashlib.sha256(f"{seed}\n{normalized}".encode("utf-8")).digest()
+    hinted = re.sub(r"\s+", " ", context).casefold().strip()
+    scored = []
+    for quote in QURAN_OUTRO_QUOTES:
+        direct = [keyword for keyword in quote.keywords if keyword in normalized]
+        hinted_only = [keyword for keyword in quote.keywords if keyword in hinted]
+        if not direct and not hinted_only:
+            continue
+        hits = len(direct) * 3 + len(hinted_only)
+        specificity = max((len(keyword) for keyword in direct + hinted_only), default=0)
+        scored.append((hits, specificity, quote))
+    if scored:
+        best = max((row[0], row[1]) for row in scored)
+        pool = [row[2] for row in scored if (row[0], row[1]) == best]
+    else:
+        pool = [quote for quote in QURAN_OUTRO_QUOTES if quote.fallback]
+    digest = hashlib.sha256(f"{seed}\n{normalized}\n{hinted}".encode("utf-8")).digest()
     return pool[int.from_bytes(digest[:8], "big") % len(pool)]
 
 

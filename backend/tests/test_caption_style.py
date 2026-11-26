@@ -4816,6 +4816,28 @@ def test_quran_outro_selects_parent_verse_for_mother_topic():
     assert quote.source_url.startswith("https://quran.kemenag.go.id/")
 
 
+def test_quran_outro_follows_topic_instead_of_default_parent_verse():
+    sabar = select_quran_outro_quote(
+        "Kajian: memohon pertolongan dengan sabar dan salat.", seed="cron-islam-1")
+    assert sabar.source == "QS. Al-Baqarah [2]: 45"
+
+    adil = select_quran_outro_quote(
+        "Nasihat: berlaku adil dan berbuat kebajikan.", seed="cron-islam-2")
+    assert adil.source == "QS. An-Nahl [16]: 90"
+
+    ukhuwah = select_quran_outro_quote(
+        "Orang beriman itu bersaudara, damaikan perselisihan.", seed="cron-islam-3")
+    assert ukhuwah.source == "QS. Al-Hujurat [49]: 10"
+
+
+def test_quran_outro_generic_clip_never_lands_on_unrelated_specific_verse():
+    generic = select_quran_outro_quote("Kumpulan kisah sehari-hari di lingkungan rumah", seed="clip-7")
+    assert generic.source != "QS. Al-Isra' [17]: 23"
+    assert generic in [row for row in QURAN_OUTRO_QUOTES if row.fallback]
+    assert all(":" in row.source and "[" in row.source for row in QURAN_OUTRO_QUOTES)
+    assert all(row.source_url.startswith("https://quran.kemenag.go.id/") for row in QURAN_OUTRO_QUOTES)
+
+
 def test_quran_outro_selection_is_stable_and_always_has_reference():
     first = select_quran_outro_quote("Nasihat umum untuk kehidupan", seed="clip-7")
     second = select_quran_outro_quote("Nasihat umum untuk kehidupan", seed="clip-7")

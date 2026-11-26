@@ -17365,6 +17365,11 @@ def export_clip(
                 if value
             ),
             seed=f"{clip.index}|{clip.start:.3f}|{clip.end:.3f}",
+            context=" ".join(
+                str(theme_profile.get(key) or "")
+                for key in ("label", "tone", "short_role")
+                if theme_profile.get(key)
+            ),
         )
         if quran_outro_enabled
         else None
