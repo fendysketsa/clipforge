@@ -21,6 +21,24 @@ def test_long_render_does_not_delay_short_wait(monkeypatch, mode):
     api.wait_for_no_active_clipping_job(timeout_seconds=1)
 
 
+@pytest.mark.parametrize("active_mode,incoming_mode,blocked", [
+    ("highlight_5m", "short", False),
+    ("long_animate", "short", False),
+    ("short", "short", True),
+    ("highlight_5m", "highlight_5m", True),
+])
+def test_queue_guard_separates_long_from_short(monkeypatch, active_mode, incoming_mode, blocked):
+    monkeypatch.setattr(api, "jobs", {"active": _job(active_mode)})
+    monkeypatch.setattr(api, "cron_source_process_limit_reached", lambda _url: False)
+    monkeypatch.setattr(api, "save_jobs_unlocked", lambda: None)
+    request = api.ClipJobRequest(clip_mode=incoming_mode, url="https://youtube.com/watch?v=abcdefghijk")
+    if blocked:
+        with pytest.raises(RuntimeError, match="clipping lain"):
+            api.queue_auto_viral_clip_job(request)
+    else:
+        assert api.queue_auto_viral_clip_job(request).id
+
+
 def test_active_short_job_still_blocks(monkeypatch):
     monkeypatch.setattr(api, "jobs", {"short": _job("short")})
     monkeypatch.setattr(api.time, "sleep", lambda _seconds: None)

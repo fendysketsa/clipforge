@@ -21538,8 +21538,15 @@ def queue_auto_viral_clip_job(job_request: ClipJobRequest, *, source_recovery_pa
         updated_at=now_iso(),
         source_recovery_parent_job_id=source_recovery_parent_job_id,
     )
+    long_modes = {"highlight_5m", "long_animate"}
+    incoming_long = job_request.clip_mode in long_modes
     with jobs_lock:
-        if any(item.status in {"queued", "running"} for item in jobs.values()):
+        # A running Long compilation is a separate lane: it must not block a
+        # Short from entering the clipping queue. Incoming Long jobs still wait
+        # for every active job so two renders never compete.
+        if any(item.status in {"queued", "running"}
+               and (incoming_long or item.request.clip_mode not in long_modes)
+               for item in jobs.values()):
             job_secrets.pop(job_id, None)
             raise RuntimeError("Proses clipping lain baru saja dimulai")
         jobs[job_id] = job
