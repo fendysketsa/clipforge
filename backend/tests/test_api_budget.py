@@ -6340,7 +6340,7 @@ def test_adaptive_search_relaxes_week_filter_only_to_bounded_freshness(monkeypat
     assert viral_search_filter_relaxation_reasons(recent_enough, request) == [
         "tanggal unggah di luar 7 hari terakhir"
     ]
-    assert "melewati batas adaptif 90 hari" in viral_search_hard_filter_rejection_reason(
+    assert "melewati batas adaptif 180 hari" in viral_search_hard_filter_rejection_reason(
         far_too_old, request
     )
 

@@ -17517,6 +17517,14 @@ def viral_search_hard_filter_rejection_reason(
         request.max_age_days,
         env_int("VIRAL_CC_FALLBACK_MAX_AGE_DAYS", 90),
     )
+    # Evergreen themes may legitimately use older reference material. The
+    # current-viral and News Hot lanes keep their strict freshness windows.
+    if (getattr(request, "cron_theme_key", "") != NEWS_HOT_THEME
+            and not getattr(request, "cron_trend_lane", False)):
+        adaptive_max_age_days = max(
+            adaptive_max_age_days,
+            env_int("VIRAL_CC_EVERGREEN_MAX_AGE_DAYS", 180),
+        )
     adaptive_max_age_days = min(MAX_VIRAL_FALLBACK_AGE_DAYS, adaptive_max_age_days)
     if age_days is not None and age_days > adaptive_max_age_days:
         return (
@@ -21196,14 +21204,25 @@ def search_viral_video_sources(request: ViralVideoSearchRequest) -> list[dict[st
 
 
 def wait_for_no_active_clipping_job(timeout_seconds: int = 3600) -> None:
+    """Wait for Short work only; Long compilation runs on its own lane.
+
+    A 5–10 minute Long render can take hours. It must not hold the Short
+    discovery/upload run hostage or force an interruption right before the
+    Short queue is processed.
+    """
     deadline = time.time() + timeout_seconds
+    long_modes = {"highlight_5m", "long_animate"}
     while time.time() < deadline:
         with jobs_lock:
-            has_active = any(job.status in {"queued", "running"} for job in jobs.values())
+            has_active = any(
+                job.status in {"queued", "running"}
+                and job.request.clip_mode not in long_modes
+                for job in jobs.values()
+            )
         if not has_active:
             return
         time.sleep(3)
-    raise RuntimeError("Masih ada job clipping aktif terlalu lama")
+    raise RuntimeError("Masih ada job clipping Short aktif terlalu lama")
 
 
 def auto_viral_format_perspective(
