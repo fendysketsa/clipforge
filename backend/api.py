@@ -1414,6 +1414,10 @@ class TikTokRemoteVerifyRequest(BaseModel):
     video_url: str
 
 
+class YouTubePublicVerifyRequest(BaseModel):
+    confirm: bool = False
+
+
 class TikTokBatchUploadRequest(BaseModel):
     clip_urls: list[str] = Field(default_factory=list)
     visibility: Literal["only_you", "public"] = Field(
@@ -11939,6 +11943,34 @@ def schedule_completed_upload_cleanup(upload_id: str) -> None:
                 youtube_cleanup_scheduled.discard(upload_id)
 
     threading.Thread(target=cleanup_worker, daemon=True).start()
+
+
+def schedule_confirmed_upload_cleanup_backfill() -> int:
+    """Clean local clips of already-confirmed uploads, manual or cron, scheduled or not.
+
+    Older records can be confirmed remotely without a ``clip_delete_after``
+    marker, which makes their cleanup worker exit immediately. Re-arming those
+    records keeps the policy: once the platform owns the video, local media is
+    disposable. Receipts, upload history and remote posts are untouched.
+    """
+    with youtube_uploads_lock:
+        pending = [upload for upload in youtube_uploads.values()
+                   if upload.status == "completed" and upload.upload_confirmed
+                   and upload.video_url and not upload.dry_run
+                   and not upload.clip_deleted_at and not upload.clip_delete_after]
+    for upload in pending:
+        set_youtube_upload(upload.id, clip_delete_after=completed_upload_cleanup_after(
+            upload.finished_at or upload.updated_at or now_iso()))
+        schedule_completed_upload_cleanup(upload.id)
+    return len(pending)
+
+
+@app.on_event("startup")
+def startup_confirmed_upload_cleanup_backfill() -> None:
+    try:
+        schedule_confirmed_upload_cleanup_backfill()
+    except Exception as exc:
+        print(f"Confirmed-upload cleanup backfill skipped: {exc}", flush=True)
 
 
 def complete_youtube_upload_as_duplicate(
@@ -24199,6 +24231,8 @@ def discover_auto_viral_campaign_sources(
             "YouTube Data API tidak diwajibkan/tersedia; memakai fallback yt-dlp terverifikasi.",
         )
 
+    fallback_request = request
+    fallback_queries = list(request.queries)
     if len(sources) < source_pool_target and not (
         fast_api_only and api_attempted and not quota_fallback and bool(sources)
     ):
@@ -24275,6 +24309,49 @@ def discover_auto_viral_campaign_sources(
                     if quota_fallback
                     else max(3, env_int("VIRAL_CC_FAST_MAX_METADATA_CHECKS", 24))
                 ),
+            )
+        )
+    if not sources:
+        # Last resort when every on-theme result is already used. Only the
+        # editorial search surface widens: rights checks, QC and the processed
+        # source exclusion are unchanged. No already-used URL can re-enter.
+        retry_queries = merge_unique_queries(
+            fallback_queries, list(default_auto_viral_queries())
+        )[:20]
+        retry_request = fallback_request.model_copy(update={
+            "queries": retry_queries,
+            "duration_filter": "any",
+            "search_limit_per_query": max(request.search_limit_per_query, 25),
+        })
+        update_auto_viral_run(
+            run_id,
+            progress_percent=11,
+            progress_stage="last_resort_discovery",
+            message="Kandidat tema habis; mencari dengan kueri umum tanpa mengubah gate hak/QC",
+        )
+        append_auto_viral_log(
+            run_id,
+            "Pencarian terakhir: kueri umum dan semua durasi; sumber terpakai tetap dikecualikan.",
+        )
+        try:
+            sources = search_youtube_data_api_viral_sources(
+                retry_request, run_id, exclude_urls=excluded_sources,
+                stop_after=source_pool_target,
+            )
+        except Exception as exc:
+            append_auto_viral_error(run_id, f"YouTube Data API pencarian terakhir gagal: {exc}")
+        retry_found = {
+            normalized
+            for source in sources
+            if (normalized := normalize_youtube_video_url(str(source.get("url") or "")))
+        }
+        sources.extend(
+            search_auto_viral_sources(
+                retry_request,
+                run_id,
+                exclude_urls=excluded_sources | retry_found,
+                stop_after=max(0, source_pool_target - len(sources)),
+                max_metadata_checks=max(24, env_int("VIRAL_CC_QUOTA_FALLBACK_METADATA_CHECKS", 24)),
             )
         )
     sort_viral_source_payloads(sources, request.sort_order)
@@ -28452,6 +28529,41 @@ def reconcile_youtube_upload_submission(job_id: str, request: YouTubeUploadReque
         upload = create_youtube_upload_record(job_id, request)
         queue_youtube_upload_jobs([upload])
     return get_youtube_upload(upload.id)
+
+
+@app.post("/api/youtube/uploads/{upload_id}/verify-public", response_model=YouTubeUploadJob)
+def verify_youtube_upload_is_public(upload_id: str, request: YouTubePublicVerifyRequest) -> YouTubeUploadJob:
+    """Reconcile a stalled post-restart check against the live platform.
+
+    This never uploads or changes a video: it only confirms an already-published
+    video id via YouTube Data API, then lets the normal local-cleanup worker run.
+    A missing/private/mismatched id is rejected without touching the record.
+    """
+    if not request.confirm:
+        raise HTTPException(status_code=409, detail="Konfirmasi operator diperlukan")
+    with youtube_uploads_lock:
+        upload = youtube_uploads.get(upload_id)
+    if upload is None:
+        raise HTTPException(status_code=404, detail="Upload tidak ditemukan")
+    if upload.dry_run or not upload.video_url:
+        raise HTTPException(status_code=409, detail="Upload tidak memiliki video remote")
+    video_id = youtube_video_id_from_url(upload.video_url)
+    if not video_id:
+        raise HTTPException(status_code=409, detail="Video ID tidak valid")
+    try:
+        payload = youtube_data_api_get('videos', {'part': 'id,status', 'id': video_id})
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"YouTube Data API gagal: {exc}") from exc
+    item = next((row for row in (payload.get('items') or [])
+                 if str((row.get('id') or '')) == video_id), None)
+    status = (item or {}).get('status') or {}
+    if status.get('privacyStatus') not in {'public', 'unlisted'}:
+        raise HTTPException(status_code=409, detail="Video tidak ditemukan atau tidak publik di platform")
+    set_youtube_upload(upload_id, status='completed', upload_confirmed=True,
+                       error=None, finished_at=now_iso(),
+                       logs=[*upload.logs, 'REMOTE_PUBLIC_CONFIRMED: video-id terverifikasi; file lokal masuk auto-cleanup.'][-160:])
+    schedule_completed_upload_cleanup(upload_id)
+    return get_youtube_upload(upload_id)
 
 
 @app.post("/api/jobs/{job_id}/youtube-uploads/batch", response_model=list[YouTubeUploadJob])

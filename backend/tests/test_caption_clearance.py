@@ -54,6 +54,16 @@ def test_source_caption_layout_keeps_editorial_card_above_face_and_caption_lane(
     assert 'crop=1080:1920' not in vf
 
 
+def test_source_caption_clearance_keeps_two_editorial_windows_visible():
+    source = Path(clipper.__file__).read_text()
+    clearance_block = source.split("source_caption_clearance={'version'", 1)[1].split('write_srt', 1)[0]
+    assert 'visible_editorial_framing=False' not in clearance_block
+    marker = source.rindex('clean_detail_edit_filter(')
+    overlay_block = source[marker:marker + 2200]
+    assert 'show_text_overlays=(' in overlay_block
+    assert "not source_caption_clearance.get('enabled')" not in overlay_block
+
+
 def test_qc_exposure_measures_picture_instead_of_intentional_caption_padding(monkeypatch):
     frame=np.zeros((1920,1080,3),np.uint8)
     frame[40:1320,180:900]=150

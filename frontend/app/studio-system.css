@@ -572,6 +572,72 @@ body.studioApp { margin: 0; min-height: 100vh; background: var(--bg); color: var
   .studioApp .studioCronToggle > span { display: none; }
   .studioApp .clipperHero { padding: 17px; }
 }
+/* Modern polish layer: visual only, no selectors or copy are renamed. */
+@keyframes studioSheen { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+@keyframes studioGlowPulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+body.studioApp {
+  background-image: var(--surface-glow);
+  background-attachment: fixed;
+}
+.studioTopbar {
+  background: var(--header-bg);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  border-bottom-color: color-mix(in srgb, var(--border) 80%, transparent);
+  box-shadow: 0 8px 32px #00000014;
+}
+.studioTopbar::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--primary) 55%, transparent), var(--accent-2), transparent);
+  opacity: .8;
+  pointer-events: none;
+}
+.studioBrandMark {
+  background: linear-gradient(135deg, var(--primary), var(--accent-2), var(--primary));
+  background-size: 200% 200%;
+  animation: studioSheen 9s linear infinite;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--primary) 38%, transparent);
+}
+.studioSidebar {
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 12px 0 40px #00000012;
+}
+.studioSidebar nav a { transition: color .18s, background .18s, transform .18s, box-shadow .18s; }
+.studioSidebar nav a:hover { transform: translateX(3px); }
+.studioSidebar nav a.isActive {
+  box-shadow: inset 3px 0 0 var(--primary), 0 6px 18px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+.studioSidebar nav a.isActive > svg:first-child { filter: drop-shadow(0 0 7px color-mix(in srgb, var(--primary) 55%, transparent)); }
+.studioTopbarClock i { animation: studioGlowPulse 2.4s ease-in-out infinite; }
+.studioApp .panel, .studioApp .clipStatus, .studioApp .shortPolish {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow .2s ease, border-color .2s ease;
+}
+.studioApp .panel:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+.studioNewVideo, .studioApp .createShortButton {
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 72%, var(--accent-2)));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--primary) 30%, transparent);
+  transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+}
+.studioNewVideo:hover, .studioApp .createShortButton:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--primary) 40%, transparent);
+}
+.studioApp .formatChoice > button { transition: border-color .18s, background .18s, transform .18s, box-shadow .18s; }
+.studioApp .formatChoice > button:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+.studioApp .formatChoice > button.active {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 42%, transparent), 0 8px 20px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+.studioPageHeading h1 { letter-spacing: -1.5px; }
+.studioNavCaption { color: color-mix(in srgb, var(--text-muted) 90%, var(--primary)); }
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .studioApp *, .studioApp *::before, .studioApp *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }

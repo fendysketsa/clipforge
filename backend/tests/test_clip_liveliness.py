@@ -20,6 +20,23 @@ def rows(c):
     ]
 
 
+def test_export_wiring_uses_the_in_scope_segment_variable():
+    # A bare `segments` name is undefined in export_clip's accent scope and
+    # previously broke a Long render at runtime; `clip_segments` is in scope.
+    source = (Path(__file__).resolve().parents[1] / 'clipper.py').read_text()
+    marker = "if env_enabled('SHORTS_SCHEDULED_LIVELINESS_ACCENTS_ENABLED'"
+    block = source.split(marker, 1)[1].split('if motion_filter:', 1)[0]
+    assert 'clip, clip_segments,' in block
+    assert 'clip, segments,' not in block
+
+
+def test_effects_sidecar_is_checkpointed_before_later_render_stages():
+    source = (Path(__file__).resolve().parents[1] / 'clipper.py').read_text()
+    block = source.split('sidecar_payload["cron_director_effects"] = cron_accent_plan', 1)[1]
+    block = block.split("if env_enabled('SHORTS_SCHEDULED_LIVELINESS_ACCENTS_ENABLED'", 1)[0]
+    assert 'save_json(json_path, sidecar_payload)' in block
+
+
 def test_default_manual_plan_is_completely_inert():
     c = clip()
     plan = live.build_plan(c, rows(c))

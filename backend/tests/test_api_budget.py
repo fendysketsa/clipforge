@@ -6697,8 +6697,11 @@ def test_scheduled_quota_fallback_broadens_theme_queries_and_metadata_budget(mon
         raise RuntimeError("quotaExceeded")
 
     def capture_fallback(request, _run_id, **kwargs):
-        captured["request"] = request
-        captured["max_metadata_checks"] = kwargs.get("max_metadata_checks")
+        # The last-resort retry also calls this function; keep the original
+        # fallback request so this assertion still checks the theme broadening.
+        if "request" not in captured:
+            captured["request"] = request
+            captured["max_metadata_checks"] = kwargs.get("max_metadata_checks")
         return []
 
     monkeypatch.setenv("YOUTUBE_DATA_API_KEY", "test-key")

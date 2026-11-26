@@ -17621,7 +17621,9 @@ def export_clip(
         if source_caption_clearance.get('enabled'):
             effective_caption=replace(effective_caption,baseline_y=source_caption_clearance['caption_baseline'])
             applied_edits.append('Frame sumber utuh dipisahkan dari jalur subtitle tambahan; teks bawaan dan identitas sumber tetap terlihat.')
-            visible_editorial_framing=False
+            # Keep the two source-grounded editorial windows: the clean-detail
+            # renderer places them at hook_y=320 with a backdrop in the
+            # source_caption_clearance layout, clear of burned-in subtitles.
             automatic_short_title=False
     write_srt(srt_path, clip_segments, clip.start, duration)
     dynamic_caption_cues = 0
@@ -18717,7 +18719,6 @@ def export_clip(
                         emphasis_times=emphasis_times,
                         show_text_overlays=(
                             drawtext_supported
-                            and not source_caption_clearance.get('enabled')
                             and (
                                 not reaction_avatar_selected
                                 or visible_editorial_framing
@@ -19202,11 +19203,14 @@ def export_clip(
                 + " aksen kontekstual: " + ", ".join(cue["kind"] for cue in cron_accent_plan["cues"])
                 + "; dialog, subtitle, wajah, dan durasi tetap dijaga.")
         sidecar_payload["cron_director_effects"] = cron_accent_plan
+        # Checkpoint before the remaining render stages: a restart after the
+        # accents are baked must not leave an MP4 with no verification record.
+        save_json(json_path, sidecar_payload)
         if env_enabled('SHORTS_SCHEDULED_LIVELINESS_ACCENTS_ENABLED', False):
             # Additive and opt-in: manual jobs and every existing render path keep
             # their previous behaviour when this flag is absent.
             liveliness_plan = clip_liveliness.build_plan(
-                clip, segments, enabled=True,
+                clip, clip_segments, enabled=True,
                 protected=bool(cron_accent_plan.get('sensitive_context')),
                 layout=dict(portrait=portrait_framing,
                     caption_position=effective_caption.position,
