@@ -55,6 +55,23 @@ def test_existing_remote_record_cannot_create_duplicate(intake, status):
     assert not state['calls']
 
 
+def test_orphan_row_with_confirmed_remote_upload_is_reconciled(intake):
+    module, state = intake
+    state['jobs'] = []
+    state['uploads'] = [dict(id='verified-remote', source_job_id='gone',
+        clip_url='/outputs/gone.mp4', status='completed', upload_confirmed=True,
+        video_url='https://www.youtube.com/watch?v=NdEKBl4Xfrg')]
+    module.STATE.write_text(json.dumps({'clips': {'gone|/outputs/gone.mp4': dict(
+        source_job_id='gone', clip_url='/outputs/gone.mp4',
+        status='needs_remote_verification', upload_id='verified-remote',
+        error='stale restart hold')}}))
+    module.tick()
+    row = json.loads(module.STATE.read_text())['clips']['gone|/outputs/gone.mp4']
+    assert row['status'] == 'verified'
+    assert row['upload_outcome_unknown'] is False
+    assert not state['calls']
+
+
 def test_timeout_reservation_survives_restart(intake, monkeypatch):
     module, state = intake
     original = module.request

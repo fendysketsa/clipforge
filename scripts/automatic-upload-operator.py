@@ -60,6 +60,7 @@ def tick():
     uploads = request('/api/youtube/uploads')
     jobs = request('/api/jobs')
     pending = []
+    seen = set()
     for job in sorted(jobs, key=lambda row: row['created_at']):
         if (job.get('status') != 'completed'
                 or job['request']['clip_mode'] not in {'short', 'highlight_5m', 'long_animate'}):
@@ -68,6 +69,7 @@ def tick():
             continue
         for clip in job.get('clips', []):
             identity = key(job['id'], clip['url'])
+            seen.add(identity)
             row = state['clips'].setdefault(identity, dict(source_job_id=job['id'], clip_url=clip['url'], status='pending'))
             exact = [u for u in uploads if u.get('source_job_id') == job['id']
                 and u.get('clip_url') == clip['url'] and not u.get('dry_run')]
@@ -110,6 +112,21 @@ def tick():
                 row.update(status='preflight_hold', error=clip.get('youtube_upload_issue') or 'Upload preflight not ready')
                 continue
             pending.append((job, clip, row, None))
+
+    # Orphaned rows: the source job may have been purged after a confirmed
+    # upload. Reconcile by upload id so a finished remote post is never left
+    # waiting for a job that no longer exists.
+    uploads_by_id = {u.get('id'): u for u in uploads}
+    for identity, row in state['clips'].items():
+        if identity in seen or not isinstance(row, dict):
+            continue
+        upload = uploads_by_id.get(row.get('upload_id'))
+        if not upload or upload.get('dry_run'):
+            continue
+        if (upload.get('status') == 'completed' and upload.get('upload_confirmed') is True
+                and upload.get('video_url')):
+            row.update(status='verified', upload_id=upload['id'],
+                video_url=upload.get('video_url'), upload_outcome_unknown=False, error=None)
     state.update(checked_epoch=time.time(), enabled=True, visibility='private')
     save(state)
     if any(u.get('status') in {'queued', 'running'} and not u.get('dry_run') for u in uploads):
