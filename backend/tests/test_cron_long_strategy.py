@@ -131,6 +131,22 @@ def test_podcast_trend_trial_runs_once_then_rotation_resumes(monkeypatch):
     assert api.scheduled_podcast_trend_trial_profile() is None
 
 
+def test_podcast_trend_trial_survives_dynamic_editorial_override(monkeypatch, tmp_path):
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PODCAST_TREND_TRIAL", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_DYNAMIC_EDITORIAL_ENABLED", "true")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_YOUTUBE", "false")
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_AUTO_UPLOAD_TIKTOK", "false")
+    monkeypatch.setattr(api, "auto_viral_runs", {})
+    monkeypatch.setattr(api, "scheduled_news_hot_due", lambda: False)
+    monkeypatch.setattr(api, "cron_editorial_state_path",
+                        lambda: tmp_path / "cron_editorial_policy.json")
+    request = api.scheduled_auto_viral_request()
+    assert request.cron_theme_key == "podcast_trend_terkini"
+    assert request.cron_monthly_niche_id == "" and not request.cron_season_key
+
+
 def test_long_direction_never_inherits_short_fyp_brief():
     import api
     request = api.AutoViralRequest(cron_theme_key="gaming_story")

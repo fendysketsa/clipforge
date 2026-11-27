@@ -25980,7 +25980,9 @@ def scheduled_auto_viral_request() -> AutoViralRequest:
     )
     theme_key, theme_profile = scheduled_ryuundy_theme_profile()
     editorial_context = {}
-    if cron_editorial_enabled():
+    # A one-off new-lane trial must reach production as chosen; the dynamic
+    # monthly radar would otherwise replace it before its first run.
+    if cron_editorial_enabled() and not theme_profile.get("new_lane_trial"):
         try:
             theme_key, theme_profile, editorial_context = cron_editorial.select_profile(
                 cron_editorial.read_state(cron_editorial_state_path()), theme_key, theme_profile,
