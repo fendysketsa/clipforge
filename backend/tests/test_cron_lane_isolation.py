@@ -46,6 +46,19 @@ def test_active_short_job_still_blocks(monkeypatch):
         api.wait_for_no_active_clipping_job(timeout_seconds=0)
 
 
+@pytest.mark.parametrize("mode,expected", [("short", 1), ("highlight_5m", 0)])
+def test_review_hold_only_suppresses_long_auto_upload(monkeypatch, mode, expected):
+    job = api.ClipJob(
+        id="review-lane", status="completed",
+        created_at=api.now_iso(), updated_at=api.now_iso(),
+        request=api.ClipJobRequest(clip_mode=mode, publication_review_required=True),
+        clips=[api.ClipFile(name="a.mp4", url="/outputs/a.mp4", size_bytes=1)],
+    )
+    monkeypatch.setattr(api, "best_youtube_clip_urls", lambda j, n: [c.url for c in j.clips])
+    monkeypatch.setattr(api, "youtube_monetization_preflight_issue", lambda j, c: None)
+    assert len(api.best_automatic_upload_clip_urls(job, 1)) == expected
+
+
 def test_evergreen_window_admits_older_source_but_news_hot_does_not():
     older = (datetime.now(timezone.utc) - timedelta(days=120)).strftime("%Y%m%d")
     info = {"upload_date": older, "duration": 1800, "definition": "hd"}

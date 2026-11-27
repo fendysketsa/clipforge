@@ -8739,7 +8739,10 @@ def best_automatic_upload_clip_urls(
     require_numeric_fyp_score: bool = False,
 ) -> list[str]:
     """Return every actually uploadable clip, including a single good result."""
-    if job.request.publication_review_required or job.request.target_platform == "facebook":
+    # A review hold on a paired Long must not suppress already-cleared Shorts.
+    # Long jobs keep the explicit human-review gate; Shorts use the same
+    # per-clip preflight that a manual upload uses.
+    if (job.request.clip_mode == "highlight_5m" and job.request.publication_review_required) or job.request.target_platform == "facebook":
         return []
     clips_by_url = {clip.url: clip for clip in job.clips}
     return [
