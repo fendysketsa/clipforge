@@ -128,8 +128,10 @@ PROFILES = {
     },
     # Public YouTube search measured on 2026-11-27: top results for recent
     # Indonesian podcast conversations reached 7,699,814 and 7,044,229 views.
-    # That clears the 5,000K demand bar; it is evidence of interest, not a
-    # forecast for RYUUNDY.
+    # The demand bar for this lane is 5,000 public views, which those results
+    # clear by a wide margin. The runtime source gate in
+    # cron_long_strategy.source_profile still requires 1,000 views, so this bar
+    # only documents interest; it is not a forecast for RYUUNDY.
     "podcast_trend_terkini": {
         "label": "Podcast Tren Terkini & Perbincangan Hangat",
         "tone": "aktual, hangat, dan jujur; bicarakan topik yang benar-benar sedang ramai tanpa mengarang angka, kutipan, atau jaminan viral; bedakan fakta, opini narasumber, dan perkiraan",
