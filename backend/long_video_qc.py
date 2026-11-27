@@ -232,6 +232,27 @@ def validate_ai_result(raw: dict, context: dict, gates: dict, evidence: list) ->
                      instructions=instructions if action == "REPAIR_ONCE" else [])
 
 
+# The free vision providers behind the configured QC model reject a request with
+# more than 13 images using a misleading "content safety screening" 422, which
+# the audit treats as a terminal source refusal. Stay under that bound and keep
+# one coherent review of the whole clip by sampling the frames evenly.
+MAX_REVIEW_IMAGES = 12
+
+
+def limited_frames(frames: list[dict]) -> list[dict]:
+    """Evenly sample the first and last frame so every review fits the provider."""
+    frames = list(frames)
+    if len(frames) <= MAX_REVIEW_IMAGES:
+        return frames
+    step = (len(frames) - 1) / (MAX_REVIEW_IMAGES - 1)
+    picked, seen = [], set()
+    for index in (round(i * step) for i in range(MAX_REVIEW_IMAGES)):
+        if index not in seen:
+            seen.add(index)
+            picked.append(frames[index])
+    return picked
+
+
 def vision_review(evidence: dict, frames: list[dict], *, config: dict | None = None) -> dict:
     config = config if config is not None else provider_config()
     base = config["base_url"].rstrip("/")
@@ -240,6 +261,7 @@ def vision_review(evidence: dict, frames: list[dict], *, config: dict | None = N
         raise ConnectionError("Configure a vision-capable CLIPFORGE_QC_AI_BASE_URL and CLIPFORGE_QC_AI_MODEL")
     if urlparse(base).hostname not in {"localhost", "127.0.0.1", "::1", "host.docker.internal"} and not config["media_export_authorized"]:
         raise PermissionError("External media export requires explicit operator approval")
+    frames = limited_frames(frames)
     audio_samples = evidence.get("audio_samples", [])
     prompt_evidence = {k: v for k, v in evidence.items() if k != "audio_samples"}
     facebook_original = evidence.get('target_platform') == 'facebook' and evidence.get('original_demo') is True
