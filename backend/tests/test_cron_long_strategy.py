@@ -115,6 +115,22 @@ def test_format_fit_separates_long_stories_from_short_moments():
     assert 'bukti' in drama['rationale']
 
 
+def test_podcast_trend_trial_runs_once_then_rotation_resumes(monkeypatch):
+    from types import SimpleNamespace
+    import api
+
+    monkeypatch.setenv("AUTO_VIRAL_SCHEDULE_PODCAST_TREND_TRIAL", "true")
+    monkeypatch.setattr(api, "auto_viral_runs", {})
+    key, profile = api.scheduled_podcast_trend_trial_profile() or ("", {})
+    assert key == "podcast_trend_terkini"
+    assert profile["new_lane_trial"] is True
+
+    run = SimpleNamespace(trigger="schedule",
+                          request=SimpleNamespace(cron_theme_key=key))
+    monkeypatch.setattr(api, "auto_viral_runs", {"podcast-trial": run})
+    assert api.scheduled_podcast_trend_trial_profile() is None
+
+
 def test_long_direction_never_inherits_short_fyp_brief():
     import api
     request = api.AutoViralRequest(cron_theme_key="gaming_story")

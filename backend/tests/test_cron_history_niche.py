@@ -29,7 +29,8 @@ def test_reference_fits_history_lane_without_misclassifying_gameplay():
 
 
 def test_rotation_can_select_new_history_lane(monkeypatch):
-    for name in ("scheduled_islamic_animation_trial_profile", "scheduled_performance_winner_profile",
+    for name in ("scheduled_podcast_trend_trial_profile",
+                 "scheduled_islamic_animation_trial_profile", "scheduled_performance_winner_profile",
                  "scheduled_search_term_winner_profile"):
         monkeypatch.setattr(api, name, lambda: None)
     monkeypatch.setattr(api, "auto_viral_runs", {

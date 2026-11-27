@@ -25522,6 +25522,24 @@ def scheduled_search_term_winner_profile() -> tuple[str, dict[str, Any]] | None:
     return theme_key, profile
 
 
+def scheduled_podcast_trend_trial_profile() -> tuple[str, dict[str, Any]] | None:
+    """Try the new podcast trend lane once before returning to normal rotation."""
+    if not env_bool("AUTO_VIRAL_SCHEDULE_PODCAST_TREND_TRIAL", False):
+        return None
+    key = "podcast_trend_terkini"
+    with auto_viral_lock:
+        used = {
+            run.request.cron_theme_key
+            for run in auto_viral_runs.values()
+            if run.trigger == "schedule" and run.request.cron_theme_key
+        }
+    if key in used:
+        return None
+    profile = dict(RYUUNDY_CRON_THEME_PROFILES[key])
+    profile["new_lane_trial"] = True
+    return key, profile
+
+
 def scheduled_islamic_animation_trial_profile() -> tuple[str, dict[str, Any]] | None:
     """Try both new animation lanes once before returning to normal rotation."""
     if not env_bool("AUTO_VIRAL_SCHEDULE_ISLAMIC_ANIMATION_TRIAL", False):
@@ -25542,6 +25560,9 @@ def scheduled_islamic_animation_trial_profile() -> tuple[str, dict[str, Any]] | 
 
 def scheduled_ryuundy_theme_profile() -> tuple[str, dict[str, Any]]:
     """Pick a performance-led lane, then safely explore unused themes."""
+    podcast_trial = scheduled_podcast_trend_trial_profile()
+    if podcast_trial is not None:
+        return podcast_trial
     animation_trial = scheduled_islamic_animation_trial_profile()
     if animation_trial is not None:
         return animation_trial

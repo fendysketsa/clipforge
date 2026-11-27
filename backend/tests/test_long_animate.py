@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -293,9 +294,43 @@ def test_internal_scene_heading_is_not_rendered_as_viewer_copy():
     assert long_animate._viewer_on_screen_text("Kesetiaan Itu Diuji") == "Kesetiaan Itu Diuji"
 
 
-def test_story_audio_uses_verified_mood_music_and_semantic_effects(monkeypatch):
-    monkeypatch.delenv("BACKGROUND_MUSIC_LIBRARY_DIR", raising=False)
-    monkeypatch.delenv("SOUND_EFFECT_LIBRARY_DIR", raising=False)
+def _fixture_audio_library(monkeypatch, tmp_path):
+    """Self-contained CC0 fixture: CI has no locally downloaded media files."""
+    music_root = tmp_path / "music"
+    effect_root = tmp_path / "effects"
+    music_root.mkdir()
+    effect_root.mkdir()
+
+    def entry(root, filename, **overrides):
+        data = b"fixture-" + filename.encode("utf-8")
+        (root / filename).write_bytes(data)
+        return dict(
+            file=filename,
+            title=filename,
+            artist="Fixture",
+            kind="music" if root == music_root else "sound_effect",
+            license="CC0-1.0",
+            license_url="https://creativecommons.org/publicdomain/zero/1.0/",
+            attribution_required=False,
+            source_url="https://example.test/" + filename,
+            source_checked_on="2026-11-27",
+            sha256=hashlib.sha256(data).hexdigest(),
+            **overrides,
+        )
+
+    track = entry(music_root, "suspense.ogg", moods=["suspense", "dark"],
+                  themes=["mystery"], genres=["dramatic"], instrumental=True)
+    shock = entry(effect_root, "shock.wav", kinds=["shock"], trim_start=0.0, max_duration=0.5, mix_gain=0.1)
+    emphasis = entry(effect_root, "emphasis.wav", kinds=["emphasis"], trim_start=0.0, max_duration=0.5, mix_gain=0.1)
+
+    (music_root / "catalog.json").write_text(json.dumps({"version": 2, "tracks": [track]}))
+    (effect_root / "catalog.json").write_text(json.dumps({"version": 1, "effects": [shock, emphasis]}))
+    monkeypatch.setenv("BACKGROUND_MUSIC_LIBRARY_DIR", str(music_root))
+    monkeypatch.setenv("SOUND_EFFECT_LIBRARY_DIR", str(effect_root))
+
+
+def test_story_audio_uses_verified_mood_music_and_semantic_effects(monkeypatch, tmp_path):
+    _fixture_audio_library(monkeypatch, tmp_path)
     storyboard = _fallback_storyboard(
         "Misteri gelap mengancam seekor anjing baik. Akhirnya kebenaran terungkap dan anjing itu berhasil pulang."
     )
