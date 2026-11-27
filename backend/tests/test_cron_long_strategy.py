@@ -106,9 +106,12 @@ def test_long_brief_requires_deeper_intent_and_ryuundy_originality():
 def test_format_fit_separates_long_stories_from_short_moments():
     drama = strategy.format_fit('chinese_drama_story')
     humor = strategy.format_fit('humor_interlude')
+    podcast = strategy.format_fit('podcast_trend_terkini')
     assert drama['long'] is True and drama['short'] is True
     assert humor['long'] is False and humor['short'] is True
+    assert podcast['long'] is False and podcast['short'] is True
     assert drama['preferred'] == 'long' and humor['preferred'] == 'short'
+    assert podcast['preferred'] == 'short'
     assert 'bukti' in drama['rationale']
 
 

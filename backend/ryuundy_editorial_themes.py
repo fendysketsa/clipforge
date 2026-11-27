@@ -126,6 +126,23 @@ PROFILES = {
             "podcast indonesia dialog Refleksi kebiasaan baik sehari hari",
         ],
     },
+    # Public YouTube search measured on 2026-11-27: top results for recent
+    # Indonesian podcast conversations reached 7,699,814 and 7,044,229 views.
+    # That clears the 5,000K demand bar; it is evidence of interest, not a
+    # forecast for RYUUNDY.
+    "podcast_trend_terkini": {
+        "label": "Podcast Tren Terkini & Perbincangan Hangat",
+        "tone": "aktual, hangat, dan jujur; bicarakan topik yang benar-benar sedang ramai tanpa mengarang angka, kutipan, atau jaminan viral; bedakan fakta, opini narasumber, dan perkiraan",
+        "short_role": "ambil satu topik yang sedang ramai dari percakapan podcast, jelaskan pemicunya dalam dua detik pertama, lalu tutup dengan satu jawaban atau batasan yang utuh tanpa memotong makna",
+        "long_role": "rangkai konteks topik, pertanyaan dan jawaban narasumber, bukti yang tersedia, serta simpulan yang tidak berlebihan; jangan menyalin dialog podcast pihak ketiga atau mengubah opini menjadi fakta",
+        "duration_filter": "any",
+        "queries": [
+            "podcast indonesia terbaru topik hangat perbincangan",
+            "podcast indonesia obrolan tren terkini dan konteksnya",
+            "podcast indonesia bahas topik viral minggu ini",
+            "wawancara podcast indonesia topik ramai dibicarakan",
+        ],
+    },
     "measured_trend_lesson": {
         "label": "Topik Ramai Terukur",
         "tone": "berbasis sinyal publik yang benar-benar teramati; jelaskan konteks dan makna, jangan mengklaim FYP, jaminan viral, atau angka yang tidak diukur",
@@ -152,6 +169,7 @@ SIGNALS = {
     "measured_trend_lesson": {"sedang ramai", "tren", "viral", "topik hangat", "ramai dibicarakan", "perbincangan", "fyp", "trending"},
     "game_story_competitive": {"mobile legends", "mlbb", "free fire", "game kompetitif", "ranked", "push rank"},
     "podcast_kisah_hidup": {"podcast", "kisah hidup", "pengalaman", "obrolan", "narasumber", "refleksi", "cerita hidup"},
+    "podcast_trend_terkini": {"podcast", "tren terkini", "topik hangat", "topik viral", "perbincangan", "ramai dibicarakan", "wawancara"},
 }
 
 FILM_STORY_EDITOR_BRIEF = (
@@ -177,6 +195,7 @@ HASHTAGS = {
     "measured_trend_lesson": ["TopikRamai", "KonteksTerukur", "BukanJaminanViral"],
     "game_story_competitive": ["CeritaGame", "MLBB", "FreeFire", "ComebackTim"],
     "podcast_kisah_hidup": ["KisahHidup", "ObrolanJujur", "PilihanHidup"],
+    "podcast_trend_terkini": ["PodcastTrenTerkini", "ObrolanHangat", "TopikTerkini"],
 }
 
 

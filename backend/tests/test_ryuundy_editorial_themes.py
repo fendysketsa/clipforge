@@ -25,6 +25,7 @@ TITLES = {
     "measured_trend_lesson": "Topik sedang ramai dibicarakan orang Indonesia minggu ini dan penjelasan konteksnya",
     "game_story_competitive": "Mobile legends dan free fire cerita mabar comeback tim indonesia",
     "podcast_kisah_hidup": "Podcast kisah hidup indonesia obrolan jujur tentang pilihan dan pengalaman",
+    "podcast_trend_terkini": "Podcast tren terkini indonesia obrolan topik hangat dan perbincangan",
 }
 
 
